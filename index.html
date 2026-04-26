@@ -68,7 +68,7 @@ table{width:100%;border-collapse:collapse;font-size:12px;}
 th{padding:9px 12px;text-align:left;color:#475569;font-size:9px;letter-spacing:1.5px;font-weight:700;border-bottom:2px solid #334155;white-space:nowrap;background:#162032;}
 td{padding:7px 12px;border-bottom:1px solid #1e293b;vertical-align:middle;}
 tr.row-hoje td{background:#0f172a;}
-tr.row-ontem td{background:#0d1117;}
+tr.row-amanha td{background:#0d1117;}
 tr:hover td{background:#1a2540 !important;}
 
 .td-dt{background:#1e3a5f;border:1px solid #3b82f622;border-radius:4px;padding:2px 9px;font-weight:800;color:#93c5fd;font-size:11px;cursor:pointer;white-space:nowrap;display:inline-block;}
@@ -78,7 +78,7 @@ tr:hover td{background:#1a2540 !important;}
 .td-sm{color:#94a3b8;font-size:11px;}
 .td-ag{color:#64748b;white-space:nowrap;font-size:11px;}
 .tag-hoje{background:#1e3a8a33;border:1px solid #3b82f655;border-radius:4px;padding:1px 7px;font-size:9px;color:#60a5fa;font-weight:700;letter-spacing:1px;}
-.tag-ontem{background:#27272a33;border:1px solid #52525b55;border-radius:4px;padding:1px 7px;font-size:9px;color:#71717a;font-weight:700;letter-spacing:1px;}
+.tag-amanha{background:#27272a33;border:1px solid #52525b55;border-radius:4px;padding:1px 7px;font-size:9px;color:#71717a;font-weight:700;letter-spacing:1px;}
 
 input[type=time]{background:#1e293b;border:1px solid #334155;border-radius:5px;color:#f1f5f9;padding:3px 7px;font-size:12px;width:90px;}
 select.ss{border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;min-width:148px;}
@@ -144,7 +144,7 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
     <div class="cb">
       <p class="desc">
         Suba o arquivo de agendamento exportado do sistema.<br/>
-        O sistema filtra automaticamente os locais <b style="color:#f59e0b">1110</b> e <b style="color:#f59e0b">1111</b> e monta a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#71717a">Ontem</b> juntos.
+        O sistema filtra automaticamente os locais <b style="color:#f59e0b">1110</b> e <b style="color:#f59e0b">1111</b> e monta a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#71717a">Amanhã</b> juntos.
       </p>
       <div class="dz" id="dz1" onclick="document.getElementById('f1').click()">
         <div class="dz-icon">📂</div>
@@ -162,8 +162,8 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
       <div id="dtsSection">
         <span class="sl">HOJE</span>
         <div class="chips-wrap" id="chipsHoje"></div>
-        <span class="sl" style="margin-top:4px">ONTEM</span>
-        <div class="chips-wrap" id="chipsOntem"></div>
+        <span class="sl" style="margin-top:4px">AMANHÃ</span>
+        <div class="chips-wrap" id="chipsAmanha"></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:8px;">
         <button class="bp" onclick="goStep3()">Prosseguir →</button>
@@ -199,6 +199,7 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
       <div id="tstatus"></div>
       <div id="tactions">
         <button class="bexp" onclick="exportCSV()">⬇ CSV</button>
+        <button class="bexp" onclick="exportMateriaisPlanilha()">⬇ Materiais</button>
         <button class="bg" onclick="reloadTable()">↻ Atualizar</button>
         <button class="bg" onclick="setStep(1)">← Recarregar arquivo</button>
       </div>
@@ -298,7 +299,7 @@ function setStep(n){
 ══════════════════════════════════════════════ */
 function d0(d){ const x=d||new Date(); x.setHours(0,0,0,0); return x; }
 function today()    { return d0(new Date()); }
-function yesterday(){ const d=today(); d.setDate(d.getDate()-1); return d; }
+function tomorrow(){ const d=today(); d.setDate(d.getDate()+1); return d; }
 function sameDay(a,b){ return a&&b&&a.getDate()===b.getDate()&&a.getMonth()===b.getMonth()&&a.getFullYear()===b.getFullYear(); }
 function dKey(d){ return d.toLocaleDateString('pt-BR'); }  // DD/MM/YYYY
 function fmtDT(d,t){
@@ -310,6 +311,15 @@ function parseBR(s){
   if(!s||s==='null'||!s.trim()) return null;
   const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
   return m ? new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)) : null;
+}
+function splitLine(line, sep){ return line.split(sep).map(v=>v.trim()); }
+function detectSep(line){
+  const tabs=(line.match(/\t/g)||[]).length;
+  const semis=(line.match(/;/g)||[]).length;
+  const commas=(line.match(/,/g)||[]).length;
+  if(tabs>=semis&&tabs>=commas) return '\t';
+  if(semis>=commas) return ';';
+  return ',';
 }
 
 /* ══════════════════════════════════════════════
@@ -367,14 +377,14 @@ function processAgend(file){
    PASSO 2: MOSTRAR DTs
 ══════════════════════════════════════════════ */
 function renderStep2(){
-  const T=today(), Y=yesterday();
+  const T=today(), A=tomorrow();
   const dtsH=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,T));
-  const dtsY=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,Y));
-  dtsMescladas=[...dtsY,...dtsH];
+  const dtsA=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,A));
+  dtsMescladas=[...dtsH,...dtsA];
 
   document.getElementById('p2info').innerHTML=
     '✅ <b style="color:#22c55e">'+agendRows.length+' linhas</b> encontradas.<br/>'+
-    '<b style="color:#60a5fa">'+dtsH.length+'</b> DTs para hoje · <b style="color:#71717a">'+dtsY.length+'</b> DTs de ontem.';
+    '<b style="color:#60a5fa">'+dtsH.length+'</b> DTs para hoje · <b style="color:#71717a">'+dtsA.length+'</b> DTs para amanhã.';
 
   const mkChips=(dts,wrap,cls)=>{
     wrap.innerHTML='';
@@ -382,7 +392,7 @@ function renderStep2(){
     dts.forEach(r=>{ const s=document.createElement('span'); s.className='chip'+cls; s.textContent=r.DT; wrap.appendChild(s); });
   };
   mkChips(dtsH, document.getElementById('chipsHoje'),  '');
-  mkChips(dtsY, document.getElementById('chipsOntem'), ' old');
+  mkChips(dtsA, document.getElementById('chipsAmanha'), ' old');
   setStep(2);
 }
 
@@ -398,13 +408,26 @@ function processExport(file){
   file.arrayBuffer().then(buf=>{
     try{
       const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
-      const h=lines[0].split('\t').map(s=>s.trim());
-      const fi=(...t)=>{ for(const x of t){ const i=h.findIndex(v=>v.toUpperCase().includes(x.toUpperCase())); if(i!==-1)return i; } return -1; };
-      const iNT=fi('TRANSPORT'), iMat=fi('MATERIAL'), iQtd=fi('QTDE REMESSA','QTD REMESSA');
+      const sep=detectSep(lines[0]);
+      const h=splitLine(lines[0],sep);
+      const fi=(...t)=>{
+        for(const x of t){
+          const i=h.findIndex(v=>v.toUpperCase().includes(x.toUpperCase()));
+          if(i!==-1) return i;
+        }
+        return -1;
+      };
+      // ZLES002: Nr. Remessa/Recebimento = DT
+      const iDT=fi('NR. REMESSA/RECEBIMENTO','NRº REMESSA/RECEBIMENTO','DT','TRANSPORTE');
+      const iMat=fi('MATERIAL');
+      const iQtd=fi('QTDE REMESSA','QTD REMESSA','QUANTIDADE');
+      if(iDT===-1||iMat===-1){
+        throw new Error('Export sem colunas mínimas. Necessário: Nr. Remessa/Recebimento (ou DT), Material e Qtde Remessa.');
+      }
       exportMap={};
       for(let i=1;i<lines.length;i++){
-        const c=lines[i].split('\t'); if(c.every(v=>!v.trim())) continue;
-        const nt=(iNT!==-1?c[iNT]:'')?.trim();
+        const c=splitLine(lines[i],sep); if(c.every(v=>!v.trim())) continue;
+        const nt=(iDT!==-1?c[iDT]:'')?.trim();
         const mat=(iMat!==-1?c[iMat]:'')?.trim();
         const qtd=(iQtd!==-1?c[iQtd]:'')?.trim();
         if(nt&&mat){ if(!exportMap[nt])exportMap[nt]=[]; exportMap[nt].push({material:mat,quantidade:qtd}); }
@@ -420,10 +443,10 @@ function processExport(file){
 ══════════════════════════════════════════════ */
 async function buildTable(expMap){
   showInf('Sincronizando com o banco de dados…');
-  const T=today(), Y=yesterday();
+  const T=today(), A=tomorrow();
 
   // Busca existentes
-  const {data:existing=[]}=await db.from('reporte_carga').select('*').in('data_ref',[dKey(T),dKey(Y)]);
+  const {data:existing=[]}=await db.from('reporte_carga').select('*').in('data_ref',[dKey(T),dKey(A)]);
   const exMap={};
   (existing||[]).forEach(r=>{ exMap[r.dt+'_'+r.data_ref]=r; });
 
@@ -440,7 +463,7 @@ async function buildTable(expMap){
       tipo:dt.TIPO, toneladas:dt.PESO,
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       local_cd:dt.LOCAL,
-      dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'ONTEM',
+      dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHA',
       data_ref:ref,
     };
   });
@@ -458,16 +481,16 @@ async function buildTable(expMap){
    RELOAD + RENDER TABELA
 ══════════════════════════════════════════════ */
 async function reloadTable(){
-  const T=today(), Y=yesterday();
+  const T=today(), A=tomorrow();
   const {data,error}=await db.from('reporte_carga').select('*')
-    .in('data_ref',[dKey(T),dKey(Y)])
-    .order('dia_ref',{ascending:true})   // HOJE antes de ONTEM na ordem string
+    .in('data_ref',[dKey(T),dKey(A)])
+    .order('dia_ref',{ascending:true})   // ordenação principal por dia_ref (refinada abaixo)
     .order('agenda',{ascending:true});
   if(error){ showErr('Erro ao carregar: '+error.message); return; }
-  // Ordena: ontem primeiro, hoje depois
+  // Ordena: hoje primeiro, amanhã depois
   tableData=(data||[]).sort((a,b)=>{
     if(a.dia_ref===b.dia_ref) return (a.agenda||'').localeCompare(b.agenda||'');
-    return a.dia_ref==='ONTEM'?-1:1;
+    return a.dia_ref==='HOJE'?-1:1;
   });
   renderRows();
 }
@@ -484,18 +507,18 @@ function renderRows(){
     sp.textContent=s+': '+n; sw.appendChild(sp);
   });
   const cntH=tableData.filter(r=>r.dia_ref==='HOJE').length;
-  const cntY=tableData.filter(r=>r.dia_ref==='ONTEM').length;
+  const cntA=tableData.filter(r=>r.dia_ref==='AMANHA').length;
   document.getElementById('tinfo').innerHTML=
-    '<span style="color:#60a5fa">'+cntH+' hoje</span> · <span style="color:#71717a">'+cntY+' ontem</span>';
+    '<span style="color:#60a5fa">'+cntH+' hoje</span> · <span style="color:#71717a">'+cntA+' amanhã</span>';
 
   const tbody=document.getElementById('tbody'); tbody.innerHTML='';
   tableData.forEach(row=>{
     const isH=row.dia_ref==='HOJE';
     const c=SC[row.status]||'#334155';
     const tr=document.createElement('tr');
-    tr.className=isH?'row-hoje':'row-ontem';
+    tr.className=isH?'row-hoje':'row-amanha';
     tr.innerHTML=
-      '<td>'+(isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-ontem">ONTEM</span>')+'</td>'+
+      '<td>'+(isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>')+'</td>'+
       '<td><span class="td-dt" onclick="openPanel(\''+row.dt+'\',\''+row.data_ref+'\')">'+row.dt+'</span></td>'+
       '<td class="td-transp">'+(row.transportadora||'—')+'</td>'+
       '<td class="td-time">'+(row.grade_carregamento||'—')+'</td>'+
@@ -599,12 +622,12 @@ async function saveMateriais(){
    CARREGAR EXISTENTE AO ABRIR (sem precisar de arquivo)
 ══════════════════════════════════════════════ */
 async function tryLoadExisting(){
-  const T=today(), Y=yesterday();
-  const {data,error}=await db.from('reporte_carga').select('*').in('data_ref',[dKey(T),dKey(Y)]);
+  const T=today(), A=tomorrow();
+  const {data,error}=await db.from('reporte_carga').select('*').in('data_ref',[dKey(T),dKey(A)]);
   if(!error&&data&&data.length){
     tableData=data.sort((a,b)=>{
       if(a.dia_ref===b.dia_ref) return (a.agenda||'').localeCompare(b.agenda||'');
-      return a.dia_ref==='ONTEM'?-1:1;
+      return a.dia_ref==='HOJE'?-1:1;
     });
     renderRows();
     setStep(4);
@@ -637,6 +660,44 @@ function exportCSV(){
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
   a.click();
+}
+
+async function exportMateriaisPlanilha(){
+  const T=today(), A=tomorrow();
+  const refs=[dKey(T),dKey(A)];
+  const {data:mats,error}=await db.from('reporte_materiais').select('*').in('data_ref',refs).order('ordem',{ascending:true});
+  if(error){ showErr('Erro ao exportar materiais: '+error.message); return; }
+
+  const byKey={};
+  tableData.forEach(r=>{ byKey[r.dt+'_'+r.data_ref]=r; });
+
+  const cols=[
+    'Centro','Data Carregar','Hora Carregar','Data Agendamento','Hora Agendamento',
+    'Status global trnsp.','Inf. Agenda Entrega','Nome Transportadora','Descrição de Documento',
+    'Placa Simples Veículo','Material','Qtde Remessa','Peso líquido','Volume acumulado',
+    'Nr. Remessa/Recebimento','Nome Cliente/Fornecedor','Local','Dta.procmto.transp.','Data NFe',
+    'Nrº NFe','Denominação','Incoterms','Cód. Cliente Recebedor/Fornecedor','Hora NFe','Região','Setor de atividade'
+  ];
+
+  const rows=(mats||[]).map(m=>{
+    const ref=byKey[m.dt+'_'+m.data_ref]||{};
+    const dataCarregar=(ref.agenda||'').split(' ')[0]||'';
+    const horaCarregar=(ref.agenda||'').split(' ')[1]||'';
+    const dataFim=(ref.fim_carregamento||'').split(' ')[0]||'';
+    const horaFim=(ref.fim_carregamento||'').split(' ')[1]||'';
+    return [
+      '',dataCarregar,horaCarregar,dataFim,horaFim,ref.status||'',
+      m.observacao||'',ref.transportadora||'','','',m.material||'',m.quantidade||'',
+      ref.toneladas||'','',m.dt||'','','','','','','','','','',''
+    ];
+  });
+
+  const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='materiais_zles002_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
+  a.click();
+  showOk('Planilha de materiais exportada.');
 }
 </script>
 </body>
