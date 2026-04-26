@@ -130,6 +130,7 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
     <div class="sdot" id="dot2">2</div>
     <div class="sdot" id="dot3">3</div>
     <div class="sdot" id="dot4">4</div>
+    <div class="sdot" id="dot5">5</div>
   </div>
 </div>
 
@@ -186,13 +187,32 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
       </div>
       <input type="file" id="f2" accept=".xls,.xlsx,.txt,.tsv,.csv" style="display:none" onchange="processExport(this.files[0])"/>
       <div style="margin-top:12px;display:flex;gap:10px;align-items:center;">
-        <button class="bg" onclick="buildTable({})">Pular → Ir para a tabela</button>
+        <button class="bg" onclick="exportMap={};goStep4()">Pular → Próximo passo</button>
       </div>
     </div>
   </div>
 
   <!-- PASSO 4 -->
   <div class="card" id="passo4" style="display:none">
+    <div class="ch"><span>🧾</span><span class="ct">PASSO 4 — PLANILHA DE MATERIAIS (INDICATIVO)</span></div>
+    <div class="cb">
+      <p class="desc">
+        Suba a planilha de materiais para identificar se a DT é <b>venda normal</b> ou <b>transferência</b>.<br/>
+        Esse arquivo alimenta a coluna <b style="color:#60a5fa">OPERAÇÃO</b> no Reporte de Carga.
+      </p>
+      <div class="dz" id="dz3" onclick="document.getElementById('f3').click()">
+        <div class="dz-icon">📂</div>
+        <div class="dz-label" id="dz3l">Arraste a planilha aqui ou clique para selecionar</div>
+      </div>
+      <input type="file" id="f3" accept=".xls,.xlsx,.txt,.tsv,.csv" style="display:none" onchange="processMateriaisIndicativo(this.files[0])"/>
+      <div style="margin-top:12px;display:flex;gap:10px;align-items:center;">
+        <button class="bg" onclick="buildTable(exportMap)">Pular → Ir para a tabela</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASSO 5 -->
+  <div class="card" id="passo5" style="display:none">
     <div id="tbar">
       <span style="font-weight:800;font-size:10px;letter-spacing:2px;color:#94a3b8">📋 TABELA OPERACIONAL</span>
       <span id="tinfo"></span>
@@ -210,7 +230,7 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
           <tr>
             <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th>
             <th>GRADE</th><th>FIM</th>
-            <th>HORA CHEGADA</th><th>STATUS</th><th>TIPO</th><th>TONELADAS</th><th>AGENDA</th>
+            <th>HORA CHEGADA</th><th>STATUS</th><th>TIPO</th><th>OPERAÇÃO</th><th>TONELADAS</th><th>AGENDA</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -262,7 +282,7 @@ const db = supabase.createClient(SUPA_URL, SUPA_KEY);
 const STATUS_OPTIONS = ['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','SEPARANDO','EM FATURAMENTO','PATIO','DT EXCLUIDA','FOI EMBORA'];
 const SC = {'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
 
-let agendRows=[], dtsMescladas=[], exportMap={}, tableData=[];
+let agendRows=[], dtsMescladas=[], exportMap={}, exportTipoMap={}, tableData=[];
 let panelDT=null;
 
 /* ══════════════════════════════════════════════
@@ -285,7 +305,7 @@ function hideInf() { document.getElementById('ainf').style.display='none'; }
 function spin(on)  { document.getElementById('spinner').style.display=on?'block':'none'; }
 
 function setStep(n){
-  [1,2,3,4].forEach(i=>{
+  [1,2,3,4,5].forEach(i=>{
     document.getElementById('passo'+i).style.display=i===n?'block':'none';
     const d=document.getElementById('dot'+i);
     d.className='sdot'+(i<n?' done':i===n?' active':'');
@@ -352,6 +372,8 @@ function processAgend(file){
       const iPeso=col('PESO'),iTipo=col('TIPO VEICULO');
       if(iDT===-1||iAg===-1) throw new Error('Colunas não encontradas. Verificado: '+h.join(' | '));
       agendRows=[];
+      exportMap={};
+      exportTipoMap={};
       for(let i=1;i<lines.length;i++){
         const c=lines[i].split('\t');
         if(!c[iDT]?.trim()) continue;
@@ -433,13 +455,49 @@ function processExport(file){
         if(nt&&mat){ if(!exportMap[nt])exportMap[nt]=[]; exportMap[nt].push({material:mat,quantidade:qtd}); }
       }
       hideInf();
+      goStep4();
+    }catch(e){ hideInf(); showErr(e.message); }
+  });
+}
+
+function goStep4(){ setStep(4); }
+
+function processMateriaisIndicativo(file){
+  if(!file) return;
+  showInf('Lendo planilha de materiais…');
+  document.getElementById('dz3l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
+  file.arrayBuffer().then(buf=>{
+    try{
+      const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
+      const sep=detectSep(lines[0]);
+      const h=splitLine(lines[0],sep);
+      const fi=(...t)=>{
+        for(const x of t){
+          const i=h.findIndex(v=>v.toUpperCase().includes(x.toUpperCase()));
+          if(i!==-1) return i;
+        }
+        return -1;
+      };
+      const iDT=fi('NR. REMESSA/RECEBIMENTO','NRº REMESSA/RECEBIMENTO','DT','TRANSPORTE');
+      const iNatureza=fi('DESCRIÇÃO DE DOCUMENTO','DESCRICAO DE DOCUMENTO','TIPO DOCUMENTO','TIPO DE REMESSA','NATUREZA');
+      if(iDT===-1||iNatureza===-1){
+        throw new Error('Planilha sem colunas mínimas. Necessário: Remessa/DT e Natureza/Descrição de Documento.');
+      }
+      exportTipoMap={};
+      for(let i=1;i<lines.length;i++){
+        const c=splitLine(lines[i],sep); if(c.every(v=>!v.trim())) continue;
+        const dt=(c[iDT]||'').trim();
+        const natureza=normalizaNatureza((c[iNatureza]||'').trim());
+        if(dt&&natureza&&!exportTipoMap[dt]) exportTipoMap[dt]=natureza;
+      }
+      hideInf();
       buildTable(exportMap);
     }catch(e){ hideInf(); showErr(e.message); }
   });
 }
 
 /* ══════════════════════════════════════════════
-   PASSO 4: MONTAR TABELA + UPSERT SUPABASE
+   PASSO 5: MONTAR TABELA + UPSERT SUPABASE
 ══════════════════════════════════════════════ */
 async function buildTable(expMap){
   showInf('Sincronizando com o banco de dados…');
@@ -454,6 +512,7 @@ async function buildTable(expMap){
   const toUpsert=dtsMescladas.map(dt=>{
     const ref=dKey(dt.AGENDA||T);
     const ex=exMap[dt.DT+'_'+ref];
+    const naturezaAtual=exportTipoMap[dt.DT]||ex?.tipo_operacao||'';
     return {
       dt:dt.DT, transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
@@ -461,6 +520,7 @@ async function buildTable(expMap){
       hora_chegada:ex?.hora_chegada||'',
       status:ex?.status||'AG CHEGADA',
       tipo:dt.TIPO, toneladas:dt.PESO,
+      tipo_operacao:naturezaAtual,
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       local_cd:dt.LOCAL,
       dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHA',
@@ -469,12 +529,20 @@ async function buildTable(expMap){
   });
 
   if(toUpsert.length){
-    const {error}=await db.from('reporte_carga').upsert(toUpsert,{onConflict:'dt,data_ref',ignoreDuplicates:true});
+    let {error}=await db.from('reporte_carga').upsert(toUpsert,{onConflict:'dt,data_ref',ignoreDuplicates:true});
+    if(error && error.message && error.message.toLowerCase().includes('tipo_operacao')){
+      const semTipo=toUpsert.map(({tipo_operacao,...rest})=>rest);
+      const retry=await db.from('reporte_carga').upsert(semTipo,{onConflict:'dt,data_ref',ignoreDuplicates:true});
+      error=retry.error;
+      if(!error){
+        showErr('Indicativo de operação não salvo no banco (coluna tipo_operacao ausente), mas a tabela foi carregada.');
+      }
+    }
     if(error) showErr('Aviso banco: '+error.message);
   }
   hideInf();
   await reloadTable();
-  setStep(4);
+  setStep(5);
 }
 
 /* ══════════════════════════════════════════════
@@ -528,6 +596,7 @@ function renderRows(){
         STATUS_OPTIONS.map(s=>'<option value="'+s+'"'+(s===row.status?' selected':'')+'>'+s+'</option>').join('')+
       '</select></td>'+
       '<td class="td-sm">'+(row.tipo||'—')+'</td>'+
+      '<td class="td-sm">'+(row.tipo_operacao||'—')+'</td>'+
       '<td class="td-sm">'+(row.toneladas||'—')+'</td>'+
       '<td class="td-ag">'+(row.agenda||'—')+'</td>';
     tbody.appendChild(tr);
@@ -630,7 +699,7 @@ async function tryLoadExisting(){
       return a.dia_ref==='HOJE'?-1:1;
     });
     renderRows();
-    setStep(4);
+    setStep(5);
     showOk('Tabela carregada do banco. Suba o arquivo de agendamento para atualizar as DTs.');
   }
 }
@@ -638,14 +707,16 @@ async function tryLoadExisting(){
 /* ══════════════════════════════════════════════
    DRAG & DROP
 ══════════════════════════════════════════════ */
-['dz1','dz2'].forEach(id=>{
+['dz1','dz2','dz3'].forEach(id=>{
   const el=document.getElementById(id);
   el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drag');});
   el.addEventListener('dragleave',()=>el.classList.remove('drag'));
   el.addEventListener('drop',e=>{
     e.preventDefault(); el.classList.remove('drag');
     const f=e.dataTransfer.files[0]; if(!f) return;
-    if(id==='dz1') processAgend(f); else processExport(f);
+    if(id==='dz1') processAgend(f);
+    else if(id==='dz2') processExport(f);
+    else processMateriaisIndicativo(f);
   });
 });
 
@@ -653,13 +724,21 @@ async function tryLoadExisting(){
    EXPORT CSV
 ══════════════════════════════════════════════ */
 function exportCSV(){
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','TIPO','TONELADAS','AGENDA'];
-  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.tipo,r.toneladas,r.agenda]);
+  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','TIPO','OPERAÇÃO','TONELADAS','AGENDA'];
+  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.tipo,r.tipo_operacao,r.toneladas,r.agenda]);
   const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
   a.click();
+}
+
+function normalizaNatureza(valor){
+  if(!valor) return '';
+  const txt=valor.toUpperCase();
+  if(txt.includes('TRANSFER')) return 'TRANSFERÊNCIA';
+  if(txt.includes('VENDA')) return 'VENDA NORMAL';
+  return valor;
 }
 
 async function exportMateriaisPlanilha(){
