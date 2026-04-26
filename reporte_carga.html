@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Reporte de Carga</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;}
+input,select,button,textarea{font-family:inherit;}
+#header{background:linear-gradient(135deg,#1e293b,#0f172a);border-bottom:2px solid #334155;padding:12px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;}
+#hicon{background:#3b82f6;border-radius:9px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+#htitle{font-size:16px;font-weight:800;letter-spacing:1px;color:#f1f5f9;}
+#hsub{font-size:9px;color:#64748b;letter-spacing:3px;}
+#stepper{margin-left:auto;display:flex;align-items:center;gap:5px;}
+.sdot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;border:2px solid #334155;background:#1e293b;color:#475569;}
+.sdot.active{background:#3b82f6;border-color:#3b82f6;color:#fff;}
+.sdot.done{background:#22c55e;border-color:#22c55e;color:#fff;}
+#sync-badge{background:#064e3b;border:1px solid #059669;border-radius:20px;padding:3px 10px;font-size:10px;color:#6ee7b7;display:flex;align-items:center;gap:5px;}
+#sync-dot{width:7px;height:7px;border-radius:50%;background:#22c55e;animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+#main{max-width:1400px;margin:0 auto;padding:20px;}
+.alert{border-radius:8px;padding:9px 14px;margin-bottom:12px;font-size:13px;display:none;}
+.alert-err{background:#450a0a;border:1px solid #ef4444;color:#fca5a5;}
+.alert-ok {background:#052e16;border:1px solid #22c55e;color:#86efac;}
+.alert-inf{background:#1e3a5f;border:1px solid #3b82f6;color:#93c5fd;}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;margin-bottom:20px;overflow:hidden;}
+.ch{padding:13px 20px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:9px;}
+.ct{font-weight:800;font-size:10px;letter-spacing:2px;color:#94a3b8;}
+.cb{padding:20px;}
+.dz{border:2px dashed #334155;border-radius:10px;padding:30px 20px;text-align:center;cursor:pointer;background:#0f172a;transition:all .2s;}
+.dz:hover,.dz.drag{border-color:#3b82f6;background:#1e3a5f;}
+.dz-icon{font-size:28px;margin-bottom:6px;}
+.dz-label{color:#64748b;font-size:13px;}
+.dz-ok{color:#22c55e;font-weight:700;}
+.bp{background:#3b82f6;color:#fff;border:none;border-radius:7px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;}
+.bp:hover{background:#2563eb;}
+.bg{background:transparent;color:#94a3b8;border:1px solid #334155;border-radius:7px;padding:7px 16px;font-size:12px;cursor:pointer;}
+.bg:hover{border-color:#64748b;color:#e2e8f0;}
+.bexp{background:#065f46;color:#6ee7b7;border:1px solid #059669;border-radius:7px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:700;}
+.chip{background:#1e3a5f;border:1px solid #3b82f622;border-radius:5px;padding:3px 10px;font-size:12px;color:#93c5fd;font-weight:800;display:inline-block;margin:3px;}
+.chip.old{opacity:.55;color:#71717a;background:#27272a;}
+#tbar{padding:11px 18px;border-bottom:1px solid #334155;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+#tinfo{color:#64748b;font-size:12px;}
+#tstatus{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto;}
+#tactions{display:flex;gap:7px;}
+.sbadge{border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;display:inline-block;}
+#twrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{padding:9px 12px;text-align:left;color:#475569;font-size:9px;letter-spacing:1.5px;font-weight:700;border-bottom:2px solid #334155;white-space:nowrap;background:#162032;}
+td{padding:7px 12px;border-bottom:1px solid #1e293b;vertical-align:middle;}
+tr.row-hoje td{background:#0f172a;}
+tr.row-amanha td{background:#0d1117;}
+tr:hover td{background:#1a2540!important;}
+.td-dt{background:#1e3a5f;border:1px solid #3b82f622;border-radius:4px;padding:2px 9px;font-weight:800;color:#93c5fd;font-size:11px;cursor:pointer;white-space:nowrap;display:inline-block;}
+.td-dt:hover{background:#1e40af;border-color:#3b82f6;}
+.td-transp{color:#cbd5e1;max-width:180px;font-size:11px;}
+.td-time{color:#a5b4fc;white-space:nowrap;font-size:11px;}
+.td-sm{color:#94a3b8;font-size:11px;}
+.td-ag{color:#64748b;white-space:nowrap;font-size:11px;}
+.tag-hoje  {background:#1e3a8a33;border:1px solid #3b82f655;border-radius:4px;padding:1px 7px;font-size:9px;color:#60a5fa;font-weight:700;letter-spacing:1px;}
+.tag-amanha{background:#2e1065aa;border:1px solid #7c3aed55;border-radius:4px;padding:1px 7px;font-size:9px;color:#a78bfa;font-weight:700;letter-spacing:1px;}
+.tag-venda {background:#052e1688;border:1px solid #22c55e55;border-radius:4px;padding:2px 9px;font-size:10px;color:#4ade80;font-weight:700;}
+.tag-transf{background:#431407aa;border:1px solid #f9731655;border-radius:4px;padding:2px 9px;font-size:10px;color:#fb923c;font-weight:700;}
+.tag-sem   {color:#334155;font-size:10px;}
+input[type=time]{background:#1e293b;border:1px solid #334155;border-radius:5px;color:#f1f5f9;padding:3px 7px;font-size:12px;width:90px;}
+select.ss{border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;min-width:148px;}
+.debug-box{background:#1a0a00;border:1px solid #92400e;border-radius:7px;padding:10px 14px;margin-top:10px;font-size:11px;color:#fbbf24;line-height:1.7;white-space:pre-wrap;display:none;}
+.debug-box.show{display:block;}
+#panel-overlay{position:fixed;inset:0;background:#000000aa;z-index:200;display:none;}
+#panel{position:fixed;right:0;top:0;height:100vh;width:440px;background:#1e293b;border-left:2px solid #334155;z-index:201;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s;}
+#panel.open{transform:translateX(0);}
+#ph{padding:14px 18px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:10px;}
+#ptitle{font-weight:800;font-size:13px;color:#f1f5f9;flex:1;}
+#pbody{flex:1;overflow-y:auto;padding:16px;}
+#pfoot{padding:12px 18px;border-top:1px solid #334155;display:flex;gap:8px;}
+.mat-row{display:grid;grid-template-columns:1fr 100px 32px;gap:7px;margin-bottom:7px;align-items:center;}
+.mat-input{background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:6px 10px;font-size:12px;width:100%;}
+.mat-input:focus{outline:none;border-color:#3b82f6;}
+.mat-del{background:transparent;border:1px solid #334155;border-radius:5px;color:#64748b;padding:0;cursor:pointer;font-size:13px;height:32px;width:32px;}
+.mat-del:hover{border-color:#ef4444;color:#ef4444;}
+.mat-hdr{display:grid;grid-template-columns:1fr 100px 32px;gap:7px;margin-bottom:5px;}
+.mat-hdr span{font-size:9px;letter-spacing:1.5px;color:#64748b;font-weight:700;}
+.sec-lbl{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:8px;margin-top:14px;display:block;}
+.obs-area{width:100%;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:8px 10px;font-size:12px;resize:vertical;min-height:60px;}
+.obs-area:focus{outline:none;border-color:#3b82f6;}
+p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
+.sl{font-size:10px;letter-spacing:2px;color:#64748b;margin-bottom:6px;display:block;}
+.chips-wrap{display:flex;flex-wrap:wrap;margin-bottom:20px;}
+#spinner{display:none;position:fixed;bottom:20px;right:20px;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-size:12px;color:#94a3b8;z-index:500;}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="hicon">🚛</div>
+  <div>
+    <div id="htitle">REPORTE DE CARGA</div>
+    <div id="hsub">CONTROLE DE EXPEDIÇÃO</div>
+  </div>
+  <div id="sync-badge"><div id="sync-dot"></div><span id="sync-txt">CONECTANDO…</span></div>
+  <div id="stepper">
+    <div class="sdot active" id="dot1">1</div>
+    <div class="sdot" id="dot2">2</div>
+    <div class="sdot" id="dot3">3</div>
+    <div class="sdot" id="dot4">4</div>
+    <div class="sdot" id="dot5">5</div>
+  </div>
+</div>
+
+<div id="main">
+  <div class="alert alert-err" id="aerr"></div>
+  <div class="alert alert-ok"  id="aok"></div>
+  <div class="alert alert-inf" id="ainf"></div>
+
+  <!-- PASSO 1 -->
+  <div class="card" id="passo1">
+    <div class="ch"><span>📁</span><span class="ct">PASSO 1 — ARQUIVO DE AGENDAMENTO</span></div>
+    <div class="cb">
+      <p class="desc">Suba o arquivo de agendamento exportado do sistema.<br/>
+        Filtra automaticamente os locais <b style="color:#f59e0b">1110</b> e <b style="color:#f59e0b">1111</b>
+        e monta a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#a78bfa">Amanhã</b> juntos.</p>
+      <div class="dz" id="dz1" onclick="document.getElementById('f1').click()">
+        <div class="dz-icon">📂</div>
+        <div class="dz-label" id="dz1l">Arraste o arquivo aqui ou clique para selecionar</div>
+      </div>
+      <input type="file" id="f1" accept=".xls,.xlsx,.txt,.tsv" style="display:none" onchange="processAgend(this.files[0])"/>
+    </div>
+  </div>
+
+  <!-- PASSO 2 -->
+  <div class="card" id="passo2" style="display:none">
+    <div class="ch"><span>📅</span><span class="ct">PASSO 2 — DTs ENCONTRADAS</span></div>
+    <div class="cb">
+      <p class="desc" id="p2info"></p>
+      <span class="sl">HOJE</span>
+      <div class="chips-wrap" id="chipsHoje"></div>
+      <span class="sl">AMANHÃ</span>
+      <div class="chips-wrap" id="chipsAmanha"></div>
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <button class="bp" onclick="setStep(3)">Prosseguir →</button>
+        <button class="bg" onclick="setStep(1)">← Voltar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASSO 3 — ZLES002 -->
+  <div class="card" id="passo3" style="display:none">
+    <div class="ch"><span>📦</span><span class="ct">PASSO 3 — EXPORT SAP / ZLES002 (OPCIONAL)</span></div>
+    <div class="cb">
+      <p class="desc">
+        Suba o export da <b style="color:#f59e0b">ZLES002</b> (CSV separado por <b style="color:#60a5fa">ponto-e-vírgula</b>).<br/>
+        Colunas lidas: <b style="color:#60a5fa">Nr. Remessa/Recebimento</b> · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b> · <b style="color:#a78bfa">Descrição de Documento</b>.<br/>
+        A coluna <b style="color:#a78bfa">Descrição de Documento</b> define se é
+        <span class="tag-venda">🛒 VENDA NORMAL</span> ou <span class="tag-transf">🔄 TRANSFERÊNCIA</span>.
+      </p>
+      <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
+        <div class="dz-icon">📂</div>
+        <div class="dz-label" id="dz2l">Arraste o arquivo ZLES002 aqui (CSV)</div>
+      </div>
+      <input type="file" id="f2" accept=".csv,.txt,.tsv" style="display:none" onchange="processZles(this.files[0])"/>
+      <div id="dbgZles" class="debug-box"></div>
+      <div style="margin-top:12px;">
+        <button class="bg" onclick="setStep(4)">Pular → ir para planilha extra</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASSO 4 — Planilha extra XLSX -->
+  <div class="card" id="passo4" style="display:none">
+    <div class="ch"><span>📋</span><span class="ct">PASSO 4 — PLANILHA EXTRA DE MATERIAIS (OPCIONAL)</span></div>
+    <div class="cb">
+      <p class="desc">
+        Suba a planilha XLSX com materiais por DT.<br/>
+        Coluna chave: <b style="color:#f59e0b">Nº transporte</b> (número da DT) · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b>.<br/>
+        Os materiais são mesclados com os da ZLES002 sem duplicar.
+      </p>
+      <div class="dz" id="dz3" onclick="document.getElementById('f3').click()">
+        <div class="dz-icon">📂</div>
+        <div class="dz-label" id="dz3l">Arraste a planilha XLSX aqui</div>
+      </div>
+      <input type="file" id="f3" accept=".xlsx,.xls" style="display:none" onchange="processExtra(this.files[0])"/>
+      <div id="dbgExtra" class="debug-box"></div>
+      <div style="margin-top:12px;">
+        <button class="bg" onclick="buildTable()">Pular → ir para a tabela</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASSO 5 — Tabela -->
+  <div class="card" id="passo5" style="display:none">
+    <div id="tbar">
+      <span style="font-weight:800;font-size:10px;letter-spacing:2px;color:#94a3b8">📋 TABELA OPERACIONAL</span>
+      <span id="tinfo"></span>
+      <div id="tstatus"></div>
+      <div id="tactions">
+        <button class="bexp" onclick="exportCSV()">⬇ CSV</button>
+        <button class="bg"   onclick="reloadTable()">↻ Atualizar</button>
+        <button class="bg"   onclick="setStep(1)">← Recarregar arquivo</button>
+      </div>
+    </div>
+    <div id="twrap">
+      <table>
+        <thead><tr>
+          <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th>
+          <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th>
+          <th>STATUS</th><th>TIPO VEÍ.</th><th>TONELADAS</th>
+          <th>OPERAÇÃO</th><th>AGENDA</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div style="padding:8px 18px;font-size:10px;color:#334155;">
+      💡 Clique em qualquer <b style="color:#93c5fd">DT</b> para abrir o mapa de separação com os materiais.
+    </div>
+  </div>
+</div>
+
+<!-- PAINEL -->
+<div id="panel-overlay" onclick="closePanel()"></div>
+<div id="panel">
+  <div id="ph">
+    <span id="ptitle">Mapa de Separação</span>
+    <button class="bg" onclick="closePanel()" style="padding:4px 10px;">✕</button>
+  </div>
+  <div id="pbody">
+    <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
+    <span class="sec-lbl">MATERIAIS / QUANTIDADES</span>
+    <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE</span><span></span></div>
+    <div id="mat-list"></div>
+    <button class="bg" onclick="addMatRow()" style="width:100%;margin-top:6px;font-size:12px;">+ Adicionar material</button>
+    <span class="sec-lbl" style="margin-top:18px;">OBSERVAÇÕES</span>
+    <textarea class="obs-area" id="pobs" placeholder="Anotações gerais desta DT..."></textarea>
+  </div>
+  <div id="pfoot">
+    <button class="bp" style="flex:1" onclick="saveMateriais()">💾 Salvar</button>
+    <button class="bg" onclick="closePanel()">Fechar</button>
+  </div>
+</div>
+
+<div id="spinner">⏳ Salvando…</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   SUPABASE via REST API direta — sem supabase-js
+
+   POR QUE NÃO USAMOS supabase-js AQUI:
+   A biblioteca supabase-js usa SharedWorker + postMessage
+   internamente para gerenciar conexões. Em iframes com
+   política de segurança restrita (como o claude.ai), isso
+   lança "DataCloneError: Headers object could not be cloned".
+   Chamando a REST API do Supabase diretamente com fetch()
+   evitamos completamente esse problema — é a mesma API,
+   só sem o intermediário que causa o erro.
+═══════════════════════════════════════════════════════════ */
+const SB_URL = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
+const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
+const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+
+async function sbGet(table, qs=''){
+  const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:{...HDR,'Prefer':''}});
+  if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
+  return r.json();
+}
+async function sbUpsert(table, rows){
+  // Envia em lotes de 30 para não ultrapassar limites de payload
+  for(let i=0;i<rows.length;i+=30){
+    const r=await fetch(`${SB_URL}/${table}`,{
+      method:'POST',
+      headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(rows.slice(i,i+30))
+    });
+    if(!r.ok) throw new Error(`UPSERT ${table} lote ${i/30+1}: `+await r.text());
+  }
+}
+async function sbPatch(table, data, filters){
+  const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${encodeURIComponent(v)}`).join('&');
+  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
+  if(!r.ok) throw new Error(`PATCH ${table}: `+await r.text());
+}
+async function sbDelete(table, filters){
+  const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${encodeURIComponent(v)}`).join('&');
+  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
+  if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
+}
+async function sbInsert(table, rows){
+  const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
+  if(!r.ok) throw new Error(`INSERT ${table}: `+await r.text());
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ESTADO
+═══════════════════════════════════════════════════════════ */
+const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','SEPARANDO','EM FATURAMENTO','PATIO','DT EXCLUIDA','FOI EMBORA'];
+const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
+
+// exportMap  = { "23144073": [{material:"20104311", quantidade:"3"}, ...] }
+// tipoOpMap  = { "23144073": "VENDA NORMAL" | "TRANSFERÊNCIA" }
+let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, tableData=[];
+let panelDT=null;
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  document.getElementById('sync-txt').textContent='ONLINE';
+  await tryLoadExisting();
+});
+
+/* ═══════════════════════════════════════════════════════════
+   UI
+═══════════════════════════════════════════════════════════ */
+function showErr(m){const e=document.getElementById('aerr');e.textContent='⚠️ '+m;e.style.display='block';}
+function showOk(m) {const e=document.getElementById('aok'); e.textContent='✅ '+m;e.style.display='block';setTimeout(()=>e.style.display='none',4500);}
+function showInf(m){const e=document.getElementById('ainf');e.textContent='⏳ '+m;e.style.display='block';}
+function hideInf(){document.getElementById('ainf').style.display='none';}
+function spin(on){document.getElementById('spinner').style.display=on?'block':'none';}
+
+function setStep(n){
+  [1,2,3,4,5].forEach(i=>{
+    document.getElementById('passo'+i).style.display=i===n?'block':'none';
+    const d=document.getElementById('dot'+i);
+    d.className='sdot'+(i<n?' done':i===n?' active':'');
+    d.textContent=i<n?'✓':i;
+  });
+  document.getElementById('aerr').style.display='none';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DATAS
+═══════════════════════════════════════════════════════════ */
+function today()   {const d=new Date();d.setHours(0,0,0,0);return d;}
+function tomorrow(){const d=today();d.setDate(d.getDate()+1);return d;}
+function sameDay(a,b){return a&&b&&a.getDate()===b.getDate()&&a.getMonth()===b.getMonth()&&a.getFullYear()===b.getFullYear();}
+function dKey(d){return d.toLocaleDateString('pt-BR');}
+function fmtDT(d,t){
+  if(!d)return '';
+  return t?d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('pt-BR');
+}
+function parseBR(s){
+  if(!s||!s.trim())return null;
+  const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[T\s](\d{2}):(\d{2}))?/);
+  return m?new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)):null;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DECODE BUFFER
+═══════════════════════════════════════════════════════════ */
+function decodeBuf(buf){
+  const b=new Uint8Array(buf);
+  if(b[0]===0xFF&&b[1]===0xFE)return new TextDecoder('utf-16le').decode(buf);
+  if(b[0]===0xFE&&b[1]===0xFF)return new TextDecoder('utf-16be').decode(buf);
+  let nulls=0;for(let i=1;i<Math.min(200,b.length);i+=2)if(b[i]===0)nulls++;
+  if(nulls>15)return new TextDecoder('utf-16le').decode(buf);
+  try{return new TextDecoder('utf-8').decode(buf);}catch(e){}
+  return new TextDecoder('latin1').decode(buf);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PASSO 1 — AGENDAMENTO (arquivo tab-separado)
+═══════════════════════════════════════════════════════════ */
+function processAgend(file){
+  if(!file)return;
+  showInf('Lendo agendamento…');
+  document.getElementById('dz1l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
+  file.arrayBuffer().then(buf=>{
+    try{
+      const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
+      const h=lines[0].split('\t').map(s=>s.trim());
+      const ci=n=>h.indexOf(n);
+      const iDT=ci('DT'),iLoc=ci('LOCAL'),iTransp=ci('NOME TRANSPORTADORA');
+      const iAg=ci('AGENDA TRANSPORTADOR'),iFim=ci('FIM AGENDA TRANSPORTADOR');
+      const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO');
+      if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
+      agendRows=[];
+      for(let i=1;i<lines.length;i++){
+        const c=lines[i].split('\t');
+        if(!c[iDT]?.trim())continue;
+        const loc=(c[iLoc]||'').trim();
+        if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
+        agendRows.push({
+          DT:(c[iDT]||'').trim(),LOCAL:loc,
+          TRANSPORTADORA:(c[iTransp]||'').trim(),
+          AGENDA:parseBR((c[iAg]||'').trim()),
+          FIM_AGENDA:parseBR((c[iFim]||'').trim()),
+          TIPO:iTipo!==-1?(c[iTipo]||'').trim():'',
+          PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
+        });
+      }
+      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111 encontrada.');
+      hideInf();
+      renderStep2();
+    }catch(e){hideInf();showErr(e.message);}
+  });
+}
+
+function renderStep2(){
+  const T=today(),AM=tomorrow();
+  const dtsH=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,T));
+  const dtsA=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,AM));
+  dtsMescladas=[...dtsH,...dtsA];
+  document.getElementById('p2info').innerHTML=
+    '✅ <b style="color:#22c55e">'+agendRows.length+' linhas</b> encontradas · '+
+    '<b style="color:#60a5fa">'+dtsH.length+'</b> hoje · <b style="color:#a78bfa">'+dtsA.length+'</b> amanhã';
+  const mk=(arr,id,cls)=>{
+    const w=document.getElementById(id);w.innerHTML='';
+    if(!arr.length){w.innerHTML='<span style="font-size:11px;color:#334155">Nenhuma</span>';return;}
+    arr.forEach(r=>{const s=document.createElement('span');s.className='chip'+cls;s.textContent=r.DT;w.appendChild(s);});
+  };
+  mk(dtsH,'chipsHoje','');
+  mk(dtsA,'chipsAmanha',' old');
+  setStep(2);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PASSO 3 — ZLES002 (CSV com ; como separador)
+
+   O SAP exporta CSV no padrão europeu com ponto-e-vírgula.
+   Identificamos TRANSFERÊNCIA lendo a coluna
+   "Descrição de Documento" que contém "Venda Normal" ou
+   "Transferência" diretamente — muito mais confiável que
+   o "Setor de atividade" que é "BC" para tudo.
+═══════════════════════════════════════════════════════════ */
+function processZles(file){
+  if(!file)return;
+  showInf('Lendo ZLES002…');
+  document.getElementById('dz2l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
+  file.arrayBuffer().then(buf=>{
+    const dbg=document.getElementById('dbgZles');
+    dbg.textContent='';dbg.classList.add('show');
+    try{
+      const text=decodeBuf(buf);
+      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      if(!lines.length)throw new Error('Arquivo vazio.');
+      const L0=lines[0];
+      const sep=(L0.match(/;/g)||[]).length>=(L0.match(/\t/g)||[]).length?';':'\t';
+      dbg.textContent+=`Separador: "${sep===';'?'ponto-e-vírgula':'tab'}"\n`;
+      const strip=s=>s.trim().replace(/^"|"$/g,'');
+      const h=L0.split(sep).map(strip);
+      const fi=(...ts)=>{for(const t of ts){const i=h.findIndex(v=>v.toUpperCase().includes(t.toUpperCase()));if(i!==-1)return i;}return -1;};
+      const iNT  =fi('NR. REMESSA','REMESSA','RECEBIMENTO');
+      const iMat =fi('MATERIAL');
+      const iQtd =fi('QTDE REMESSA','QTD REMESSA');
+      const iDesc=fi('DESCRI'); // "Descrição de Documento"
+      dbg.textContent+=`Col Remessa[${iNT}]: ${iNT>=0?h[iNT]:'NÃO ACHADA'}\n`;
+      dbg.textContent+=`Col Material[${iMat}]: ${iMat>=0?h[iMat]:'NÃO ACHADA'}\n`;
+      dbg.textContent+=`Col Qtd[${iQtd}]: ${iQtd>=0?h[iQtd]:'NÃO ACHADA'}\n`;
+      dbg.textContent+=`Col Descrição[${iDesc}]: ${iDesc>=0?h[iDesc]:'NÃO ACHADA'}\n`;
+      if(iNT===-1)throw new Error('Coluna de Remessa não encontrada!\nColunas: '+h.join(' | '));
+      exportMap={};tipoOpMap={};let cnt=0;
+      for(let i=1;i<lines.length;i++){
+        const c=lines[i].split(sep).map(strip);
+        if(c.every(v=>!v))continue;
+        const nt=c[iNT]?.trim()||'';
+        const mat=c[iMat]?.trim()||'';
+        const qtd=c[iQtd]?.trim()||'';
+        if(!nt)continue;
+        cnt++;
+        if(!tipoOpMap[nt]){
+          const desc=(iDesc!==-1?c[iDesc]:'').toUpperCase();
+          tipoOpMap[nt]=(desc.includes('TRANSFER')||desc.includes('FILIAL')||desc.includes('INTERCOMP'))
+            ?'TRANSFERÊNCIA':'VENDA NORMAL';
+        }
+        if(mat){
+          if(!exportMap[nt])exportMap[nt]=[];
+          if(!exportMap[nt].some(m=>m.material===mat))exportMap[nt].push({material:mat,quantidade:qtd});
+        }
+      }
+      dbg.textContent+=`\nLinhas: ${cnt} | DTs: ${Object.keys(exportMap).length}\n`;
+      dbg.textContent+=`Tipos: ${[...new Set(Object.values(tipoOpMap))].join(', ')}\n`;
+      hideInf();
+      showOk('ZLES002 OK: '+Object.keys(exportMap).length+' DTs carregadas.');
+      setStep(4);
+    }catch(e){hideInf();dbg.textContent+='\n❌ ERRO: '+e.message;showErr('Erro ZLES002: '+e.message);}
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PASSO 4 — PLANILHA EXTRA XLSX
+
+   POR QUE OS NÚMEROS VINHAM COMO 23156331.0:
+   O Excel armazena inteiros como float internamente.
+   O SheetJS lê como número JS: 23156331.0
+   Convertemos com Math.round() antes de comparar com
+   o número da DT que vem como string do agendamento.
+═══════════════════════════════════════════════════════════ */
+function processExtra(file){
+  if(!file)return;
+  showInf('Lendo planilha extra…');
+  document.getElementById('dz3l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
+  const dbg=document.getElementById('dbgExtra');
+  dbg.textContent='';dbg.classList.add('show');
+  file.arrayBuffer().then(buf=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!rows.length)throw new Error('Planilha vazia.');
+      const keys=Object.keys(rows[0]);
+      dbg.textContent='Colunas: '+keys.join(' | ')+'\n';
+      const fc=(...ts)=>{for(const t of ts){const k=keys.find(k=>k.toUpperCase().includes(t.toUpperCase()));if(k)return k;}return null;};
+      const kDT =fc('Nº TRANSPORTE','N TRANSPORTE','TRANSPORTE');
+      const kMat=fc('MATERIAL');
+      const kQtd=fc('QTDE REMESSA','QTD REMESSA','QTDE');
+      dbg.textContent+=`Col DT: ${kDT||'NÃO ACHADA'} | Mat: ${kMat||'NÃO ACHADA'} | Qtd: ${kQtd||'NÃO ACHADA'}\n`;
+      if(!kDT||!kMat)throw new Error('Colunas "Nº transporte" e "Material" são obrigatórias.\nEncontradas: '+keys.join(', '));
+      let cnt=0;
+      for(const row of rows){
+        // float → inteiro → string: 23156331.0 → 23156331 → "23156331"
+        const rawDT=row[kDT];
+        const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
+        const rawMat=row[kMat];
+        const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
+        const qtd=kQtd?String(row[kQtd]||''):'';
+        if(!dt||!mat||dt==='NaN'||mat==='NaN')continue;
+        cnt++;
+        if(!exportMap[dt])exportMap[dt]=[];
+        if(!exportMap[dt].some(m=>m.material===mat))exportMap[dt].push({material:mat,quantidade:qtd});
+      }
+      dbg.textContent+=`Linhas mescladas: ${cnt} | Total DTs com materiais: ${Object.keys(exportMap).length}\n`;
+      const amostra=Object.keys(exportMap).slice(0,3);
+      amostra.forEach(dt=>{dbg.textContent+=`  DT ${dt}: ${exportMap[dt].slice(0,4).map(m=>m.material).join(', ')}${exportMap[dt].length>4?'…':''}\n`;});
+      hideInf();
+      showOk('Planilha extra OK: '+cnt+' linhas mescladas em '+Object.keys(exportMap).length+' DTs.');
+      buildTable();
+    }catch(e){hideInf();dbg.textContent+='\n❌ ERRO: '+e.message;showErr('Erro planilha extra: '+e.message);}
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PASSO 5 — UPSERT + TABELA
+═══════════════════════════════════════════════════════════ */
+async function buildTable(){
+  showInf('Sincronizando com o banco…');
+  const T=today(),AM=tomorrow();
+  try{
+    const existing=await sbGet('reporte_carga',
+      `data_ref=in.(${encodeURIComponent(dKey(T))},${encodeURIComponent(dKey(AM))})&select=dt,data_ref,status,hora_chegada,tipo_operacao`
+    );
+    const exMap={};
+    (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
+
+    const rows=dtsMescladas.map(dt=>{
+      const ref=dKey(dt.AGENDA||T);
+      const ex=exMap[dt.DT+'_'+ref]||{};
+      const diaRef=sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ';
+      const tipoOp=tipoOpMap[dt.DT]||ex.tipo_operacao||'';
+      return {
+        dt:String(dt.DT),
+        transportadora:String(dt.TRANSPORTADORA||''),
+        grade_carregamento:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
+        fim_carregamento:String(dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):''),
+        hora_chegada:String(ex.hora_chegada||''),
+        status:String(ex.status||'AG CHEGADA'),
+        tipo:String(dt.TIPO||''),
+        toneladas:String(dt.PESO||''),
+        agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
+        local_cd:String(dt.LOCAL||''),
+        dia_ref:diaRef,
+        data_ref:String(ref),
+        tipo_operacao:String(tipoOp),
+      };
+    });
+
+    await sbUpsert('reporte_carga',rows);
+    hideInf();
+    await reloadTable();
+    setStep(5);
+  }catch(e){
+    hideInf();
+    showErr('Erro banco (tabela ainda aparece): '+e.message);
+    // Mostra tabela com dados locais mesmo com erro de banco
+    tableData=dtsMescladas.map(dt=>({
+      dt:dt.DT,transportadora:dt.TRANSPORTADORA,
+      grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
+      fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
+      hora_chegada:'',status:'AG CHEGADA',tipo:dt.TIPO,toneladas:dt.PESO,
+      agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
+      dia_ref:sameDay(dt.AGENDA,today())?'HOJE':'AMANHÃ',
+      data_ref:dKey(dt.AGENDA||today()),
+      tipo_operacao:tipoOpMap[dt.DT]||'',
+    }));
+    renderRows();
+    setStep(5);
+  }
+}
+
+async function reloadTable(){
+  const T=today(),AM=tomorrow();
+  try{
+    const data=await sbGet('reporte_carga',
+      `data_ref=in.(${encodeURIComponent(dKey(T))},${encodeURIComponent(dKey(AM))})&order=dia_ref.asc,agenda.asc`
+    );
+    tableData=(data||[]).sort((a,b)=>{
+      if(a.dia_ref===b.dia_ref)return(a.agenda||'').localeCompare(b.agenda||'');
+      return a.dia_ref==='HOJE'?-1:1;
+    });
+    renderRows();
+  }catch(e){showErr('Erro ao carregar tabela: '+e.message);}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDERIZAR
+═══════════════════════════════════════════════════════════ */
+function renderRows(){
+  const sum={};
+  tableData.forEach(r=>{sum[r.status]=(sum[r.status]||0)+1;});
+  const sw=document.getElementById('tstatus');sw.innerHTML='';
+  Object.entries(sum).forEach(([s,n])=>{
+    const c=SC[s]||'#334155';
+    const sp=document.createElement('span');sp.className='sbadge';
+    sp.style.cssText=`background:${c}22;border:1px solid ${c}55;color:${c}`;
+    sp.textContent=s+': '+n;sw.appendChild(sp);
+  });
+  const cH=tableData.filter(r=>r.dia_ref==='HOJE').length;
+  const cA=tableData.filter(r=>r.dia_ref==='AMANHÃ').length;
+  document.getElementById('tinfo').innerHTML=
+    `<span style="color:#60a5fa">${cH} hoje</span> · <span style="color:#a78bfa">${cA} amanhã</span>`;
+
+  const tbody=document.getElementById('tbody');tbody.innerHTML='';
+  tableData.forEach(row=>{
+    const isH=row.dia_ref==='HOJE';
+    const c=SC[row.status]||'#334155';
+    const tr=document.createElement('tr');
+    tr.className=isH?'row-hoje':'row-amanha';
+    const op=(row.tipo_operacao||'').toUpperCase();
+    const opTag=op.includes('TRANSFER')
+      ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
+      :op.includes('VENDA')
+      ?'<span class="tag-venda">🛒 VENDA NORMAL</span>'
+      :'<span class="tag-sem">—</span>';
+    const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
+    tr.innerHTML=
+      `<td>${diaTag}</td>`+
+      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span></td>`+
+      `<td class="td-transp">${row.transportadora||'—'}</td>`+
+      `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
+      `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
+      `<td><input type="time" value="${row.hora_chegada||''}" onchange="save('${row.dt}','${row.data_ref}','hora_chegada',this.value)"/></td>`+
+      `<td><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="save('${row.dt}','${row.data_ref}','status',this.value)">`+
+        STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
+      `</select></td>`+
+      `<td class="td-sm">${row.tipo||'—'}</td>`+
+      `<td class="td-sm">${row.toneladas||'—'}</td>`+
+      `<td>${opTag}</td>`+
+      `<td class="td-ag">${row.agenda||'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SALVAR CAMPO
+═══════════════════════════════════════════════════════════ */
+async function save(dt,dataRef,field,value){
+  spin(true);
+  try{
+    await sbPatch('reporte_carga',{[field]:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
+    const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
+    if(row){row[field]=value;renderRows();}
+  }catch(e){showErr('Erro ao salvar: '+e.message);}
+  spin(false);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PAINEL — MAPA DE SEPARAÇÃO
+═══════════════════════════════════════════════════════════ */
+async function openPanel(dt,dataRef){
+  panelDT={dt,dataRef};
+  const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef)||{};
+  document.getElementById('ptitle').textContent='📦  DT '+dt;
+  const op=(row.tipo_operacao||'').toUpperCase();
+  const opBadge=op.includes('TRANSFER')
+    ?'<span class="tag-transf" style="padding:3px 10px;font-size:11px;">🔄 TRANSFERÊNCIA</span>'
+    :op.includes('VENDA')
+    ?'<span class="tag-venda"  style="padding:3px 10px;font-size:11px;">🛒 VENDA NORMAL</span>'
+    :'';
+  document.getElementById('pdt-info').innerHTML=
+    `<b style="color:#93c5fd;font-size:15px">${dt}</b>  ${opBadge}<br/>`+
+    `<span style="color:#64748b">Transportadora:</span> <b style="color:#e2e8f0">${row.transportadora||'—'}</b><br/>`+
+    `<span style="color:#64748b">Grade:</span> <b style="color:#a5b4fc">${row.grade_carregamento||'—'}</b>  →  <b style="color:#a5b4fc">${row.fim_carregamento||'—'}</b>`;
+
+  // Busca materiais salvos no banco
+  let listaMats=[];
+  try{
+    const saved=await sbGet('reporte_materiais',
+      `dt=eq.${encodeURIComponent(dt)}&data_ref=eq.${encodeURIComponent(dataRef)}&order=ordem.asc`
+    );
+    listaMats=saved||[];
+  }catch(e){/*ignora*/}
+
+  // Se não há materiais no banco, pré-preenche com exportMap (ZLES002 + planilha extra)
+  if(!listaMats.length&&exportMap[dt]?.length){
+    listaMats=exportMap[dt].map((m,i)=>({material:m.material,quantidade:m.quantidade,ordem:i}));
+  }
+
+  document.getElementById('pobs').value='';
+  renderMatList(listaMats);
+  document.getElementById('panel-overlay').style.display='block';
+  document.getElementById('panel').classList.add('open');
+}
+
+function closePanel(){
+  document.getElementById('panel-overlay').style.display='none';
+  document.getElementById('panel').classList.remove('open');
+  panelDT=null;
+}
+
+function renderMatList(mats){
+  const list=document.getElementById('mat-list');list.innerHTML='';
+  (mats||[]).forEach(m=>{
+    const row=document.createElement('div');row.className='mat-row';
+    row.innerHTML=
+      `<input class="mat-input" placeholder="Material" value="${m.material||''}" data-f="material"/>`+
+      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade"/>`+
+      `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
+    list.appendChild(row);
+  });
+}
+
+function addMatRow(){
+  const row=document.createElement('div');row.className='mat-row';
+  row.innerHTML=
+    `<input class="mat-input" placeholder="Material" data-f="material"/>`+
+    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade"/>`+
+    `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
+  document.getElementById('mat-list').appendChild(row);
+  row.querySelector('input').focus();
+}
+
+async function saveMateriais(){
+  if(!panelDT)return;
+  const {dt,dataRef}=panelDT;
+  const rows=[...document.getElementById('mat-list').querySelectorAll('.mat-row')];
+  const mats=rows.map((r,i)=>({
+    dt,data_ref:dataRef,
+    material:r.querySelector('[data-f=material]').value.trim(),
+    quantidade:r.querySelector('[data-f=quantidade]').value.trim(),
+    observacao:document.getElementById('pobs').value.trim(),
+    ordem:i
+  })).filter(m=>m.material);
+  spin(true);
+  try{
+    await sbDelete('reporte_materiais',{dt,data_ref:dataRef});
+    if(mats.length)await sbInsert('reporte_materiais',mats);
+    showOk('Materiais da DT '+dt+' salvos!');
+    closePanel();
+  }catch(e){showErr('Erro ao salvar materiais: '+e.message);}
+  spin(false);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CARREGAR AO ABRIR
+═══════════════════════════════════════════════════════════ */
+async function tryLoadExisting(){
+  const T=today(),AM=tomorrow();
+  try{
+    const data=await sbGet('reporte_carga',
+      `data_ref=in.(${encodeURIComponent(dKey(T))},${encodeURIComponent(dKey(AM))})&order=dia_ref.asc,agenda.asc`
+    );
+    if(data&&data.length){
+      tableData=data.sort((a,b)=>{
+        if(a.dia_ref===b.dia_ref)return(a.agenda||'').localeCompare(b.agenda||'');
+        return a.dia_ref==='HOJE'?-1:1;
+      });
+      renderRows();
+      setStep(5);
+      showOk('Tabela carregada do banco. Suba o agendamento para atualizar.');
+    }
+  }catch(e){/*sem dados, fica no passo 1*/}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DRAG & DROP
+═══════════════════════════════════════════════════════════ */
+['dz1','dz2','dz3'].forEach(id=>{
+  const el=document.getElementById(id);if(!el)return;
+  el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drag');});
+  el.addEventListener('dragleave',()=>el.classList.remove('drag'));
+  el.addEventListener('drop',e=>{
+    e.preventDefault();el.classList.remove('drag');
+    const f=e.dataTransfer.files[0];if(!f)return;
+    if(id==='dz1')processAgend(f);
+    else if(id==='dz2')processZles(f);
+    else processExtra(f);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════
+   EXPORT CSV
+═══════════════════════════════════════════════════════════ */
+function exportCSV(){
+  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','TIPO VEÍ.','TONELADAS','OPERAÇÃO','AGENDA'];
+  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.tipo,r.toneladas,r.tipo_operacao||'',r.agenda]);
+  const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
+  a.click();
+}
+</script>
+</body>
+</html>
