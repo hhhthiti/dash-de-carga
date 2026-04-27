@@ -150,16 +150,42 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
     <div class="ch"><span>📦</span><span class="ct">PASSO 3 — EXPORT SAP / ZLES002 (OPCIONAL)</span></div>
     <div class="cb">
       <p class="desc">
-        Suba o export da <b style="color:#f59e0b">ZLES002</b> (CSV separado por <b style="color:#60a5fa">ponto-e-vírgula</b>).<br/>
-        Colunas lidas: <b style="color:#60a5fa">Nr. Remessa/Recebimento</b> · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b> · <b style="color:#a78bfa">Descrição de Documento</b>.<br/>
-        A coluna <b style="color:#a78bfa">Descrição de Documento</b> define se é
-        <span class="tag-venda">🛒 VENDA NORMAL</span> ou <span class="tag-transf">🔄 TRANSFERÊNCIA</span>.
+        Carregue os dados da <b style="color:#f59e0b">ZLES002</b> — escolha uma das opções abaixo.<br/>
+        O sistema lê: coluna <b style="color:#60a5fa">G</b> = DT · coluna <b style="color:#60a5fa">J</b> = Tipo (Venda/Transf.) · coluna <b style="color:#60a5fa">L</b> = Material · coluna <b style="color:#60a5fa">M</b> = Quantidade.
       </p>
-      <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
-        <div class="dz-icon">📂</div>
-        <div class="dz-label" id="dz2l">Arraste o arquivo ZLES002 aqui (CSV)</div>
+
+      <!-- Abas de escolha -->
+      <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid #334155;border-radius:8px;overflow:hidden;">
+        <button id="tab-file" onclick="switchTab('file')"
+          style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#3b82f6;color:#fff;border:none;cursor:pointer;">
+          📂 Subir arquivo CSV
+        </button>
+        <button id="tab-paste" onclick="switchTab('paste')"
+          style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#1e293b;color:#94a3b8;border:none;cursor:pointer;border-left:1px solid #334155;">
+          📋 Colar do SAP
+        </button>
       </div>
-      <input type="file" id="f2" accept=".csv,.txt,.tsv" style="display:none" onchange="processZles(this.files[0])"/>
+
+      <!-- Opção 1: arquivo -->
+      <div id="tab-file-body">
+        <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
+          <div class="dz-icon">📂</div>
+          <div class="dz-label" id="dz2l">Arraste o arquivo ZLES002 aqui (CSV separado por ponto-e-vírgula)</div>
+        </div>
+        <input type="file" id="f2" accept=".csv,.txt,.tsv" style="display:none" onchange="processZles(this.files[0])"/>
+      </div>
+
+      <!-- Opção 2: colar texto -->
+      <div id="tab-paste-body" style="display:none;">
+        <p style="font-size:12px;color:#64748b;margin-bottom:8px;">
+          No SAP, selecione todas as linhas da ZLES002 (Ctrl+A), copie (Ctrl+C) e cole aqui abaixo (Ctrl+V):
+        </p>
+        <textarea id="zles-paste"
+          style="width:100%;height:160px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:10px;font-size:12px;font-family:monospace;resize:vertical;"
+          placeholder="Cole aqui o conteúdo copiado do SAP..."></textarea>
+        <button class="bp" style="margin-top:8px;width:100%;" onclick="processZlesPaste()">▶ Processar texto colado</button>
+      </div>
+
       <div id="dbgZles" class="debug-box"></div>
       <div style="margin-top:12px;">
         <button class="bg" onclick="setStep(4)">Pular → ir para planilha extra</button>
@@ -259,7 +285,7 @@ const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 
 async function sbGet(table, qs=''){
-  const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:{...HDR,'Prefer':''}});
+  const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
   if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
   return r.json();
 }
@@ -275,12 +301,15 @@ async function sbUpsert(table, rows){
   }
 }
 async function sbPatch(table, data, filters){
-  const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${encodeURIComponent(v)}`).join('&');
+  // Valores com / (como datas pt-BR) precisam de aspas na query REST do Supabase
+  const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${v.includes('/')?'"'+v+'"':encodeURIComponent(v)}`).join('&');
   const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
   if(!r.ok) throw new Error(`PATCH ${table}: `+await r.text());
 }
 async function sbDelete(table, filters){
-  const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${encodeURIComponent(v)}`).join('&');
+  const q=Object.entries(filters).map(([k,v])=>{
+    const vs=String(v); return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
+  }).join('&');
   const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
   if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
 }
@@ -414,66 +443,156 @@ function renderStep2(){
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PASSO 3 — ZLES002 (CSV com ; como separador)
+   PASSO 3 — ZLES002
 
-   O SAP exporta CSV no padrão europeu com ponto-e-vírgula.
-   Identificamos TRANSFERÊNCIA lendo a coluna
-   "Descrição de Documento" que contém "Venda Normal" ou
-   "Transferência" diretamente — muito mais confiável que
-   o "Setor de atividade" que é "BC" para tudo.
+   Mapeamento REAL das colunas (confirmado no arquivo):
+   Col G (índice 6)  = Número da DT  ← cabeçalho é ";" mas contém o número
+   Col J (índice 9)  = Descrição de Documento ("Venda Normal" / "Transferência")
+   Col L (índice 11) = Material (código do produto, ex: 20104410)
+   Col M (índice 12) = Qtde Remessa (quantidade em fardos)
+   Col P (índice 15) = Nr. Remessa/Recebimento (número da remessa SAP — diferente da DT)
+
+   O separador é ponto-e-vírgula (;) pois é padrão europeu do SAP.
 ═══════════════════════════════════════════════════════════ */
+
+function switchTab(tab){
+  const isFile = tab==='file';
+  document.getElementById('tab-file-body').style.display  = isFile?'block':'none';
+  document.getElementById('tab-paste-body').style.display = isFile?'none':'block';
+  document.getElementById('tab-file').style.background  = isFile?'#3b82f6':'#1e293b';
+  document.getElementById('tab-file').style.color       = isFile?'#fff':'#94a3b8';
+  document.getElementById('tab-paste').style.background = isFile?'#1e293b':'#3b82f6';
+  document.getElementById('tab-paste').style.color      = isFile?'#94a3b8':'#fff';
+}
+
 function processZles(file){
   if(!file)return;
   showInf('Lendo ZLES002…');
   document.getElementById('dz2l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
   file.arrayBuffer().then(buf=>{
-    const dbg=document.getElementById('dbgZles');
-    dbg.textContent='';dbg.classList.add('show');
-    try{
-      const text=decodeBuf(buf);
-      const lines=text.split(/\r?\n/).filter(l=>l.trim());
-      if(!lines.length)throw new Error('Arquivo vazio.');
-      const L0=lines[0];
-      const sep=(L0.match(/;/g)||[]).length>=(L0.match(/\t/g)||[]).length?';':'\t';
-      dbg.textContent+=`Separador: "${sep===';'?'ponto-e-vírgula':'tab'}"\n`;
-      const strip=s=>s.trim().replace(/^"|"$/g,'');
-      const h=L0.split(sep).map(strip);
-      const fi=(...ts)=>{for(const t of ts){const i=h.findIndex(v=>v.toUpperCase().includes(t.toUpperCase()));if(i!==-1)return i;}return -1;};
-      const iNT  =fi('NR. REMESSA','REMESSA','RECEBIMENTO');
-      const iMat =fi('MATERIAL');
-      const iQtd =fi('QTDE REMESSA','QTD REMESSA');
-      const iDesc=fi('DESCRI'); // "Descrição de Documento"
-      dbg.textContent+=`Col Remessa[${iNT}]: ${iNT>=0?h[iNT]:'NÃO ACHADA'}\n`;
-      dbg.textContent+=`Col Material[${iMat}]: ${iMat>=0?h[iMat]:'NÃO ACHADA'}\n`;
-      dbg.textContent+=`Col Qtd[${iQtd}]: ${iQtd>=0?h[iQtd]:'NÃO ACHADA'}\n`;
-      dbg.textContent+=`Col Descrição[${iDesc}]: ${iDesc>=0?h[iDesc]:'NÃO ACHADA'}\n`;
-      if(iNT===-1)throw new Error('Coluna de Remessa não encontrada!\nColunas: '+h.join(' | '));
-      exportMap={};tipoOpMap={};let cnt=0;
-      for(let i=1;i<lines.length;i++){
-        const c=lines[i].split(sep).map(strip);
-        if(c.every(v=>!v))continue;
-        const nt=c[iNT]?.trim()||'';
-        const mat=c[iMat]?.trim()||'';
-        const qtd=c[iQtd]?.trim()||'';
-        if(!nt)continue;
-        cnt++;
-        if(!tipoOpMap[nt]){
-          const desc=(iDesc!==-1?c[iDesc]:'').toUpperCase();
-          tipoOpMap[nt]=(desc.includes('TRANSFER')||desc.includes('FILIAL')||desc.includes('INTERCOMP'))
-            ?'TRANSFERÊNCIA':'VENDA NORMAL';
-        }
-        if(mat){
-          if(!exportMap[nt])exportMap[nt]=[];
-          if(!exportMap[nt].some(m=>m.material===mat))exportMap[nt].push({material:mat,quantidade:qtd});
-        }
-      }
-      dbg.textContent+=`\nLinhas: ${cnt} | DTs: ${Object.keys(exportMap).length}\n`;
-      dbg.textContent+=`Tipos: ${[...new Set(Object.values(tipoOpMap))].join(', ')}\n`;
-      hideInf();
-      showOk('ZLES002 OK: '+Object.keys(exportMap).length+' DTs carregadas.');
-      setStep(4);
-    }catch(e){hideInf();dbg.textContent+='\n❌ ERRO: '+e.message;showErr('Erro ZLES002: '+e.message);}
+    const text=decodeBuf(buf);
+    parseZlesText(text);
   });
+}
+
+// Colar do SAP: o usuário copia e cola direto no textarea
+function processZlesPaste(){
+  const text=document.getElementById('zles-paste').value.trim();
+  if(!text){showErr('Cole o conteúdo do SAP no campo de texto primeiro.');return;}
+  showInf('Processando texto colado…');
+  setTimeout(()=>parseZlesText(text),50);
+}
+
+// Lógica central — usada tanto pelo arquivo quanto pelo paste
+function parseZlesText(text){
+  const dbg=document.getElementById('dbgZles');
+  dbg.textContent='';dbg.classList.add('show');
+  try{
+    const lines=text.split(/\r?\n/).filter(l=>l.trim());
+    if(!lines.length)throw new Error('Conteúdo vazio.');
+
+    // Detecta separador: ; ou tab
+    const L0=lines[0];
+    const sep=(L0.match(/;/g)||[]).length>=(L0.match(/\t/g)||[]).length?';':'\t';
+    dbg.textContent+=`Separador: "${sep===';'?'ponto-e-vírgula (;)':'tab (\\t)'}"\n`;
+    dbg.textContent+=`Total de linhas: ${lines.length}\n`;
+
+    const strip=s=>(s||'').trim().replace(/^"|"$/g,'');
+
+    // Lê cabeçalho para confirmar posições
+    const h=lines[0].split(sep).map(strip);
+    dbg.textContent+=`Colunas (${h.length}): ${h.slice(0,10).join(' | ')}…\n`;
+
+    // Índices fixos confirmados pelo arquivo real:
+    // G=6 (DT), J=9 (Descrição), L=11 (Material), M=12 (Qtde)
+    // Mas também tentamos achar por nome caso o layout mude
+    const findIdx=(...termos)=>{
+      for(const t of termos){
+        const i=h.findIndex(v=>v.toUpperCase().includes(t.toUpperCase()));
+        if(i!==-1)return i;
+      }
+      return -1;
+    };
+
+    // Coluna G (índice 6) tem cabeçalho ";" no seu arquivo — busca por posição fixa
+    // mas valida: se a 1ª linha de dados na posição 6 parecer um número de DT (~8 dígitos), usa
+    let iDT = 6; // padrão confirmado
+    const iDesc = findIdx('DESCRI') !== -1 ? findIdx('DESCRI') : 9;
+    const iMat  = findIdx('MATERIAL') !== -1 ? findIdx('MATERIAL') : 11;
+    const iQtd  = findIdx('QTDE REMESSA','QTD REMESSA') !== -1 ? findIdx('QTDE REMESSA','QTD REMESSA') : 12;
+
+    // Verifica se a posição 6 realmente tem número de DT na primeira linha de dados
+    if(lines.length>1){
+      const primeiraLinha=lines[1].split(sep).map(strip);
+      const valG=(primeiraLinha[6]||'').replace(/\D/g,'');
+      if(valG.length<5){
+        // Posição 6 não parece DT — tenta achar por nome alternativo
+        const alt=findIdx('NR. TRANSPORTE','TRANSPORTE','ENTREGA');
+        if(alt!==-1)iDT=alt;
+      }
+    }
+
+    dbg.textContent+=`Usando: DT=col${iDT} | Descrição=col${iDesc} | Material=col${iMat} | Qtd=col${iQtd}\n`;
+
+    exportMap={};tipoOpMap={};
+    let linhasOk=0, linhasIgnoradas=0;
+
+    for(let i=1;i<lines.length;i++){
+      const c=lines[i].split(sep).map(strip);
+      if(c.every(v=>!v)){linhasIgnoradas++;continue;}
+
+      // DT: remove decimais (.0) e espaços
+      const dtRaw=(c[iDT]||'').replace(/\.0+$/,'').trim();
+      const dt=dtRaw.replace(/\D/g,''); // só dígitos
+      if(!dt||dt.length<5){linhasIgnoradas++;continue;}
+
+      // Material: código numérico, remove .0
+      const matRaw=(c[iMat]||'').replace(/\.0+$/,'').trim();
+      const mat=matRaw.replace(/\D/g,''); // só dígitos
+
+      // Quantidade: número inteiro
+      const qtdRaw=(c[iQtd]||'').replace(/\./g,'').replace(',','.').trim();
+      const qtd=qtdRaw?String(Math.round(Number(qtdRaw)||0)):'';
+
+      // Tipo de operação: lê Descrição de Documento
+      if(!tipoOpMap[dt]){
+        const desc=(c[iDesc]||'').toUpperCase();
+        tipoOpMap[dt]=(
+          desc.includes('TRANSFER') ||
+          desc.includes('FILIAL')   ||
+          desc.includes('INTERCOMP')||
+          desc.includes('REMESSA P/')
+        ) ? 'TRANSFERÊNCIA' : 'VENDA NORMAL';
+      }
+
+      if(mat){
+        if(!exportMap[dt])exportMap[dt]=[];
+        if(!exportMap[dt].some(m=>m.material===mat))
+          exportMap[dt].push({material:mat, quantidade:qtd});
+      }
+      linhasOk++;
+    }
+
+    const totalDTs=Object.keys(exportMap).length;
+    const tipos=[...new Set(Object.values(tipoOpMap))];
+    dbg.textContent+=`\n✅ Linhas processadas: ${linhasOk} | Ignoradas: ${linhasIgnoradas}\n`;
+    dbg.textContent+=`DTs com materiais: ${totalDTs}\n`;
+    dbg.textContent+=`Tipos encontrados: ${tipos.join(', ')}\n`;
+    // Mostra amostra das 3 primeiras DTs
+    Object.keys(exportMap).slice(0,3).forEach(dt=>{
+      const mats=exportMap[dt].slice(0,4).map(m=>`${m.material}(${m.quantidade})`).join(', ');
+      dbg.textContent+=`  DT ${dt}: ${mats}${exportMap[dt].length>4?'…':''}\n`;
+    });
+
+    hideInf();
+    showOk(`ZLES002 OK — ${totalDTs} DTs · ${linhasOk} linhas · tipos: ${tipos.join(', ')}`);
+    setStep(4);
+
+  }catch(e){
+    hideInf();
+    dbg.textContent+='\n❌ ERRO: '+e.message;
+    showErr('Erro ZLES002: '+e.message);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -534,9 +653,11 @@ function processExtra(file){
 async function buildTable(){
   showInf('Sincronizando com o banco…');
   const T=today(),AM=tomorrow();
+  const kT=dKey(T), kAM=dKey(AM);
   try{
+    // Supabase REST: datas com "/" precisam de aspas dentro do in()
     const existing=await sbGet('reporte_carga',
-      `data_ref=in.(${encodeURIComponent(dKey(T))},${encodeURIComponent(dKey(AM))})&select=dt,data_ref,status,hora_chegada,tipo_operacao`
+      `data_ref=in.("${kT}","${kAM}")&select=dt,data_ref,status,hora_chegada,tipo_operacao`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
@@ -570,15 +691,15 @@ async function buildTable(){
   }catch(e){
     hideInf();
     showErr('Erro banco (tabela ainda aparece): '+e.message);
-    // Mostra tabela com dados locais mesmo com erro de banco
+    // Fallback: mostra dados locais mesmo sem banco
     tableData=dtsMescladas.map(dt=>({
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
       hora_chegada:'',status:'AG CHEGADA',tipo:dt.TIPO,toneladas:dt.PESO,
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
-      dia_ref:sameDay(dt.AGENDA,today())?'HOJE':'AMANHÃ',
-      data_ref:dKey(dt.AGENDA||today()),
+      dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ',
+      data_ref:dKey(dt.AGENDA||T),
       tipo_operacao:tipoOpMap[dt.DT]||'',
     }));
     renderRows();
@@ -588,9 +709,10 @@ async function buildTable(){
 
 async function reloadTable(){
   const T=today(),AM=tomorrow();
+  const kT=dKey(T), kAM=dKey(AM);
   try{
     const data=await sbGet('reporte_carga',
-      `data_ref=in.(${encodeURIComponent(dKey(T))},${encodeURIComponent(dKey(AM))})&order=dia_ref.asc,agenda.asc`
+      `data_ref=in.("${kT}","${kAM}")&order=dia_ref.asc,agenda.asc`
     );
     tableData=(data||[]).sort((a,b)=>{
       if(a.dia_ref===b.dia_ref)return(a.agenda||'').localeCompare(b.agenda||'');
@@ -684,14 +806,17 @@ async function openPanel(dt,dataRef){
   let listaMats=[];
   try{
     const saved=await sbGet('reporte_materiais',
-      `dt=eq.${encodeURIComponent(dt)}&data_ref=eq.${encodeURIComponent(dataRef)}&order=ordem.asc`
+      `dt=eq.${dt}&data_ref=eq."${dataRef}"&order=ordem.asc`
     );
     listaMats=saved||[];
-  }catch(e){/*ignora*/}
+  }catch(e){/*ignora erro, usa exportMap*/}
 
   // Se não há materiais no banco, pré-preenche com exportMap (ZLES002 + planilha extra)
-  if(!listaMats.length&&exportMap[dt]?.length){
-    listaMats=exportMap[dt].map((m,i)=>({material:m.material,quantidade:m.quantidade,ordem:i}));
+  // Nota: o número da DT no exportMap foi normalizado para string sem .0
+  if(!listaMats.length){
+    const dtKey=String(dt);  // garante que é string para buscar no mapa
+    const mapa=exportMap[dtKey]||[];
+    listaMats=mapa.map((m,i)=>({material:String(m.material),quantidade:String(m.quantidade),ordem:i}));
   }
 
   document.getElementById('pobs').value='';
@@ -754,9 +879,10 @@ async function saveMateriais(){
 ═══════════════════════════════════════════════════════════ */
 async function tryLoadExisting(){
   const T=today(),AM=tomorrow();
+  const kT=dKey(T), kAM=dKey(AM);
   try{
     const data=await sbGet('reporte_carga',
-      `data_ref=in.(${encodeURIComponent(dKey(T))},${encodeURIComponent(dKey(AM))})&order=dia_ref.asc,agenda.asc`
+      `data_ref=in.("${kT}","${kAM}")&order=dia_ref.asc,agenda.asc`
     );
     if(data&&data.length){
       tableData=data.sort((a,b)=>{
