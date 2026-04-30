@@ -496,6 +496,14 @@ function parseBR(s){
   return m?new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)):null;
 }
 
+function parseAgendaDateTime(row){
+  const grade=parseBR(row.grade_carregamento||'');
+  if(grade) return grade;
+  const agenda=parseBR(row.agenda||'');
+  if(agenda) return agenda;
+  return new Date(9999,0,1);
+}
+
 /* ═══════════════════════════════════════════════════════
    DECODE BUFFER
 ═══════════════════════════════════════════════════════ */
@@ -661,6 +669,7 @@ function parseZlesText(text){
       return -1;
     };
     let iDT=6;
+    const iTipo=findIdx('TIPO','OPERAÇÃO','OPERACAO')!==-1?findIdx('TIPO','OPERAÇÃO','OPERACAO'):9;
     const iDesc=findIdx('DESCRI')!==-1?findIdx('DESCRI'):9;
     const iMat =findIdx('MATERIAL')!==-1?findIdx('MATERIAL'):11;
     const iQtd =findIdx('QTDE REMESSA','QTD REMESSA')!==-1?findIdx('QTDE REMESSA','QTD REMESSA'):12;
@@ -672,7 +681,7 @@ function parseZlesText(text){
         if(alt!==-1)iDT=alt;
       }
     }
-    dbg.textContent+=`Usando: DT=col${iDT} | Descrição=col${iDesc} | Material=col${iMat} | Qtd=col${iQtd}\n`;
+    dbg.textContent+=`Usando: DT=col${iDT} | Tipo=col${iTipo} | Descrição=col${iDesc} | Material=col${iMat} | Qtd=col${iQtd}\n`;
     exportMap={};tipoOpMap={};
     let linhasOk=0,linhasIgnoradas=0;
     for(let i=1;i<lines.length;i++){
@@ -686,8 +695,8 @@ function parseZlesText(text){
       const qtdRaw=(c[iQtd]||'').replace(/\./g,'').replace(',','.').trim();
       const qtd=qtdRaw?String(Math.round(Number(qtdRaw)||0)):'';
       if(!tipoOpMap[dt]){
-        const desc=(c[iDesc]||'').toUpperCase();
-        tipoOpMap[dt]=(desc.includes('TRANSFER')||desc.includes('FILIAL')||desc.includes('INTERCOMP')||desc.includes('REMESSA P/'))?'TRANSFERÊNCIA':'VENDA NORMAL';
+        const tipoRaw=((c[iTipo]||'')+' '+(c[iDesc]||'')).toUpperCase();
+        tipoOpMap[dt]=(tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/'))?'TRANSFERÊNCIA':'VENDA NORMAL';
       }
       if(mat){
         if(!exportMap[dt])exportMap[dt]=[];
@@ -756,6 +765,27 @@ function processExtra(file){
   });
 }
 
+async function persistImportedMaterials(){
+  const dtsWithAgenda=new Map(dtsMescladas.map(r=>[String(r.DT), dKey(r.AGENDA||today())]));
+  const inserts=[];
+  for(const [dt,mats] of Object.entries(exportMap)){
+    const dataRef=dtsWithAgenda.get(String(dt));
+    if(!dataRef||!Array.isArray(mats)) continue;
+    mats.forEach((m,i)=>{
+      if(!m.material) return;
+      inserts.push({dt:String(dt),data_ref:String(dataRef),material:String(m.material),quantidade:String(m.quantidade||''),observacao:'',ordem:i});
+    });
+  }
+  if(!inserts.length) return 0;
+  const pares=[...new Set(inserts.map(m=>`${m.dt}__${m.data_ref}`))];
+  for(const p of pares){
+    const [dt,data_ref]=p.split('__');
+    await sbDelete('reporte_materiais',{dt,data_ref});
+  }
+  await sbInsert('reporte_materiais',inserts);
+  return pares.length;
+}
+
 /* ═══════════════════════════════════════════════════════
    BUILD TABLE — Upsert preservando status/hora_chegada
 ═══════════════════════════════════════════════════════ */
@@ -798,7 +828,9 @@ async function buildTable(){
     });
 
     await sbUpsert('reporte_carga',rows);
+    const importedCount=await persistImportedMaterials();
     hideInf();
+    if(importedCount>0) showOk('Materiais sincronizados automaticamente para '+importedCount+' DT(s).');
     await reloadTable();
     setStep(4);
   }catch(e){
@@ -828,9 +860,7 @@ async function reloadTable(){
       `data_ref=in.("${kT}","${kAM}")&order=dia_ref.asc,agenda.asc`
     );
     tableData=(data||[]).sort((a,b)=>{
-      const ga=parseBR(a.grade_carregamento)||new Date(9999,0);
-      const gb=parseBR(b.grade_carregamento)||new Date(9999,0);
-      return ga-gb;
+      return parseAgendaDateTime(a)-parseAgendaDateTime(b);
     });
     renderRows();
   }catch(e){showErr('Erro ao carregar tabela: '+e.message);}
@@ -875,11 +905,11 @@ function renderRows(){
     `<span style="color:#60a5fa">${cH} hoje</span> · <span style="color:#a78bfa">${cA} amanhã</span>`;
 
   // Filtro de aba
-  let rows=tableData;
+  let rows=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b));
   if(currentTableTab==='finalizadas'){
-    rows=tableData.filter(r=>STATUS_FINAIS.includes(r.status));
+    rows=rows.filter(r=>STATUS_FINAIS.includes(r.status));
   }else{
-    rows=tableData.filter(r=>!STATUS_FINAIS.includes(r.status));
+    rows=rows.filter(r=>!STATUS_FINAIS.includes(r.status));
   }
 
   const tbody=document.getElementById('tbody');tbody.innerHTML='';
