@@ -297,7 +297,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <thead><tr>
           <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th>
           <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th>
-          <th>STATUS</th><th>TIPO VEÍ.</th><th>TONELADAS</th>
+          <th>STATUS / OPERAÇÃO</th><th>TIPO VEÍ.</th><th>TONELADAS</th>
           <th>OPERAÇÃO</th><th>AGENDA</th><th>AÇÕES</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -863,12 +863,26 @@ async function buildTable(){
   }
 }
 
-async function reloadTable(){
+
+async function getActiveRefs(){
   const T=today(),AM=tomorrow();
-  const kT=dKey(T), kAM=dKey(AM);
+  const base=[dKey(T),dKey(AM)];
   try{
+    const todayRows=await sbGet('reporte_carga',`data_ref=in.("${base[0]}","${base[1]}")&select=dt&limit=1`);
+    if(todayRows&&todayRows.length) return base;
+    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=500');
+    const uniq=[];
+    (rec||[]).forEach(r=>{const k=String(r.data_ref||'');if(k&&!uniq.includes(k)) uniq.push(k);});
+    return uniq.slice(0,2);
+  }catch(e){return base;}
+}
+
+async function reloadTable(){
+  try{
+    const refs=await getActiveRefs();
+    if(!refs.length){tableData=[];renderRows();return;}
     const data=await sbGet('reporte_carga',
-      `data_ref=in.("${kT}","${kAM}")&order=dia_ref.asc,agenda.asc`
+      `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
     );
     tableData=(data||[]).sort((a,b)=>{
       return parseAgendaDateTime(a)-parseAgendaDateTime(b);
@@ -1001,9 +1015,9 @@ function renderRows(){
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
       `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
       `<td><input type="time" value="${row.hora_chegada||''}" onchange="saveField('${row.dt}','${row.data_ref}','hora_chegada',this.value)"/></td>`+
-      `<td><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
+      `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
-      `</select></td>`+
+      `</select>${opTag}</div></td>`+
       `<td class="td-sm">${row.tipo||'—'}</td>`+
       `<td class="td-sm">${row.toneladas||'—'}</td>`+
       `<td>${opTag}</td>`+
@@ -1242,11 +1256,11 @@ async function saveMateriais(){
    CARREGAR AO ABRIR
 ═══════════════════════════════════════════════════════ */
 async function tryLoadExisting(){
-  const T=today(),AM=tomorrow();
-  const kT=dKey(T), kAM=dKey(AM);
   try{
+    const refs=await getActiveRefs();
+    if(!refs.length){tableData=[];renderRows();return;}
     const data=await sbGet('reporte_carga',
-      `data_ref=in.("${kT}","${kAM}")&order=dia_ref.asc,agenda.asc`
+      `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
     );
     if(data&&data.length){
       tableData=data.sort((a,b)=>{
