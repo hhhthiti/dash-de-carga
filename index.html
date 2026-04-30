@@ -58,6 +58,14 @@ input,select,button,textarea{font-family:inherit;}
 .tab-btn.active{color:#60a5fa;border-bottom-color:#3b82f6;}
 .tab-btn.alert-tab{color:#f59e0b;}
 .tab-btn.alert-tab.active{color:#f59e0b;border-bottom-color:#f59e0b;}
+.tab-btn.mat-tab{color:#34d399;}
+.tab-btn.mat-tab.active{color:#34d399;border-bottom-color:#34d399;}
+.mat-board{padding:14px 18px;}
+.mat-group{border:1px solid #334155;border-radius:10px;margin-bottom:12px;overflow:hidden;}
+.mat-group-h{background:#162032;padding:8px 12px;font-size:11px;font-weight:700;color:#93c5fd;display:flex;justify-content:space-between;}
+.mat-group-b{padding:8px 12px;}
+.mat-item{display:grid;grid-template-columns:1fr 120px;gap:8px;padding:4px 0;border-bottom:1px solid #1e293b;font-size:12px;}
+.mat-item:last-child{border-bottom:none;}
 
 #twrap{overflow-x:auto;}
 table{width:100%;border-collapse:collapse;font-size:12px;}
@@ -281,6 +289,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="tab-bar">
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
+      <button class="tab-btn mat-tab" id="tab-materiais" onclick="switchTableTab('materiais')">📦 MATERIAIS POR DT</button>
     </div>
 
     <div id="twrap">
@@ -294,6 +303,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <tbody id="tbody"></tbody>
       </table>
     </div>
+    <div id="mat-board" class="mat-board" style="display:none;"></div>
     <div style="padding:8px 18px;font-size:10px;color:#334155;">
       💡 Clique em qualquer <b style="color:#93c5fd">DT</b> para abrir o mapa de separação com os materiais. · 🕐 = Carreta deve chegar em até 1h.
     </div>
@@ -473,10 +483,11 @@ function switchTab(tab){
 
 function switchTableTab(tab){
   currentTableTab=tab;
-  ['todas','finalizadas'].forEach(t=>{
+  ['todas','finalizadas','materiais'].forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('active',t===tab);
   });
-  renderRows();
+  if(tab==='materiais') renderMaterialsBoard();
+  else renderRows();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -885,10 +896,55 @@ function clockEmoji(row){
   return '';
 }
 
+
+async function renderMaterialsBoard(){
+  const board=document.getElementById('mat-board');
+  const twrap=document.getElementById('twrap');
+  if(!board||!twrap) return;
+  twrap.style.display='none';
+  board.style.display='block';
+  board.innerHTML='<div style="color:#64748b;">Carregando materiais…</div>';
+  try{
+    const refs=[...new Set(tableData.map(r=>r.data_ref).filter(Boolean))];
+    if(!refs.length){board.innerHTML='<div style="color:#334155;">Sem DTs carregadas.</div>';return;}
+    const q='data_ref=in.("'+refs.join('","')+'")&order=dt.asc,ordem.asc';
+    const mats=await sbGet('reporte_materiais',q);
+    if(!mats||!mats.length){board.innerHTML='<div style="color:#334155;">Nenhum material salvo para as DTs atuais.</div>';return;}
+    const byDT={};
+    mats.forEach(m=>{
+      const key=String(m.dt||'');
+      if(!key) return;
+      if(!byDT[key]) byDT[key]={};
+      const mat=String(m.material||'').trim();
+      if(!mat) return;
+      const qtd=Number(String(m.quantidade||'0').replace(',','.'))||0;
+      byDT[key][mat]=(byDT[key][mat]||0)+qtd;
+    });
+    const ordem=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b)).map(r=>String(r.dt));
+    const uniq=[]; ordem.forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
+    let html='';
+    uniq.forEach(dt=>{
+      const itens=byDT[dt]; if(!itens) return;
+      const pairs=Object.entries(itens);
+      const total=pairs.reduce((s,[,v])=>s+v,0);
+      html+='<div class="mat-group"><div class="mat-group-h"><span>DT '+dt+'</span><span>'+pairs.length+' materiais · Qtd total '+Math.round(total)+'</span></div><div class="mat-group-b">';
+      pairs.forEach(([mat,q])=>{html+='<div class="mat-item"><span>'+mat+'</span><span style="text-align:right;color:#a7f3d0;font-weight:700;">'+Math.round(q)+'</span></div>';});
+      html+='</div></div>';
+    });
+    board.innerHTML=html||'<div style="color:#334155;">Nenhum material encontrado para as DTs listadas.</div>';
+  }catch(e){
+    board.innerHTML='<div style="color:#ef4444;">Erro ao carregar materiais: '+e.message+'</div>';
+  }
+}
+
 /* ═══════════════════════════════════════════════════════
    RENDERIZAR
 ═══════════════════════════════════════════════════════ */
 function renderRows(){
+  const board=document.getElementById('mat-board');
+  const twrap=document.getElementById('twrap');
+  if(board) board.style.display='none';
+  if(twrap) twrap.style.display='block';
   // Resumo de status
   const sum={};
   tableData.forEach(r=>{sum[r.status]=(sum[r.status]||0)+1;});
