@@ -153,6 +153,7 @@
     <div class="tab-bar">
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
+      <button class="tab-btn mat-tab" id="tab-agenda" onclick="switchTableTab('agenda')">📄 PLANILHA AGENDAMENTO</button>
     </div>
 
     <div id="twrap">
@@ -165,6 +166,23 @@
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
+    </div>
+    <!-- ABA AGENDA -->
+    <div id="agenda-wrap" style="display:none;">
+      <div style="padding:12px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #334155;">
+        <span style="font-size:11px;color:#64748b;" id="agenda-count">0 linhas</span>
+        <span style="font-size:11px;color:#64748b;">extraídas do arquivo de agendamento</span>
+        <button class="bexp" onclick="exportAgendaXLSX()" style="margin-left:auto;">⬇ Exportar XLSX</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr>
+            <th>DT</th><th>TRANSPORTADORA</th><th>LOCAL</th>
+            <th>GRADE</th><th>FIM GRADE</th><th>TIPO VEÍ.</th><th>PESO</th><th>DIA</th>
+          </tr></thead>
+          <tbody id="agenda-tbody"></tbody>
+        </table>
+      </div>
     </div>
     <div id="mat-board" class="mat-board" style="display:none;"></div>
     <div style="padding:8px 18px;font-size:10px;color:#334155;">

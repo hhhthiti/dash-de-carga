@@ -101,15 +101,23 @@ function switchTab(tab){
 
 function switchTableTab(tab){
   currentTableTab=tab;
-  ['todas','finalizadas'].forEach(t=>{
+  ['todas','finalizadas','agenda'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el) el.classList.toggle('active',t===tab);
   });
   const board=document.getElementById('mat-board');
   const twrap=document.getElementById('twrap');
+  const agendaWrap=document.getElementById('agenda-wrap');
   if(board) board.style.display='none';
-  if(twrap) twrap.style.display='block';
-  renderRows();
+  if(tab==='agenda'){
+    if(twrap) twrap.style.display='none';
+    if(agendaWrap) agendaWrap.style.display='block';
+    renderAgendaTab();
+  } else {
+    if(twrap) twrap.style.display='block';
+    if(agendaWrap) agendaWrap.style.display='none';
+    renderRows();
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -823,9 +831,9 @@ async function openPanel(dt,dataRef){
 
   let listaMats=[];
   try{
-    const saved=await sbGet('reporte_materiais',`dt=eq.${dt}&data_ref=eq."${dataRef}"&order=ordem.asc`);
+    const saved=await sbGet('reporte_materiais',`dt=eq.${encodeURIComponent(dt)}&data_ref=eq.${encodeURIComponent('"'+dataRef+'"')}&order=ordem.asc`);
     listaMats=saved||[];
-  }catch(e){}
+  }catch(e){ console.error('Erro ao buscar materiais:',e); }
 
   if(!listaMats.length){
     const dtKey=String(dt);
@@ -939,4 +947,53 @@ function exportCSV(){
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
   a.click();
+}
+
+/* ═══════════════════════════════════════════════════════
+   ABA AGENDA — renderiza tabela da planilha importada
+═══════════════════════════════════════════════════════ */
+function renderAgendaTab(){
+  const tbody=document.getElementById('agenda-tbody');
+  if(!tbody) return;
+  tbody.innerHTML='';
+  if(!agendRows||!agendRows.length){
+    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:30px;color:#334155;">Nenhum arquivo de agendamento carregado ainda. Suba o arquivo no Passo 1.</td></tr>`;
+    document.getElementById('agenda-count').textContent='0 linhas';
+    return;
+  }
+  document.getElementById('agenda-count').textContent=agendRows.length+' linhas';
+  agendRows.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=
+      `<td class="td-sm">${r.DT||'—'}</td>`+
+      `<td class="td-transp">${r.TRANSPORTADORA||'—'}</td>`+
+      `<td class="td-sm">${r.LOCAL||'—'}</td>`+
+      `<td class="td-time">${r.AGENDA?fmtDT(r.AGENDA,true):'—'}</td>`+
+      `<td class="td-time">${r.FIM_AGENDA?fmtDT(r.FIM_AGENDA,true):'—'}</td>`+
+      `<td class="td-sm">${r.TIPO||'—'}</td>`+
+      `<td class="td-sm">${r.PESO||'—'}</td>`+
+      `<td><span class="${r.AGENDA&&sameDay(r.AGENDA,today())?'tag-hoje':'tag-amanha'}">${r.AGENDA&&sameDay(r.AGENDA,today())?'HOJE':'AMANHÃ'}</span></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function exportAgendaXLSX(){
+  if(!agendRows||!agendRows.length){showErr('Carregue o arquivo de agendamento primeiro.');return;}
+  const cols=['DT','TRANSPORTADORA','LOCAL','GRADE','FIM GRADE','TIPO VEÍCULO','PESO','DIA'];
+  const rows=agendRows.map(r=>[
+    r.DT||'',
+    r.TRANSPORTADORA||'',
+    r.LOCAL||'',
+    r.AGENDA?fmtDT(r.AGENDA,true):'',
+    r.FIM_AGENDA?fmtDT(r.FIM_AGENDA,true):'',
+    r.TIPO||'',
+    r.PESO||'',
+    r.AGENDA&&sameDay(r.AGENDA,today())?'HOJE':'AMANHÃ',
+  ]);
+  const ws=XLSX.utils.aoa_to_sheet([cols,...rows]);
+  // Largura das colunas
+  ws['!cols']=[{wch:14},{wch:30},{wch:12},{wch:18},{wch:18},{wch:16},{wch:10},{wch:8}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Agendamento');
+  XLSX.writeFile(wb,'agendamento_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.xlsx');
 }
