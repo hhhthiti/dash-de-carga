@@ -859,9 +859,10 @@ async function buildTable(){
   const T=today(),AM=tomorrow();
   const kT=dKey(T), kAM=dKey(AM);
   try{
-    // Busca o que já existe para PRESERVAR status e hora_chegada
+    // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
+    const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(r.AGENDA||T)))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=in.("${kT}","${kAM}")&select=dt,data_ref,status,hora_chegada,tipo_operacao,reagendada`
+      `data_ref=in.("${refsUpload.join('\",\"')}")&select=dt,data_ref,status,hora_chegada,tipo_operacao,reagendada`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
@@ -893,8 +894,13 @@ async function buildTable(){
       };
     });
 
-    activeRefsOverride=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))].slice(0,2);
-    await sbUpsert('reporte_carga',rows);
+    const uploadedRefs=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))];
+    activeRefsOverride=uploadedRefs.slice(0,2);
+    // Como não existe constraint única (dt,data_ref), fazemos replace por data_ref
+    for(const ref of uploadedRefs){
+      await sbDelete('reporte_carga',{data_ref:ref});
+    }
+    await sbInsert('reporte_carga',rows);
     await saveUploadSnapshot(rows);
     const importedCount=await persistImportedMaterials();
     hideInf();
