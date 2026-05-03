@@ -278,6 +278,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <span id="tinfo"></span>
       <div id="tstatus"></div>
       <div id="tactions">
+        <input id="dt-search" type="text" placeholder="🔎 Buscar DT" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:11px;min-width:130px;" oninput="onSearchDT(this.value)"/>
         <button class="bexp" onclick="exportCSV()">⬇ CSV</button>
         <button class="blog" onclick="openLogs()">📋 Logs</button>
         <button class="bg"   onclick="reloadTable()">↻ Atualizar</button>
@@ -342,6 +343,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <button class="bg" onclick="closeLogs()" style="padding:4px 12px;">✕ Fechar</button>
     </div>
     <div id="log-body">
+      <div style="margin:0 0 10px 0;"><input id="log-search" type="text" placeholder="🔎 Filtrar DT nos logs" oninput="loadLogs(this.value)" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:7px 10px;font-size:11px;"></div>
       <div class="log-entry log-entry-head">
         <span>DATA/HORA</span><span>DT</span><span>STATUS</span><span>TRANSPORTADORA</span>
       </div>
@@ -426,6 +428,7 @@ let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, tableData=[];
 let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
+let dtSearchTerm='';
 
 /* ═══════════════════════════════════════════════════════
    INIT
@@ -490,6 +493,11 @@ function switchTableTab(tab){
   const twrap=document.getElementById('twrap');
   if(board) board.style.display='none';
   if(twrap) twrap.style.display='block';
+  renderRows();
+}
+
+function onSearchDT(v){
+  dtSearchTerm=(v||'').replace(/\D/g,'');
   renderRows();
 }
 
@@ -828,6 +836,19 @@ async function persistImportedMaterials(){
   return pares.length;
 }
 
+async function saveUploadSnapshot(rows){
+  try{
+    const logs=rows.map(r=>({
+      dt:String(r.dt||''),
+      data_ref:String(r.data_ref||''),
+      status:'UPLOAD_AGENDA',
+      transportadora:String(r.transportadora||''),
+      created_at:new Date().toISOString(),
+    })).filter(r=>r.dt&&r.data_ref);
+    if(logs.length) await sbInsert('reporte_logs',logs);
+  }catch(e){}
+}
+
 /* ═══════════════════════════════════════════════════════
    BUILD TABLE — Upsert preservando status/hora_chegada
 ═══════════════════════════════════════════════════════ */
@@ -843,19 +864,6 @@ async function buildTable(){
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
 
-    // Remove DTs do banco que NÃO estão no novo arquivo E têm status "limpável"
-    // Preserva: EXPEDIDO, NO SHOW, FOI EMBORA, VEICULO RECUSADO (eventos já ocorridos)
-    // Preserva: PATIO, CARREGANDO, EM FATURAMENTO, SEPARANDO (em andamento)
-    // Remove: AG CHEGADA, DT EXCLUIDA, ou sem status → podem ser substituídas pelo novo arquivo
-    const STATUS_MANTER=['EXPEDIDO','NO SHOW','VEICULO RECUSADO','FOI EMBORA','PATIO','CARREGANDO','EM FATURAMENTO','SEPARANDO'];
-    const newDTKeys=new Set(dtsMescladas.map(r=>r.DT+'_'+dKey(r.AGENDA||T)));
-    const paraRemover=(existing||[]).filter(r=>{
-      const key=r.dt+'_'+r.data_ref;
-      return !newDTKeys.has(key) && !STATUS_MANTER.includes(r.status||'');
-    });
-    for(const r of paraRemover){
-      try{ await sbDelete('reporte_carga',{dt:r.dt,data_ref:r.data_ref}); }catch(e2){}
-    }
 
     const rows=dtsMescladas.map(dt=>{
       const ref=dKey(dt.AGENDA||T);
@@ -884,6 +892,7 @@ async function buildTable(){
     });
 
     await sbUpsert('reporte_carga',rows);
+    await saveUploadSnapshot(rows);
     const importedCount=await persistImportedMaterials();
     hideInf();
     if(importedCount>0) showOk('Materiais sincronizados automaticamente para '+importedCount+' DT(s).');
@@ -915,7 +924,7 @@ async function getActiveRefs(){
   try{
     const todayRows=await sbGet('reporte_carga',`data_ref=in.("${base[0]}","${base[1]}")&select=dt&limit=1`);
     if(todayRows&&todayRows.length) return base;
-    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=500');
+    const rec=await sbGet('reporte_carga','select=data_ref&order=data_ref.desc&limit=500');
     const uniq=[];
     (rec||[]).forEach(r=>{const k=String(r.data_ref||'');if(k&&!uniq.includes(k)) uniq.push(k);});
     return uniq.slice(0,2);
@@ -1026,6 +1035,9 @@ function renderRows(){
   }else{
     rows=rows.filter(r=>!STATUS_FINAIS.includes(r.status));
   }
+  if(dtSearchTerm){
+    rows=rows.filter(r=>String(r.dt||'').includes(dtSearchTerm));
+  }
 
   const tbody=document.getElementById('tbody');tbody.innerHTML='';
 
@@ -1122,14 +1134,17 @@ function openLogs(){
 function closeLogs(){
   document.getElementById('log-overlay').classList.remove('open');
 }
-async function loadLogs(){
+async function loadLogs(searchDT=""){
   const list=document.getElementById('log-list');
   list.innerHTML='<div style="color:#64748b;padding:12px;">Carregando…</div>';
   try{
     const logs=await sbGet('reporte_logs','order=created_at.desc&limit=200');
-    if(!logs||!logs.length){list.innerHTML='<div style="color:#334155;padding:12px;">Nenhum log registrado ainda.</div>';return;}
+    let rows=logs||[];
+    const filtro=String(searchDT||'').replace(/\D/g,'');
+    if(filtro) rows=rows.filter(l=>String(l.dt||'').includes(filtro));
+    if(!rows.length){list.innerHTML='<div style="color:#334155;padding:12px;">Nenhum log para o filtro informado.</div>';return;}
     list.innerHTML='';
-    logs.forEach(l=>{
+    rows.forEach(l=>{
       const sc=SC[l.status]||'#64748b';
       const div=document.createElement('div');
       div.className='log-entry';
