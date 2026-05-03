@@ -733,10 +733,13 @@ function parseZlesText(text){
       const qtdRaw=(c[iQtd]||'').replace(/\./g,'').replace(',','.').trim();
       const qtd=qtdRaw?String(Math.round(Number(qtdRaw)||0)):'';
       if(!tipoOpMap[dt]){
-        const t1=(iTipo!==-1?c[iTipo]||'':'').toUpperCase();
-        const t2=(iDesc!==-1&&iDesc!==iTipo?c[iDesc]||'':'').toUpperCase();
-        const tipoRaw=t1+' '+t2;
-        tipoOpMap[dt]=(tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/')||tipoRaw.includes('TNF'))?'TRANSFERÊNCIA':'VENDA NORMAL';
+        // Prioriza "Descrição de Documento" (ex: "Venda Normal", "Transf.Abast.Filial")
+        const descDoc=(iDesc!==-1?c[iDesc]||'':'').trim();
+        const tipoCol=(iTipo!==-1?c[iTipo]||'':'').trim();
+        const tipoRaw=(descDoc||tipoCol).toUpperCase();
+        const isTransf=tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/')||tipoRaw.includes('TNF')||tipoRaw.includes('ABAST');
+        tipoOpMap[dt]=isTransf?'TRANSFERÊNCIA':'VENDA NORMAL';
+        if(descDocMap&&!descDocMap[dt]) descDocMap[dt]=descDoc||tipoCol;
       }
       if(!descDocMap[dt]){
         const desc=(iDesc!==-1?String(c[iDesc]||'').trim():'') || (iTipo!==-1?String(c[iTipo]||'').trim():'');
@@ -866,7 +869,7 @@ async function buildTable(){
     // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(r.AGENDA||T)))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=in.("${refsUpload.join('\",\"')}")&select=dt,data_ref,status,hora_chegada,reagendada`
+      `data_ref=in.("${refsUpload.join('\",\"')}")&select=dt,data_ref,status,hora_chegada,tipo_operacao,descricao_documento,reagendada`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
@@ -876,7 +879,7 @@ async function buildTable(){
       const ref=dKey(dt.AGENDA||T);
       const ex=exMap[dt.DT+'_'+ref]||{};
       const diaRef=sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ';
-      const tipoOp=tipoOpMap[dt.DT]||ex.tipo_operacao||'';
+      const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
       // Preserva status e hora_chegada existentes!
       const statusAtual = ex.status && ex.status !== '' ? ex.status : 'AG CHEGADA';
       const horaAtual   = ex.hora_chegada || '';
@@ -887,7 +890,7 @@ async function buildTable(){
         fim_carregamento:String(dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):''),
         hora_chegada:horaAtual,
         status:statusAtual,
-        descricao_documento:String(descDocMap[dt.DT]||''),
+        descricao_documento:String(descDocMap[dt.DT]||ex.descricao_documento||''),
         toneladas:String(dt.PESO||''),
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
@@ -1273,7 +1276,7 @@ async function openPanel(dt,dataRef){
 
   let listaMats=[];
   try{
-    const saved=await sbGet('reporte_materiais',`dt=eq.${dt}&data_ref=eq."${dataRef}"&order=ordem.asc`);
+    const saved=await sbGet('reporte_materiais',`dt=eq.${encodeURIComponent(dt)}&data_ref=eq.${encodeURIComponent(dataRef)}&order=ordem.asc`);
     listaMats=saved||[];
   }catch(e){}
 
