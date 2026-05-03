@@ -297,7 +297,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <thead><tr>
           <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th>
           <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th>
-          <th>STATUS / OPERAÇÃO</th><th>TIPO VEÍ.</th><th>TONELADAS</th>
+          <th>STATUS / OPERAÇÃO</th><th>DESC. DOCUMENTO</th><th>TONELADAS</th>
           <th>OPERAÇÃO</th><th>AGENDA</th><th>AÇÕES</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -424,7 +424,7 @@ const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RE
 const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
 const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
 
-let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, tableData=[];
+let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
 let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
@@ -720,7 +720,7 @@ function parseZlesText(text){
     const iMat =findIdx('MATERIAL')!==-1?findIdx('MATERIAL'):11;
     const iQtd =findIdx('QTDE REMESSA','QTD REMESSA')!==-1?findIdx('QTDE REMESSA','QTD REMESSA'):12;
     dbg.textContent+=`Usando: DT=col${iDT}(${h[iDT]||'?'}) | Tipo=col${iTipo}(${h[iTipo]||'?'}) | Mat=col${iMat}(${h[iMat]||'?'}) | Qtd=col${iQtd}(${h[iQtd]||'?'})\n`;
-    exportMap={};tipoOpMap={};
+    exportMap={};tipoOpMap={};descDocMap={};
     let linhasOk=0,linhasIgnoradas=0;
     for(let i=1;i<lines.length;i++){
       const c=lines[i].split(sep).map(strip);
@@ -737,6 +737,10 @@ function parseZlesText(text){
         const t2=(iDesc!==-1&&iDesc!==iTipo?c[iDesc]||'':'').toUpperCase();
         const tipoRaw=t1+' '+t2;
         tipoOpMap[dt]=(tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/')||tipoRaw.includes('TNF'))?'TRANSFERÊNCIA':'VENDA NORMAL';
+      }
+      if(!descDocMap[dt]){
+        const desc=(iDesc!==-1?String(c[iDesc]||'').trim():'') || (iTipo!==-1?String(c[iTipo]||'').trim():'');
+        descDocMap[dt]=desc;
       }
       if(mat){
         if(!exportMap[dt])exportMap[dt]=[];
@@ -883,7 +887,7 @@ async function buildTable(){
         fim_carregamento:String(dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):''),
         hora_chegada:horaAtual,
         status:statusAtual,
-        tipo:String(dt.TIPO||''),
+        descricao_documento:String(descDocMap[dt.DT]||''),
         toneladas:String(dt.PESO||''),
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
@@ -914,7 +918,7 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:'',status:'AG CHEGADA',tipo:dt.TIPO,toneladas:dt.PESO,
+      hora_chegada:'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',toneladas:dt.PESO,
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(dt.AGENDA||T),
@@ -944,10 +948,11 @@ async function getActiveRefs(){
     });
     if(byUpload.length) return byUpload.slice(0,2);
 
-    // Fallback: últimas datas existentes na tabela operacional
-    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=500');
-    const uniq=[];
-    (rec||[]).forEach(r=>{const k=String(r.data_ref||'');if(k&&!uniq.includes(k)) uniq.push(k);});
+    // Fallback robusto: ordena por data_ref real (dd/mm/aaaa), não por texto
+    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=1000');
+    const uniq=[...new Set((rec||[]).map(r=>String(r.data_ref||'')).filter(Boolean))];
+    const toDate=(k)=>{const m=String(k).match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?new Date(+m[3],+m[2]-1,+m[1]):new Date(0);};
+    uniq.sort((a,b)=>toDate(b)-toDate(a));
     return uniq.slice(0,2);
   }catch(e){return base;}
 }
@@ -1096,7 +1101,7 @@ function renderRows(){
       `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
       `</select>${opTag}</div></td>`+
-      `<td class="td-sm">${row.tipo||'—'}</td>`+
+      `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
       `<td class="td-sm">${row.toneladas||'—'}</td>`+
       `<td>${opTag}</td>`+
       `<td class="td-ag">${row.agenda||'—'}</td>`+
@@ -1378,8 +1383,8 @@ async function tryLoadExisting(){
    EXPORT CSV
 ═══════════════════════════════════════════════════════ */
 function exportCSV(){
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','TIPO VEÍ.','TONELADAS','OPERAÇÃO','AGENDA'];
-  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.tipo,r.toneladas,r.tipo_operacao||'',r.agenda]);
+  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','DESC. DOCUMENTO','TONELADAS','OPERAÇÃO','AGENDA'];
+  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.descricao_documento||'',r.toneladas,r.tipo_operacao||'',r.agenda]);
   const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
