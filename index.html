@@ -928,7 +928,18 @@ async function getActiveRefs(){
   try{
     const todayRows=await sbGet('reporte_carga',`data_ref=in.("${base[0]}","${base[1]}")&select=dt&limit=1`);
     if(todayRows&&todayRows.length) return base;
-    const rec=await sbGet('reporte_carga','select=data_ref&order=data_ref.desc&limit=500');
+
+    // Regra principal: usar o último upload de agenda registrado em log
+    const lastUpload=await sbGet('reporte_logs',`status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=300`);
+    const byUpload=[];
+    (lastUpload||[]).forEach(r=>{
+      const k=String(r.data_ref||'');
+      if(k && !byUpload.includes(k)) byUpload.push(k);
+    });
+    if(byUpload.length) return byUpload.slice(0,2);
+
+    // Fallback: últimas datas existentes na tabela operacional
+    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=500');
     const uniq=[];
     (rec||[]).forEach(r=>{const k=String(r.data_ref||'');if(k&&!uniq.includes(k)) uniq.push(k);});
     return uniq.slice(0,2);
@@ -1336,7 +1347,7 @@ async function tryLoadExisting(){
       tableData.forEach(r=>{ if(r.dt&&r.tipo_operacao) tipoOpMap[r.dt]=r.tipo_operacao; });
       renderRows();
       setStep(4);
-      showOk('Tabela carregada do banco. Suba o agendamento para atualizar.');
+      showOk('Tabela carregada do banco com a agenda mais recente salva.');
     }
   }catch(e){/*sem dados, fica no passo 1*/}
 }
