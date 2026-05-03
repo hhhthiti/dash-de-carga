@@ -429,6 +429,7 @@ let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
 let dtSearchTerm='';
+let activeRefsOverride=[];
 
 /* ═══════════════════════════════════════════════════════
    INIT
@@ -460,6 +461,7 @@ function setStep(n){
   });
   document.getElementById('aerr').style.display='none';
   // Quando entrar no passo 3, mostra dica de materiais já importados
+  if(n===1) activeRefsOverride=[];
   if(n===3){
     const hint=document.getElementById('p3-mat-hint');
     const nDTs=Object.keys(exportMap).length;
@@ -891,6 +893,7 @@ async function buildTable(){
       };
     });
 
+    activeRefsOverride=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))].slice(0,2);
     await sbUpsert('reporte_carga',rows);
     await saveUploadSnapshot(rows);
     const importedCount=await persistImportedMaterials();
@@ -919,6 +922,7 @@ async function buildTable(){
 
 
 async function getActiveRefs(){
+  if(activeRefsOverride.length) return activeRefsOverride;
   const T=today(),AM=tomorrow();
   const base=[dKey(T),dKey(AM)];
   try{
