@@ -78,6 +78,7 @@ tr:hover td{background:#1a2540!important;}
 .tag-venda {background:#052e1688;border:1px solid #22c55e55;border-radius:4px;padding:2px 9px;font-size:10px;color:#4ade80;font-weight:700;}
 .tag-transf{background:#431407aa;border:1px solid #f9731655;border-radius:4px;padding:2px 9px;font-size:10px;color:#fb923c;font-weight:700;}
 .tag-sem   {color:#334155;font-size:10px;}
+.tag-sem-grade{background:#78350f44;border:1px solid #f59e0b55;border-radius:4px;padding:1px 7px;font-size:9px;color:#f59e0b;font-weight:700;letter-spacing:1px;}
 input[type=time]{background:#1e293b;border:1px solid #334155;border-radius:5px;color:#f1f5f9;padding:3px 7px;font-size:12px;width:90px;}
 select.ss{border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;min-width:148px;}
 .debug-box{background:#1a0a00;border:1px solid #92400e;border-radius:7px;padding:10px 14px;margin-top:10px;font-size:11px;color:#fbbf24;line-height:1.7;white-space:pre-wrap;display:none;}
