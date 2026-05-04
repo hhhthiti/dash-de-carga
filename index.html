@@ -219,7 +219,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid #334155;border-radius:8px;overflow:hidden;">
         <button id="tab-file" onclick="switchTab('file')"
           style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#3b82f6;color:#fff;border:none;cursor:pointer;">
-          📂 Subir arquivo CSV
+          📂 Subir arquivo (CSV/XLSX)
         </button>
         <button id="tab-paste" onclick="switchTab('paste')"
           style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#1e293b;color:#94a3b8;border:none;cursor:pointer;border-left:1px solid #334155;">
@@ -234,9 +234,9 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div id="tab-file-body">
         <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
           <div class="dz-icon">📂</div>
-          <div class="dz-label" id="dz2l">Arraste o arquivo ZLES002 aqui (CSV separado por ponto-e-vírgula)</div>
+          <div class="dz-label" id="dz2l">Arraste o arquivo ZLES002 aqui (CSV/TXT/TSV/XLSX)</div>
         </div>
-        <input type="file" id="f2" accept=".csv,.txt,.tsv" style="display:none" onchange="processZles(this.files[0])"/>
+        <input type="file" id="f2" accept=".csv,.txt,.tsv,.xls,.xlsx" style="display:none" onchange="processZles(this.files[0])"/>
       </div>
 
       <div id="tab-paste-body" style="display:none;">
@@ -251,9 +251,9 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
 
       <div id="tab-xlsx-body" style="display:none;">
         <p style="font-size:12px;color:#64748b;margin-bottom:8px;">
-          <b style="color:#f59e0b">⚠️ NÃO é para o ZLES002!</b> Este campo é para uma planilha auxiliar personalizada.<br/>
+          <b style="color:#f59e0b">Você também pode subir uma planilha ZLES002 em XLSX aqui.</b> Este campo é para uma planilha auxiliar personalizada.<br/>
           Precisa ter exatamente estas colunas: <b style="color:#f59e0b">Nº transporte</b> · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b>.<br/>
-          Para o ZLES002 do SAP, use as abas acima: <b style="color:#4ade80">📂 Subir arquivo CSV</b> ou <b style="color:#4ade80">📋 Colar do SAP</b>.
+          Para o ZLES002 do SAP, use as abas acima: <b style="color:#4ade80">📂 Subir arquivo (CSV/XLSX)</b> ou <b style="color:#4ade80">📋 Colar do SAP</b>.
         </p>
         <div class="dz" id="dz3" onclick="document.getElementById('f3').click()">
           <div class="dz-icon">📂</div>
@@ -934,7 +934,7 @@ function processExtra(file){
       dbg.textContent+=`Col DT: ${kDT||'NÃO ACHADA'} | Mat: ${kMat||'NÃO ACHADA'} | Qtd: ${kQtd||'NÃO ACHADA'}\n`;
       if(!kDT||!kMat)throw new Error(
         '⚠️ Este campo é para uma planilha auxiliar com colunas: "Nº transporte", "Material" e "Qtde Remessa".\n\n'+
-        'Para a ZLES002 do SAP, use as abas "📂 Subir arquivo CSV" ou "📋 Colar do SAP" acima.\n\n'+
+        'Para a ZLES002 do SAP, use as abas "📂 Subir arquivo (CSV/XLSX)" ou "📋 Colar do SAP" acima.\n\n'+
         'Colunas encontradas neste arquivo: '+keys.join(', ')
       );
       let cnt=0;

@@ -44,7 +44,7 @@ const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RE
 const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
 const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
 
-let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, tableData=[];
+let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, pesoLiquidoMap={}, tableData=[];
 let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
@@ -281,9 +281,29 @@ function processZles(file){
   showInf('Lendo ZLES002…');
   document.getElementById('dz2l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
   file.arrayBuffer().then(buf=>{
+    const nome=(file.name||'').toLowerCase();
+    if(nome.endsWith('.xlsx')||nome.endsWith('.xls')||nome.endsWith('.csv')||nome.endsWith('.tsv')||nome.endsWith('.txt')){
+      parseZlesBuffer(buf,nome);
+      return;
+    }
     const text=decodeBuf(buf);
     parseZlesText(text);
   });
+}
+
+function parseZlesBuffer(buf,fileName=''){
+  const isPlanilha=fileName.endsWith('.xlsx')||fileName.endsWith('.xls');
+  if(isPlanilha){
+    try{
+      const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      parseZlesRows(rows,'planilha');
+      return;
+    }catch(e){}
+  }
+  const text=decodeBuf(buf);
+  parseZlesText(text);
 }
 
 function processZlesPaste(){
@@ -301,83 +321,78 @@ function parseZlesText(text){
     if(!lines.length)throw new Error('Conteúdo vazio.');
     const L0=lines[0];
     const sep=(L0.match(/;/g)||[]).length>=(L0.match(/\t/g)||[]).length?';':'\t';
-    dbg.textContent+=`Separador: "${sep===';'?'ponto-e-vírgula (;)':'tab (\\t)'}"\n`;
-    dbg.textContent+=`Total de linhas: ${lines.length}\n`;
     const strip=s=>(s||'').trim().replace(/^"|"$/g,'');
-    const h=lines[0].split(sep).map(strip);
-    dbg.textContent+=`Colunas (${h.length}): ${h.slice(0,10).join(' | ')}…\n`;
-    const findIdx=(...termos)=>{
-      for(const t of termos){
-        const i=h.findIndex(v=>v.toUpperCase().includes(t.toUpperCase()));
-        if(i!==-1)return i;
-      }
-      return -1;
-    };
-    let iDT=6;
-    if(lines.length>1){
-      const primeiraLinha=lines[1].split(sep).map(strip);
-      const valG=(primeiraLinha[6]||'').replace(/\D/g,'');
-      if(valG.length<5){
-        const alt=h.findIndex(v=>{
-          const u=v.toUpperCase();
-          return (u.includes('TRANSPORTE')||u.includes('NR TRANSP')||u.includes('Nº TRANSP'))
-                 && !u.includes('NOME') && !u.includes('COD') && !u.includes('CÓD');
-        });
-        if(alt!==-1) iDT=alt;
-      }
-    }
-    const iTipo=findIdx('TIPO','OPERAÇÃO','OPERACAO')!==-1?findIdx('TIPO','OPERAÇÃO','OPERACAO'):9;
-    const iDesc=findIdx('DESCRI')!==-1?findIdx('DESCRI'):9;
-    const iMat =findIdx('MATERIAL')!==-1?findIdx('MATERIAL'):11;
-    const iQtd =findIdx('QTDE REMESSA','QTD REMESSA')!==-1?findIdx('QTDE REMESSA','QTD REMESSA'):12;
-    dbg.textContent+=`Usando: DT=col${iDT}(${h[iDT]||'?'}) | Tipo=col${iTipo}(${h[iTipo]||'?'}) | Mat=col${iMat}(${h[iMat]||'?'}) | Qtd=col${iQtd}(${h[iQtd]||'?'})\n`;
-    exportMap={};tipoOpMap={};
-    let linhasOk=0,linhasIgnoradas=0;
+    const headers=lines[0].split(sep).map(strip);
+    const rows=[];
     for(let i=1;i<lines.length;i++){
       const c=lines[i].split(sep).map(strip);
-      if(c.every(v=>!v)){linhasIgnoradas++;continue;}
-      const dtRaw=(c[iDT]||'').replace(/\.0+$/,'').trim();
-      const dt=dtRaw.replace(/\D/g,'');
-      if(!dt||dt.length<5){linhasIgnoradas++;continue;}
-      const matRaw=(c[iMat]||'').replace(/\.0+$/,'').trim();
-      const mat=matRaw.replace(/\D/g,'');
-      const qtdRaw=(c[iQtd]||'').replace(/\./g,'').replace(',','.').trim();
-      const qtd=qtdRaw?String(Math.round(Number(qtdRaw)||0)):'';
-      if(!tipoOpMap[dt]){
-        const t1=(iTipo!==-1?c[iTipo]||'':'').toUpperCase();
-        const t2=(iDesc!==-1&&iDesc!==iTipo?c[iDesc]||'':'').toUpperCase();
-        const tipoRaw=t1+' '+t2;
-        tipoOpMap[dt]=(tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/')||tipoRaw.includes('TNF'))?'TRANSFERÊNCIA':'VENDA NORMAL';
-      }
-      if(mat){
-        if(!exportMap[dt])exportMap[dt]=[];
-        const existing=exportMap[dt].find(m=>m.material===mat);
-        if(existing){
-          const q1=Number(existing.quantidade)||0;
-          const q2=Number(qtd)||0;
-          existing.quantidade=String(q1+q2);
-        }else{
-          exportMap[dt].push({material:mat,quantidade:qtd});
-        }
-      }
-      linhasOk++;
+      const row={};
+      headers.forEach((h,idx)=>row[h]=c[idx]||'');
+      rows.push(row);
     }
-    const totalDTs=Object.keys(exportMap).length;
-    const tipos=[...new Set(Object.values(tipoOpMap))];
-    dbg.textContent+=`\n✅ Linhas processadas: ${linhasOk} | Ignoradas: ${linhasIgnoradas}\n`;
-    dbg.textContent+=`DTs com materiais: ${totalDTs}\n`;
-    Object.keys(exportMap).slice(0,3).forEach(dt=>{
-      const mats=exportMap[dt].slice(0,4).map(m=>`${m.material}(${m.quantidade})`).join(', ');
-      dbg.textContent+=`  DT ${dt}: ${mats}${exportMap[dt].length>4?'…':''}\n`;
-    });
-    hideInf();
-    showOk(`ZLES002 OK — ${totalDTs} DTs · ${linhasOk} linhas · tipos: ${tipos.join(', ')}`);
-    buildTable();
+    dbg.textContent+=`Separador: "${sep===';'?'ponto-e-vírgula (;)':'tab (\t)'}"
+`;
+    dbg.textContent+=`Total de linhas: ${lines.length}
+`;
+    dbg.textContent+=`Colunas (${headers.length}): ${headers.slice(0,10).join(' | ')}…
+`;
+    parseZlesRows(rows,'texto');
   }catch(e){
     hideInf();
     dbg.textContent+='\n❌ ERRO: '+e.message;
     showErr('Erro ZLES002: '+e.message);
   }
+}
+
+function parseZlesRows(rows,origem=''){
+  const dbg=document.getElementById('dbgZles');
+  if(!rows.length) throw new Error('Conteúdo vazio.');
+  const keys=Object.keys(rows[0]);
+  const fc=(...ts)=>{for(const t of ts){const k=keys.find(k=>k.toUpperCase().includes(t.toUpperCase()));if(k)return k;}return null;};
+  const kDT=fc('NR. REMESSA/RECEBIMENTO','Nº TRANSPORTE','N TRANSPORTE','TRANSPORTE','NR TRANSP');
+  const kTipo=fc('SETOR DE ATIVIDADE','DENOMINAÇÃO','DENOMINACAO','INF. AGENDA ENTREGA','TIPO');
+  const kMat=fc('MATERIAL');
+  const kQtd=fc('QTDE REMESSA','QTD REMESSA','QTDE');
+  const kPeso=fc('PESO LÍQUIDO','PESO LIQUIDO');
+  if(!kDT) throw new Error('Coluna de DT não encontrada (Nr. Remessa/Recebimento ou Nº transporte).');
+  if(!kMat) throw new Error('Coluna Material não encontrada.');
+  exportMap={};tipoOpMap={};pesoLiquidoMap={};
+  let linhasOk=0,linhasIgnoradas=0;
+  for(const row of rows){
+    const dt=String(row[kDT]||'').replace(/\.0+$/,'').replace(/\D/g,'').trim();
+    if(!dt||dt.length<5){linhasIgnoradas++;continue;}
+    const mat=String(row[kMat]||'').replace(/\.0+$/,'').replace(/\D/g,'').trim();
+    const qtdRaw=String(kQtd?row[kQtd]||'':'').replace(/\./g,'').replace(',','.').trim();
+    const qtd=qtdRaw?String(Math.round(Number(qtdRaw)||0)):'';
+    const tipoRaw=String(kTipo?row[kTipo]||'':'').toUpperCase();
+    if(!tipoOpMap[dt]){
+      tipoOpMap[dt]=(tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/')||tipoRaw.includes('TNF'))?'TRANSFERÊNCIA':'VENDA NORMAL';
+    }
+    if(kPeso){
+      const p=String(row[kPeso]||'').replace(/\./g,'').replace(',','.').trim();
+      const n=Number(p);
+      if(!Number.isNaN(n)&&n>0) pesoLiquidoMap[dt]=String(n);
+    }
+    if(mat){
+      if(!exportMap[dt])exportMap[dt]=[];
+      const existing=exportMap[dt].find(m=>m.material===mat);
+      if(existing){existing.quantidade=String((Number(existing.quantidade)||0)+(Number(qtd)||0));}
+      else exportMap[dt].push({material:mat,quantidade:qtd});
+    }
+    linhasOk++;
+  }
+  dbg.textContent+=`Origem: ${origem} | Col DT: ${kDT} | Mat: ${kMat} | Qtd: ${kQtd||'-'} | Peso: ${kPeso||'-'}
+`;
+  const totalDTs=Object.keys(exportMap).length;
+  const tipos=[...new Set(Object.values(tipoOpMap))];
+  dbg.textContent+=`
+✅ Linhas processadas: ${linhasOk} | Ignoradas: ${linhasIgnoradas}
+`;
+  dbg.textContent+=`DTs com materiais: ${totalDTs}
+`;
+  hideInf();
+  showOk(`ZLES002 OK — ${totalDTs} DTs · ${linhasOk} linhas · tipos: ${tipos.join(', ')}`);
+  buildTable();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -395,34 +410,8 @@ function processExtra(file){
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
       if(!rows.length)throw new Error('Planilha vazia.');
-      const keys=Object.keys(rows[0]);
-      dbg.textContent='Colunas: '+keys.join(' | ')+'\n';
-      const fc=(...ts)=>{for(const t of ts){const k=keys.find(k=>k.toUpperCase().includes(t.toUpperCase()));if(k)return k;}return null;};
-      const kDT=fc('Nº TRANSPORTE','N TRANSPORTE','TRANSPORTE');
-      const kMat=fc('MATERIAL');
-      const kQtd=fc('QTDE REMESSA','QTD REMESSA','QTDE');
-      dbg.textContent+=`Col DT: ${kDT||'NÃO ACHADA'} | Mat: ${kMat||'NÃO ACHADA'} | Qtd: ${kQtd||'NÃO ACHADA'}\n`;
-      if(!kDT||!kMat)throw new Error(
-        '⚠️ Este campo é para uma planilha auxiliar com colunas: "Nº transporte", "Material" e "Qtde Remessa".\n\n'+
-        'Para a ZLES002 do SAP, use as abas "📂 Subir arquivo CSV" ou "📋 Colar do SAP" acima.\n\n'+
-        'Colunas encontradas neste arquivo: '+keys.join(', ')
-      );
-      let cnt=0;
-      for(const row of rows){
-        const rawDT=row[kDT];
-        const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
-        const rawMat=row[kMat];
-        const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
-        const qtd=kQtd?String(row[kQtd]||''):'';
-        if(!dt||!mat||dt==='NaN'||mat==='NaN')continue;
-        cnt++;
-        if(!exportMap[dt])exportMap[dt]=[];
-        if(!exportMap[dt].some(m=>m.material===mat))exportMap[dt].push({material:mat,quantidade:qtd});
-      }
-      dbg.textContent+=`Linhas mescladas: ${cnt} | Total DTs com materiais: ${Object.keys(exportMap).length}\n`;
-      hideInf();
-      showOk('Planilha extra OK: '+cnt+' linhas mescladas em '+Object.keys(exportMap).length+' DTs.');
-      buildTable();
+      dbg.textContent='Colunas: '+Object.keys(rows[0]).join(' | ')+'\n';
+      parseZlesRows(rows,'planilha extra');
     }catch(e){hideInf();dbg.textContent+='\n❌ ERRO: '+e.message;showErr('Erro planilha extra: '+e.message);}
   });
 }
@@ -487,7 +476,7 @@ async function buildTable(){
         hora_chegada:horaAtual,
         status:statusAtual,
         tipo:String(dt.TIPO||''),
-        toneladas:String(dt.PESO||''),
+        toneladas:String(pesoLiquidoMap[dt.DT]||dt.PESO||''),
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
         dia_ref:diaRef,
@@ -510,7 +499,7 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:'',status:'AG CHEGADA',tipo:dt.TIPO,toneladas:dt.PESO,
+      hora_chegada:'',status:'AG CHEGADA',tipo:dt.TIPO,toneladas:pesoLiquidoMap[dt.DT]||dt.PESO,
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(dt.AGENDA||T),
