@@ -535,6 +535,7 @@ async function renderMateriaisAba(){
       const grade=row.grade_carregamento||'—';
       const status=row.status||'';
       const sc=SC[status]||'#334155';
+      const descDoc=row.descricao_documento||descDocMap[dt]||'';
 
       // Agrupa por remessa para exibição
       const byRemessa={};
@@ -546,16 +547,26 @@ async function renderMateriaisAba(){
       totalRemessas+=remessas.length;
       totalItens+=itens.length;
 
+      // Soma total de qtde de todos os itens da DT
+      const qtdeTotalDT = itens.reduce((sum, i) => {
+        const n = parseFloat(String(i.qtde||'0').replace(/\./g,'').replace(',','.')) || 0;
+        return sum + n;
+      }, 0);
+
       html+=`<div class="mat-group" style="margin-bottom:14px;">`;
       html+=`<div class="mat-group-h" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:10px 14px;">`;
       html+=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
       html+=`<span style="color:#93c5fd;font-size:14px;font-weight:900;">🚛 ${dt}</span>`;
       html+=`${diaTag} ${opBadge}`;
+      if(descDoc) html+=`<span style="color:#94a3b8;font-size:10px;font-style:italic;">${descDoc}</span>`;
       html+=`<span style="color:#64748b;font-size:10px;">| ${transp}</span>`;
       html+=`<span style="color:#a5b4fc;font-size:10px;">| ⏱ ${grade}</span>`;
       html+=`<span style="background:${sc}22;border:1px solid ${sc}55;color:${sc};border-radius:4px;padding:1px 7px;font-size:9px;font-weight:700;">${status}</span>`;
       html+=`</div>`;
-      html+=`<span style="color:#64748b;font-size:10px;text-align:right;">${remessas.length} remessa(s) · <b style="color:#a7f3d0;">${itens.length} item(ns)</b></span>`;
+      html+=`<div style="text-align:right;">`;
+      html+=`<div style="color:#64748b;font-size:10px;">${remessas.length} remessa(s) · ${itens.length} item(ns)</div>`;
+      html+=`<div style="font-size:12px;font-weight:700;color:#a7f3d0;">Total: ${Math.round(qtdeTotalDT)} un.</div>`;
+      html+=`</div>`;
       html+=`</div>`;
 
       // Tabela agrupada por remessa
