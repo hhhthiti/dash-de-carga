@@ -396,6 +396,14 @@ const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RE
 const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
 const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
 
+function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
+  const op=String(tipoOperacao||'').toUpperCase();
+  const style=small?' style="padding:3px 10px;font-size:11px;"':'';
+  if(op.includes('TRANSFER')) return `<span class="tag-transf"${style}>🔄 TRANSFERÊNCIA</span>`;
+  if(op.includes('VENDA')) return `<span class="tag-venda"${style}>🛒 VENDA NORMAL</span>`;
+  return emptyDash?'<span class="tag-sem">—</span>':'';
+}
+
 let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
 let remessaMap={}, pesoLiquidoMap={};
 let panelDT=null;
@@ -1139,12 +1147,7 @@ function renderRows(){
     const isReagend=row.reagendada;
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
-    const op=(row.tipo_operacao||'').toUpperCase();
-    const opTag=op.includes('TRANSFER')
-      ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
-      :op.includes('VENDA')
-      ?'<span class="tag-venda">🛒 VENDA NORMAL</span>'
-      :'<span class="tag-sem">—</span>';
+    const opTag=buildTipoOperacaoBadge(row.tipo_operacao,{small:false,emptyDash:true});
     const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
     const clock=clockEmoji(row);
     // Botão reagendamento — aparece nas finalizadas
@@ -1317,12 +1320,7 @@ async function openPanel(dt,dataRef){
   panelDT={dt,dataRef};
   const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef)||{};
   document.getElementById('ptitle').textContent='📦  DT '+dt;
-  const op=(row.tipo_operacao||'').toUpperCase();
-  const opBadge=op.includes('TRANSFER')
-    ?'<span class="tag-transf" style="padding:3px 10px;font-size:11px;">🔄 TRANSFERÊNCIA</span>'
-    :op.includes('VENDA')
-    ?'<span class="tag-venda"  style="padding:3px 10px;font-size:11px;">🛒 VENDA NORMAL</span>'
-    :'';
+  const opBadge=buildTipoOperacaoBadge(row.tipo_operacao,{small:true,emptyDash:false});
   document.getElementById('pdt-info').innerHTML=
     `<b style="color:#93c5fd;font-size:15px">${dt}</b>  ${opBadge}<br/>`+
     `<span style="color:#64748b">Transportadora:</span> <b style="color:#e2e8f0">${row.transportadora||'—'}</b><br/>`+
