@@ -801,13 +801,21 @@ function processRelatorioCSV(file) {
       const rows = parseCSVRelatorio(text, ';');
       if (rows.length < 2) throw new Error('Arquivo vazio ou sem dados.');
       const headers = rows[0].map(h => h.trim().replace(/^"|"$/g,''));
-      const ci = n => headers.findIndex(h => h.toUpperCase().includes(n.toUpperCase()));
-      const iTransp   = ci('Nº transporte') !== -1 ? ci('Nº transporte') : ci('TRANSPORTE');
-      const iDesc     = ci('Descrição de Documento') !== -1 ? ci('Descrição de Documento') : ci('DESCRI');
-      const iPeso     = ci('Peso líquido') !== -1 ? ci('Peso líquido') : ci('PESO');
-      const iRemessa  = ci('Nr. Remessa') !== -1 ? ci('Nr. Remessa') : ci('REMESSA');
+      const norm = v => (v||'')
+        .normalize('NFD').replace(/[̀-ͯ]/g,'')
+        .toUpperCase().replace(/[^A-Z0-9]/g,'');
+      const normHeaders = headers.map(norm);
+      const ci = (...needles) => {
+        const keys = needles.map(norm);
+        return normHeaders.findIndex(h => keys.some(k => h.includes(k)));
+      };
+
+      const iTransp   = ci('Nº transporte', 'NRO TRANSPORTE', 'TRANSPORTE');
+      const iDesc     = ci('Descrição de Documento', 'DESC DOCUMENTO', 'DESCRI');
+      const iPeso     = ci('Peso líquido', 'PESO LIQUIDO', 'PESO');
+      const iRemessa  = ci('Nr. Remessa', 'REMESSA/RECEBIMENTO', 'REMESSA');
       const iMat      = ci('Material');
-      const iQtde     = ci('Qtde Remessa') !== -1 ? ci('Qtde Remessa') : ci('QTDE');
+      const iQtde     = ci('Qtde Remessa', 'QUANTIDADE REMESSA', 'QTDE');
 
       if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
 
@@ -1139,7 +1147,7 @@ function renderRows(){
     const isReagend=row.reagendada;
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
-    const op=(row.tipo_operacao||'').toUpperCase();
+    const op=(row.tipo_operacao||tipoOpMap[row.dt]||'').toUpperCase();
     const opTag=op.includes('TRANSFER')
       ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
       :op.includes('VENDA')
@@ -1161,7 +1169,7 @@ function renderRows(){
       `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
       `</select>${opTag}</div></td>`+
-      `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
+      `<td class="td-sm">${(row.descricao_documento||descDocMap[row.dt]||'')||'—'}</td>`+
       `<td class="td-sm">${row.peso_liquido||row.toneladas||'—'}</td>`;
     tbody.appendChild(tr);
   });
