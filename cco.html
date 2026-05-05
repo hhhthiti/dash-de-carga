@@ -1148,6 +1148,7 @@ function renderRows(){
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
     const op=(row.tipo_operacao||tipoOpMap[row.dt]||'').toUpperCase();
+    const descDoc = tipoOpMap[row.dt] || descDocMap[row.dt] || '';
     const opTag=op.includes('TRANSFER')
       ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
       :op.includes('VENDA')
@@ -1169,7 +1170,7 @@ function renderRows(){
       `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
       `</select>${opTag}</div></td>`+
-      `<td class="td-sm">${(row.descricao_documento||descDocMap[row.dt]||'')||'—'}</td>`+
+      `<td class=\"td-sm\">${descDoc||'—'}</td>`+
       `<td class="td-sm">${row.peso_liquido||row.toneladas||'—'}</td>`;
     tbody.appendChild(tr);
   });
