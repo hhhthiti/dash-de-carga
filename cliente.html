@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Acompanhamento de Cargas — Cliente</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="style.css"/>
+<style>
+/* Overrides para o modo cliente */
+#header { background: linear-gradient(135deg, #1a2e1a, #0f172a); border-bottom-color: #166534; }
+#hicon  { background: #16a34a; }
+.client-badge {
+  background: #052e16; border: 1px solid #16a34a; border-radius: 20px;
+  padding: 3px 12px; font-size: 10px; color: #4ade80; font-weight: 700; letter-spacing: 1px;
+}
+/* Painel adicionar DT manual */
+#add-dt-panel {
+  background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+  margin-bottom: 20px; overflow: hidden;
+}
+.add-dt-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr 160px 160px 120px 1fr auto;
+  gap: 8px; align-items: end; padding: 16px;
+}
+@media(max-width:900px){
+  .add-dt-grid { grid-template-columns: 1fr 1fr; }
+}
+.add-dt-label { font-size:9px; letter-spacing:1.5px; color:#64748b; font-weight:700; display:block; margin-bottom:4px; }
+.add-dt-input {
+  width:100%; background:#0f172a; border:1px solid #334155; border-radius:6px;
+  color:#e2e8f0; padding:7px 10px; font-size:12px; font-family:inherit;
+}
+.add-dt-input:focus { outline:none; border-color:#3b82f6; }
+.add-dt-input::placeholder { color:#475569; }
+#dt-list-manual {
+  border-top: 1px solid #334155;
+  max-height: 240px; overflow-y: auto;
+}
+.dt-manual-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 160px 160px 110px 1fr 32px;
+  gap: 8px; padding: 7px 16px; border-bottom: 1px solid #1e293b;
+  align-items: center; font-size: 12px;
+}
+.dt-manual-row:last-child { border-bottom: none; }
+.dt-manual-del {
+  background: transparent; border: 1px solid #334155; border-radius:5px;
+  color:#64748b; cursor:pointer; font-size:13px; height:28px; width:28px;
+}
+.dt-manual-del:hover { border-color:#ef4444; color:#ef4444; }
+.dt-manual-head {
+  display: grid;
+  grid-template-columns: 110px 1fr 160px 160px 110px 1fr 32px;
+  gap: 8px; padding: 6px 16px;
+  font-size:9px; letter-spacing:1.5px; color:#64748b; font-weight:700;
+  background:#162032; border-top:1px solid #334155;
+}
+/* Oculta colunas que o cliente não vê */
+.col-materiais, .col-acoes-cco { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="hicon">🏭</div>
+  <div>
+    <div id="htitle">ACOMPANHAMENTO DE CARGAS</div>
+    <div id="hsub">VISÃO DO CLIENTE</div>
+  </div>
+  <span class="client-badge">CLIENTE</span>
+  <div id="sync-badge" style="margin-left:8px;"><div id="sync-dot"></div><span id="sync-txt">CONECTANDO…</span></div>
+  <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
+    <button class="bg" onclick="reloadTable()" style="font-size:11px;">↻ Atualizar</button>
+  </div>
+</div>
+
+<div id="main">
+  <div class="alert alert-err" id="aerr"></div>
+  <div class="alert alert-ok"  id="aok"></div>
+  <div class="alert alert-inf" id="ainf"></div>
+
+  <!-- PAINEL ADICIONAR DT MANUAL -->
+  <div id="add-dt-panel">
+    <div class="ch"><span>➕</span><span class="ct">ADICIONAR DT MANUALMENTE</span>
+      <span style="margin-left:auto;font-size:11px;color:#64748b;">Para DTs sem grade ou com horário especial</span>
+    </div>
+    <div class="add-dt-grid">
+      <div>
+        <span class="add-dt-label">Nº DT</span>
+        <input class="add-dt-input" id="add-dt"          placeholder="Ex: 23166206"/>
+      </div>
+      <div>
+        <span class="add-dt-label">TRANSPORTADORA</span>
+        <input class="add-dt-input" id="add-transp"      placeholder="Nome da transportadora"/>
+      </div>
+      <div>
+        <span class="add-dt-label">GRADE (INÍCIO)</span>
+        <input class="add-dt-input" id="add-grade" type="datetime-local"/>
+      </div>
+      <div>
+        <span class="add-dt-label">GRADE (FIM)</span>
+        <input class="add-dt-input" id="add-fim"   type="datetime-local"/>
+      </div>
+      <div>
+        <span class="add-dt-label">TIPO VEÍCULO</span>
+        <input class="add-dt-input" id="add-tipo"        placeholder="Carreta, Truck…"/>
+      </div>
+      <div>
+        <span class="add-dt-label">OBS / MOTIVO</span>
+        <input class="add-dt-input" id="add-obs"         placeholder="Ex: encaixe de horário, sem grade…"/>
+      </div>
+      <div>
+        <span class="add-dt-label" style="opacity:0">.</span>
+        <button class="bp" onclick="addDTManual()" style="white-space:nowrap;width:100%;">+ Adicionar</button>
+      </div>
+    </div>
+
+    <!-- Lista das DTs adicionadas manualmente -->
+    <div id="dt-manual-empty" style="padding:12px 16px;font-size:12px;color:#334155;display:none;">
+      Nenhuma DT manual adicionada ainda nesta sessão.
+    </div>
+    <div id="dt-manual-header" class="dt-manual-head" style="display:none;">
+      <span>Nº DT</span><span>TRANSPORTADORA</span><span>GRADE INÍCIO</span><span>GRADE FIM</span><span>TIPO</span><span>OBS</span><span></span>
+    </div>
+    <div id="dt-list-manual"></div>
+  </div>
+
+  <!-- TABELA OPERACIONAL -->
+  <div class="card" id="passo4">
+    <div id="tbar">
+      <span style="font-weight:800;font-size:10px;letter-spacing:2px;color:#94a3b8">📋 SITUAÇÃO DAS DTs</span>
+      <span id="tinfo"></span>
+      <div id="tstatus"></div>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-todas"      onclick="switchTableTab('todas')">📋 EM ANDAMENTO</button>
+      <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 FINALIZADAS</button>
+      <button class="tab-btn mat-tab"   id="tab-manuais"    onclick="switchTableTab('manuais')">✏️ ADICIONADAS MANUALMENTE</button>
+    </div>
+
+    <div id="twrap">
+      <table>
+        <thead><tr>
+          <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th>
+          <th>GRADE</th><th>FIM</th>
+          <th>STATUS</th><th>TIPO VEÍ.</th><th>OPERAÇÃO</th><th>AGENDA</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="mat-board" class="mat-board" style="display:none;"></div>
+  </div>
+</div>
+
+<div id="spinner">⏳ Salvando…</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   SUPABASE REST
+═══════════════════════════════════════════════════════ */
+const SB_URL = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
+const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
+const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+
+async function sbGet(table,qs=''){
+  const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
+  if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
+  return r.json();
+}
+async function sbPatch(table,data,filters){
+  const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${v.includes('/')?'"'+v+'"':encodeURIComponent(v)}`).join('&');
+  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
+  if(!r.ok) throw new Error(`PATCH ${table}: `+await r.text());
+}
+async function sbUpsert(table,rows){
+  for(let i=0;i<rows.length;i+=30){
+    const r=await fetch(`${SB_URL}/${table}`,{
+      method:'POST',
+      headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(rows.slice(i,i+30))
+    });
+    if(!r.ok) throw new Error(`UPSERT ${table}: `+await r.text());
+  }
+}
+async function sbDelete(table,filters){
+  const q=Object.entries(filters).map(([k,v])=>{
+    const vs=String(v);return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
+  }).join('&');
+  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
+  if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
+}
+async function sbInsert(table,rows){
+  const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
+  if(!r.ok) throw new Error(`INSERT ${table}: `+await r.text());
+}
+
+/* ═══════════════════════════════════════════════════════
+   ESTADO
+═══════════════════════════════════════════════════════ */
+const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','SEPARANDO','EM FATURAMENTO','PATIO','DT EXCLUIDA','FOI EMBORA'];
+const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
+const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
+
+let tableData=[];
+let currentTableTab='todas';
+let manualDTs=[]; // DTs adicionadas manualmente nesta sessão
+
+/* ═══════════════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════════════ */
+function today(){const d=new Date();d.setHours(0,0,0,0);return d;}
+function tomorrow(){const d=today();d.setDate(d.getDate()+1);return d;}
+function sameDay(a,b){return a&&b&&a.getDate()===b.getDate()&&a.getMonth()===b.getMonth()&&a.getFullYear()===b.getFullYear();}
+function dKey(d){return d.toLocaleDateString('pt-BR');}
+function fmtDT(d,t){
+  if(!d)return '';
+  return t?d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('pt-BR');
+}
+function parseBR(s){
+  if(!s||!s.trim())return null;
+  const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[T\s](\d{2}):(\d{2}))?/);
+  return m?new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)):null;
+}
+function parseAgendaDateTime(row){
+  const grade=parseBR(row.grade_carregamento||'');
+  if(grade) return grade;
+  const agenda=parseBR(row.agenda||'');
+  if(agenda) return agenda;
+  return new Date(9999,0,1);
+}
+
+function showErr(m){const e=document.getElementById('aerr');e.textContent='⚠️ '+m;e.style.display='block';setTimeout(()=>e.style.display='none',5000);}
+function showOk(m) {const e=document.getElementById('aok'); e.textContent='✅ '+m;e.style.display='block';setTimeout(()=>e.style.display='none',4000);}
+function showInf(m){const e=document.getElementById('ainf');e.textContent='⏳ '+m;e.style.display='block';}
+function hideInf(){document.getElementById('ainf').style.display='none';}
+function spin(on){document.getElementById('spinner').style.display=on?'block':'none';}
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  document.getElementById('sync-txt').textContent='ONLINE';
+  await reloadTable();
+  setInterval(()=>{ if(tableData.length) renderRows(); }, 60000);
+  setInterval(()=>{ reloadTable(); }, 120000); // auto-refresh a cada 2min
+});
+
+/* ═══════════════════════════════════════════════════════
+   CARREGAR TABELA DO BANCO
+═══════════════════════════════════════════════════════ */
+async function getActiveRefs(){
+  const T=today(),AM=tomorrow();
+  const base=[dKey(T),dKey(AM)];
+  try{
+    const todayRows=await sbGet('reporte_carga',`data_ref=in.("${base[0]}","${base[1]}")&select=dt&limit=1`);
+    if(todayRows&&todayRows.length) return base;
+    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=500');
+    const uniq=[];
+    (rec||[]).forEach(r=>{const k=String(r.data_ref||'');if(k&&!uniq.includes(k)) uniq.push(k);});
+    return uniq.slice(0,2);
+  }catch(e){return base;}
+}
+
+async function reloadTable(){
+  try{
+    const refs=await getActiveRefs();
+    if(!refs.length){tableData=[];renderRows();return;}
+    const data=await sbGet('reporte_carga',
+      `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
+    );
+    tableData=(data||[]).sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b));
+    renderRows();
+  }catch(e){showErr('Erro ao carregar: '+e.message);}
+}
+
+/* ═══════════════════════════════════════════════════════
+   SWITCH ABA
+═══════════════════════════════════════════════════════ */
+function switchTableTab(tab){
+  currentTableTab=tab;
+  ['todas','finalizadas','manuais'].forEach(t=>{
+    const el=document.getElementById('tab-'+t);
+    if(el) el.classList.toggle('active',t===tab);
+  });
+  renderRows();
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDERIZAR TABELA
+═══════════════════════════════════════════════════════ */
+function renderRows(){
+  // Badges de status
+  const sum={};
+  tableData.forEach(r=>{sum[r.status]=(sum[r.status]||0)+1;});
+  const sw=document.getElementById('tstatus');sw.innerHTML='';
+  Object.entries(sum).forEach(([s,n])=>{
+    const c=SC[s]||'#334155';
+    const sp=document.createElement('span');sp.className='sbadge';
+    sp.style.cssText=`background:${c}22;border:1px solid ${c}55;color:${c}`;
+    sp.textContent=s+': '+n;sw.appendChild(sp);
+  });
+  const cH=tableData.filter(r=>r.dia_ref==='HOJE').length;
+  const cA=tableData.filter(r=>r.dia_ref==='AMANHÃ').length;
+  document.getElementById('tinfo').innerHTML=
+    `<span style="color:#60a5fa">${cH} hoje</span> · <span style="color:#a78bfa">${cA} amanhã</span>`;
+
+  const nFin=tableData.filter(r=>STATUS_FINAIS.includes(r.status)).length;
+  const tabFin=document.getElementById('tab-finalizadas');
+  if(tabFin) tabFin.textContent=`🏁 FINALIZADAS (${nFin})`;
+
+  const tbody=document.getElementById('tbody');tbody.innerHTML='';
+
+  if(currentTableTab==='manuais'){
+    // Mostra só as DTs manuais
+    if(!manualDTs.length){
+      tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:30px;color:#334155;">Nenhuma DT manual adicionada ainda.</td></tr>`;
+      return;
+    }
+    manualDTs.forEach(m=>{
+      const tr=document.createElement('tr');
+      tr.className='row-hoje';
+      const diaTag='<span class="tag-hoje">MANUAL</span>';
+      tr.innerHTML=
+        `<td>${diaTag}</td>`+
+        `<td><span class="td-dt" style="cursor:default;">${m.dt}</span></td>`+
+        `<td class="td-transp">${m.transportadora||'—'}</td>`+
+        `<td class="td-time">${m.grade||'—'}</td>`+
+        `<td class="td-time">${m.fim||'—'}</td>`+
+        `<td><span style="color:#f59e0b;font-size:11px;font-weight:700;">AG CHEGADA</span></td>`+
+        `<td class="td-sm">${m.tipo||'—'}</td>`+
+        `<td><span class="tag-sem">—</span></td>`+
+        `<td class="td-ag">${m.obs||'—'}</td>`;
+      tbody.appendChild(tr);
+    });
+    return;
+  }
+
+  let rows=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b));
+  if(currentTableTab==='finalizadas'){
+    rows=rows.filter(r=>STATUS_FINAIS.includes(r.status));
+  }else{
+    rows=rows.filter(r=>!STATUS_FINAIS.includes(r.status));
+  }
+
+  rows.forEach(row=>{
+    const isH=row.dia_ref==='HOJE';
+    const c=SC[row.status]||'#334155';
+    const tr=document.createElement('tr');
+    const isReagend=row.reagendada;
+    if(isReagend) tr.className='row-reagendada-flag';
+    else tr.className=isH?'row-hoje':'row-amanha';
+    const op=(row.tipo_operacao||'').toUpperCase();
+    const opTag=op.includes('TRANSFER')
+      ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
+      :op.includes('VENDA')
+      ?'<span class="tag-venda">🛒 VENDA NORMAL</span>'
+      :'<span class="tag-sem">—</span>';
+    const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
+    // Status badge (somente visualização, sem edição)
+    const statusBadge=`<span style="background:${c}22;border:1px solid ${c}55;color:${c};border-radius:5px;padding:3px 10px;font-size:11px;font-weight:700;">${row.status}</span>`;
+    tr.innerHTML=
+      `<td>${diaTag}</td>`+
+      `<td><span class="td-dt" style="cursor:default;">${row.dt}</span></td>`+
+      `<td class="td-transp">${row.transportadora||'—'}</td>`+
+      `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
+      `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
+      `<td>${statusBadge} ${opTag}</td>`+
+      `<td class="td-sm">${row.tipo||'—'}</td>`+
+      `<td>${opTag}</td>`+
+      `<td class="td-ag">${row.agenda||'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  if(!rows.length){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td colspan="9" style="text-align:center;padding:30px;color:#334155;font-size:13px;">
+      ${currentTableTab==='finalizadas'?'Nenhuma DT finalizada ainda.':'Todas as DTs do dia estão finalizadas.'}
+    </td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ADICIONAR DT MANUAL
+═══════════════════════════════════════════════════════ */
+function fmtLocal(v){
+  if(!v)return '';
+  const d=new Date(v);
+  return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
+async function addDTManual(){
+  const dt   =(document.getElementById('add-dt').value||'').trim();
+  const transp=(document.getElementById('add-transp').value||'').trim();
+  const grade =(document.getElementById('add-grade').value||'').trim();
+  const fim   =(document.getElementById('add-fim').value||'').trim();
+  const tipo  =(document.getElementById('add-tipo').value||'').trim();
+  const obs   =(document.getElementById('add-obs').value||'').trim();
+
+  if(!dt){showErr('Informe o número da DT.');return;}
+
+  const gradeStr=grade?fmtLocal(grade):'';
+  const fimStr=fim?fmtLocal(fim):'';
+  const T=today();
+  const dataRef=dKey(T);
+
+  spin(true);
+  try{
+    // Salva no banco como nova DT — usa status padrão AG CHEGADA
+    await sbUpsert('reporte_carga',[{
+      dt:String(dt),
+      transportadora:transp,
+      grade_carregamento:gradeStr,
+      fim_carregamento:fimStr,
+      hora_chegada:'',
+      status:'AG CHEGADA',
+      tipo:tipo,
+      toneladas:'',
+      agenda:gradeStr,
+      local_cd:'MANUAL',
+      dia_ref:'HOJE',
+      data_ref:dataRef,
+      tipo_operacao:'',
+      reagendada:false,
+    }]);
+    // Log
+    await sbInsert('reporte_logs',[{
+      dt:String(dt),
+      data_ref:dataRef,
+      status:'ADICIONADA MANUALMENTE (CLIENTE)',
+      transportadora:transp||'',
+      created_at:new Date().toISOString(),
+    }]);
+    // Adiciona na lista local
+    manualDTs.push({dt,transportadora:transp,grade:gradeStr,fim:fimStr,tipo,obs});
+    renderManualList();
+    showOk('DT '+dt+' adicionada com sucesso!');
+    // Limpa formulário
+    ['add-dt','add-transp','add-grade','add-fim','add-tipo','add-obs'].forEach(id=>document.getElementById(id).value='');
+    await reloadTable();
+  }catch(e){showErr('Erro ao adicionar DT: '+e.message);}
+  spin(false);
+}
+
+function renderManualList(){
+  const list=document.getElementById('dt-list-manual');
+  const hdr=document.getElementById('dt-manual-header');
+  const empty=document.getElementById('dt-manual-empty');
+  list.innerHTML='';
+  if(!manualDTs.length){
+    if(hdr) hdr.style.display='none';
+    if(empty) empty.style.display='block';
+    return;
+  }
+  if(hdr) hdr.style.display='grid';
+  if(empty) empty.style.display='none';
+  manualDTs.forEach((m,i)=>{
+    const row=document.createElement('div');
+    row.className='dt-manual-row';
+    row.innerHTML=
+      `<span style="color:#93c5fd;font-weight:800;">${m.dt}</span>`+
+      `<span class="td-transp">${m.transportadora||'—'}</span>`+
+      `<span class="td-time">${m.grade||'—'}</span>`+
+      `<span class="td-time">${m.fim||'—'}</span>`+
+      `<span class="td-sm">${m.tipo||'—'}</span>`+
+      `<span class="td-sm">${m.obs||'—'}</span>`+
+      `<button class="dt-manual-del" onclick="removeManual(${i})">🗑</button>`;
+    list.appendChild(row);
+  });
+}
+
+async function removeManual(i){
+  const m=manualDTs[i];
+  if(!m)return;
+  if(!confirm('Remover DT '+m.dt+' da lista manual? Isso também remove do banco.'))return;
+  spin(true);
+  try{
+    const dataRef=dKey(today());
+    await sbDelete('reporte_carga',{dt:m.dt,data_ref:dataRef});
+    manualDTs.splice(i,1);
+    renderManualList();
+    showOk('DT '+m.dt+' removida.');
+    await reloadTable();
+  }catch(e){showErr('Erro ao remover: '+e.message);}
+  spin(false);
+}
+</script>
+</body>
+</html>
