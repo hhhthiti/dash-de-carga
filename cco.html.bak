@@ -113,19 +113,6 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 .chips-wrap{display:flex;flex-wrap:wrap;margin-bottom:20px;}
 #spinner{display:none;position:fixed;bottom:20px;right:20px;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-size:12px;color:#94a3b8;z-index:500;}
 
-@media print{
-  @page{size:landscape;margin:10mm;}
-  body *{visibility:hidden !important;}
-  body.print-panel-mode #panel,
-  body.print-panel-mode #panel *{visibility:visible !important;}
-  body.print-panel-mode #panel{position:static;width:100%;height:auto;transform:none;border:none;background:#fff;color:#111;}
-  body.print-panel-mode #panel .bg,
-  body.print-panel-mode #panel .bp,
-  body.print-panel-mode #panel .mat-del,
-  body.print-panel-mode #panel .obs-area,
-  body.print-panel-mode #panel #pfoot{display:none !important;}
-}
-
 /* MODAL DE LOGS */
 #log-overlay{position:fixed;inset:0;background:#000000cc;z-index:300;display:none;align-items:center;justify-content:center;}
 #log-overlay.open{display:flex;}
@@ -220,24 +207,63 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     </div>
   </div>
 
-  <!-- PASSO 3 — Relatório de Expedição CSV -->
+  <!-- PASSO 3 — ZLES002 (ex-passo3 + ex-passo4 unificados) -->
   <div class="card" id="passo3" style="display:none">
-    <div class="ch"><span>📦</span><span class="ct">PASSO 3 — RELATÓRIO DE EXPEDIÇÃO (CSV)</span></div>
+    <div class="ch"><span>📦</span><span class="ct">PASSO 3 — MATERIAIS / QUANTIDADES (SAP ZLES002)</span></div>
     <div class="cb">
       <p class="desc">
-        Carregue o CSV exportado do <b style="color:#f59e0b">Relatório de Expedição</b>.<br/>
-        O sistema lê automaticamente: <b style="color:#60a5fa">Nº transporte</b> · <b style="color:#60a5fa">Descrição de Documento</b> · <b style="color:#60a5fa">Peso líquido</b> · <b style="color:#60a5fa">Nr. Remessa/Recebimento</b> · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b>.
+        Carregue os dados da <b style="color:#f59e0b">ZLES002</b> ou cole direto do SAP.<br/>
+        O sistema detecta automaticamente as colunas: <b style="color:#60a5fa">Nr. Remessa/Recebimento</b> = DT · <b style="color:#60a5fa">Material</b> = Código · <b style="color:#60a5fa">Qtde Remessa</b> = Quantidade · <b style="color:#60a5fa">Denominação / Setor de atividade</b> = Tipo de operação.
         <span id="p3-mat-hint" style="display:none;color:#4ade80;font-weight:700;margin-left:6px;"></span>
       </p>
-      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#64748b;">
-        <b style="color:#93c5fd;">📋 Upload de status:</b>
-        <span id="upload-status-p3">Nenhum arquivo carregado</span>
+
+      <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid #334155;border-radius:8px;overflow:hidden;">
+        <button id="tab-file" onclick="switchTab('file')"
+          style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#3b82f6;color:#fff;border:none;cursor:pointer;">
+          📂 Subir arquivo CSV
+        </button>
+        <button id="tab-paste" onclick="switchTab('paste')"
+          style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#1e293b;color:#94a3b8;border:none;cursor:pointer;border-left:1px solid #334155;">
+          📋 Colar do SAP
+        </button>
+        <button id="tab-xlsx" onclick="switchTab('xlsx')"
+          style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#1e293b;color:#94a3b8;border:none;cursor:pointer;border-left:1px solid #334155;">
+          📊 Planilha XLSX extra
+        </button>
       </div>
-      <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
-        <div class="dz-icon">📂</div>
-        <div class="dz-label" id="dz2l">Arraste o CSV do Relatório de Expedição aqui ou clique para selecionar</div>
+
+      <div id="tab-file-body">
+        <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
+          <div class="dz-icon">📂</div>
+          <div class="dz-label" id="dz2l">Arraste o arquivo ZLES002 aqui (CSV separado por ponto-e-vírgula)</div>
+        </div>
+        <input type="file" id="f2" accept=".csv,.txt,.tsv" style="display:none" onchange="processZles(this.files[0])"/>
       </div>
-      <input type="file" id="f2" accept=".csv" style="display:none" onchange="processRelatorioCSV(this.files[0])"/>
+
+      <div id="tab-paste-body" style="display:none;">
+        <p style="font-size:12px;color:#64748b;margin-bottom:8px;">
+          No SAP, selecione todas as linhas da ZLES002 (Ctrl+A), copie (Ctrl+C) e cole aqui abaixo (Ctrl+V):
+        </p>
+        <textarea id="zles-paste"
+          style="width:100%;height:160px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:10px;font-size:12px;font-family:monospace;resize:vertical;"
+          placeholder="Cole aqui o conteúdo copiado do SAP..."></textarea>
+        <button class="bp" style="margin-top:8px;width:100%;" onclick="processZlesPaste()">▶ Processar texto colado</button>
+      </div>
+
+      <div id="tab-xlsx-body" style="display:none;">
+        <p style="font-size:12px;color:#64748b;margin-bottom:8px;">
+          <b style="color:#f59e0b">⚠️ NÃO é para o ZLES002!</b> Este campo é para uma planilha auxiliar personalizada.<br/>
+          Precisa ter exatamente estas colunas: <b style="color:#f59e0b">Nº transporte</b> · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b>.<br/>
+          Para o ZLES002 do SAP, use as abas acima: <b style="color:#4ade80">📂 Subir arquivo CSV</b> ou <b style="color:#4ade80">📋 Colar do SAP</b>.
+        </p>
+        <div class="dz" id="dz3" onclick="document.getElementById('f3').click()">
+          <div class="dz-icon">📂</div>
+          <div class="dz-label" id="dz3l">Arraste a planilha XLSX aqui</div>
+        </div>
+        <input type="file" id="f3" accept=".xlsx,.xls" style="display:none" onchange="processExtra(this.files[0])"/>
+        <div id="dbgExtra" class="debug-box"></div>
+      </div>
+
       <div id="dbgZles" class="debug-box"></div>
       <div style="margin-top:12px;display:flex;gap:8px;">
         <button class="bg" onclick="buildTable()">Pular → ir para a tabela</button>
@@ -265,6 +291,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="tab-bar">
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
+      <button class="tab-btn mat-tab" id="tab-materiais" onclick="switchTableTab('materiais')">📦 MATERIAIS POR DT</button>
     </div>
 
     <div id="twrap">
@@ -272,7 +299,8 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <thead><tr>
           <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th>
           <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th>
-          <th>STATUS / OPERAÇÃO</th><th>DESC. DOCUMENTO</th><th>PESO LÍQUIDO</th>
+          <th>STATUS / OPERAÇÃO</th><th>DESC. DOCUMENTO</th><th>TONELADAS</th>
+          <th>OPERAÇÃO</th><th>AGENDA</th><th>AÇÕES</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -303,13 +331,9 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
   </div>
   <div id="pbody">
     <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-      <span class="sec-lbl" style="margin:0;">MATERIAIS / QUANTIDADES</span>
-      <button class="bg" onclick="printPanelMapa()" style="padding:4px 10px;font-size:11px;">🖨️ Imprimir mapa</button>
-    </div>
+    <span class="sec-lbl">MATERIAIS / QUANTIDADES</span>
     <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE</span><span></span></div>
     <div id="mat-list"></div>
-    <div id="mat-total" style="margin-top:8px;text-align:right;color:#a7f3d0;font-weight:800;font-size:13px;">Total: 0</div>
     <button class="bg" onclick="addMatRow()" style="width:100%;margin-top:6px;font-size:12px;">+ Adicionar material</button>
     <span class="sec-lbl" style="margin-top:18px;">OBSERVAÇÕES</span>
     <textarea class="obs-area" id="pobs" placeholder="Anotações gerais desta DT..."></textarea>
@@ -412,16 +436,7 @@ const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RE
 const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
 const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
 
-function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
-  const op=String(tipoOperacao||'').toUpperCase();
-  const style=small?' style="padding:3px 10px;font-size:11px;"':'';
-  if(op.includes('TRANSFER')) return `<span class="tag-transf"${style}>🔄 TRANSFERÊNCIA</span>`;
-  if(op.includes('VENDA')) return `<span class="tag-venda"${style}>🛒 VENDA NORMAL</span>`;
-  return emptyDash?'<span class="tag-sem">—</span>':'';
-}
-
 let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
-let remessaMap={}, pesoLiquidoMap={};
 let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
@@ -485,9 +500,8 @@ function switchTab(tab){
 let matFiltro='todos';
 
 function switchTableTab(tab){
-  if(tab==='materiais') tab='todas';
   currentTableTab=tab;
-  ['todas','finalizadas'].forEach(t=>{
+  ['todas','finalizadas','materiais'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el) el.classList.toggle('active',t===tab);
   });
@@ -495,9 +509,15 @@ function switchTableTab(tab){
   const twrap=document.getElementById('twrap');
   const mwrap=document.getElementById('materiais-wrap');
   if(board)  board.style.display='none';
-  if(twrap)  twrap.style.display='block';
-  if(mwrap)  mwrap.style.display='none';
-  renderRows();
+  if(tab==='materiais'){
+    if(twrap)  twrap.style.display='none';
+    if(mwrap)  mwrap.style.display='block';
+    renderMateriaisAba();
+  } else {
+    if(twrap)  twrap.style.display='block';
+    if(mwrap)  mwrap.style.display='none';
+    renderRows();
+  }
 }
 
 function filtrarMateriais(f){
@@ -517,13 +537,35 @@ async function renderMateriaisAba(){
   if(!board) return;
   board.innerHTML='<div style="color:#64748b;padding:20px;">Carregando materiais…</div>';
   try{
+    const refs=[...new Set(tableData.map(r=>r.data_ref).filter(Boolean))];
+    if(!refs.length){
+      board.innerHTML='<div style="color:#334155;padding:20px;">Sem DTs carregadas. Suba o arquivo de agendamento primeiro.</div>';
+      return;
+    }
+    const q='data_ref=in.("'+refs.join('","')+'")&order=dt.asc,ordem.asc';
+    const mats=await sbGet('reporte_materiais',q);
+
+    // Agrupa por DT
+    const byDT={};
+    (mats||[]).forEach(m=>{
+      const key=String(m.dt||'').trim();
+      if(!key) return;
+      if(!byDT[key]) byDT[key]=[];
+      const mat=String(m.material||'').trim();
+      if(!mat) return;
+      const qtd=Number(String(m.quantidade||'0').replace(',','.'))||0;
+      const ex=byDT[key].find(x=>x.mat===mat);
+      if(ex) ex.qtd+=qtd;
+      else byDT[key].push({mat,qtd});
+    });
+
     // Ordem das DTs conforme grade
     const ordem=[...tableData]
       .sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b))
       .map(r=>String(r.dt));
     const uniq=[]; ordem.forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
-    // Adiciona DTs de remessaMap não presentes na tabela
-    Object.keys(remessaMap).forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
+    // Adiciona DTs que têm material mas não estão na ordem (edge case)
+    Object.keys(byDT).forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
 
     // Aplica filtro de tipo
     const dtsFiltradas=uniq.filter(dt=>{
@@ -534,12 +576,10 @@ async function renderMateriaisAba(){
       return true;
     });
 
-    let totalDTs=0, totalRemessas=0, totalItens=0;
+    let totalDTs=0, totalItens=0, totalQtd=0;
     let html='';
-
     dtsFiltradas.forEach(dt=>{
-      const itens=remessaMap[dt];
-      if(!itens||!itens.length) return;
+      const itens=byDT[dt]; if(!itens||!itens.length) return;
       totalDTs++;
       const row=tableData.find(r=>r.dt===dt)||{};
       const op=(row.tipo_operacao||tipoOpMap[dt]||'').toUpperCase();
@@ -554,65 +594,39 @@ async function renderMateriaisAba(){
       const grade=row.grade_carregamento||'—';
       const status=row.status||'';
       const sc=SC[status]||'#334155';
-      const descDoc=row.descricao_documento||descDocMap[dt]||'';
-
-      // Agrupa por remessa para exibição
-      const byRemessa={};
-      itens.forEach(i=>{
-        if(!byRemessa[i.remessa]) byRemessa[i.remessa]=[];
-        byRemessa[i.remessa].push({material:i.material, qtde:i.qtde});
-      });
-      const remessas=Object.keys(byRemessa);
-      totalRemessas+=remessas.length;
+      const qtdTotal=itens.reduce((s,x)=>s+x.qtd,0);
       totalItens+=itens.length;
-
-      // Soma total de qtde de todos os itens da DT
-      const qtdeTotalDT = itens.reduce((sum, i) => {
-        const n = parseFloat(String(i.qtde||'0').replace(/\./g,'').replace(',','.')) || 0;
-        return sum + n;
-      }, 0);
+      totalQtd+=qtdTotal;
 
       html+=`<div class="mat-group" style="margin-bottom:14px;">`;
       html+=`<div class="mat-group-h" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:10px 14px;">`;
       html+=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
-      html+=`<span style="color:#93c5fd;font-size:14px;font-weight:900;">🚛 ${dt}</span>`;
+      html+=`<span style="color:#93c5fd;font-size:14px;font-weight:900;">DT ${dt}</span>`;
       html+=`${diaTag} ${opBadge}`;
-      if(descDoc) html+=`<span style="color:#94a3b8;font-size:10px;font-style:italic;">${descDoc}</span>`;
       html+=`<span style="color:#64748b;font-size:10px;">| ${transp}</span>`;
       html+=`<span style="color:#a5b4fc;font-size:10px;">| ⏱ ${grade}</span>`;
       html+=`<span style="background:${sc}22;border:1px solid ${sc}55;color:${sc};border-radius:4px;padding:1px 7px;font-size:9px;font-weight:700;">${status}</span>`;
       html+=`</div>`;
-      html+=`<div style="text-align:right;">`;
-      html+=`<div style="color:#64748b;font-size:10px;">${remessas.length} remessa(s) · ${itens.length} item(ns)</div>`;
-      html+=`<div style="font-size:12px;font-weight:700;color:#a7f3d0;">Total: ${Math.round(qtdeTotalDT)} un.</div>`;
+      html+=`<span style="color:#64748b;font-size:10px;text-align:right;">${itens.length} materiais · <b style="color:#a7f3d0;">${Math.round(qtdTotal)} un.</b></span>`;
       html+=`</div>`;
-      html+=`</div>`;
-
-      // Tabela agrupada por remessa
+      // Tabela de itens
       html+=`<div style="padding:0 14px 10px;">`;
-      remessas.forEach(remessa=>{
-        const linhas=byRemessa[remessa];
-        html+=`<div style="margin-bottom:6px;">`;
-        html+=`<div style="display:grid;grid-template-columns:1fr 120px 100px;gap:4px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:2px;">`;
-        html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#3b82f6;font-weight:700;">REMESSA ${remessa}</span>`;
-        html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">MATERIAL</span>`;
-        html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;text-align:right;">QTDE</span>`;
-        html+=`</div>`;
-        linhas.forEach(({material,qtde},idx)=>{
-          html+=`<div style="display:grid;grid-template-columns:1fr 120px 100px;gap:4px;padding:2px 0;border-bottom:1px solid #1e293b;font-size:12px;">`;
-          html+=`<span style="color:#475569;font-size:10px;">${idx===0?'':'—'}</span>`;
-          html+=`<span style="color:#cbd5e1;">${material}</span>`;
-          html+=`<span style="text-align:right;color:#a7f3d0;font-weight:700;">${qtde||'—'}</span>`;
-          html+=`</div>`;
-        });
+      html+=`<div style="display:grid;grid-template-columns:1fr 90px;gap:4px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">`;
+      html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">MATERIAL</span>`;
+      html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;text-align:right;">QUANTIDADE</span>`;
+      html+=`</div>`;
+      itens.forEach(({mat,qtd})=>{
+        html+=`<div style="display:grid;grid-template-columns:1fr 90px;gap:4px;padding:3px 0;border-bottom:1px solid #1e293b;font-size:12px;">`;
+        html+=`<span style="color:#cbd5e1;">${mat}</span>`;
+        html+=`<span style="text-align:right;color:#a7f3d0;font-weight:700;">${Math.round(qtd)}</span>`;
         html+=`</div>`;
       });
       html+=`</div></div>`;
     });
 
-    if(resumo) resumo.textContent=`${totalDTs} transportes · ${totalRemessas} remessas · ${totalItens} itens`;
+    if(resumo) resumo.textContent=`${totalDTs} DTs · ${totalItens} materiais · ${Math.round(totalQtd)} unidades total`;
     board.innerHTML=html||'<div style="color:#334155;padding:20px;">Nenhum material encontrado'+
-      (matFiltro!=='todos'?' para o filtro selecionado.':'. Carregue o CSV do Relatório de Expedição no Passo 3.')+'</div>';
+      (matFiltro!=='todos'?' para o filtro selecionado.':'. Cole a ZLES002 no Passo 3 para importar.')+'</div>';
   }catch(e){
     board.innerHTML='<div style="color:#ef4444;padding:20px;">Erro ao carregar: '+e.message+'</div>';
   }
@@ -647,12 +661,6 @@ function parseAgendaDateTime(row){
   if(agenda) return agenda;
   return new Date(9999,0,1);
 }
-function normalizeDT(raw){
-  const v=String(raw||'').trim();
-  if(!v) return '';
-  if(/^\d+$/.test(v)) return v.replace(/^0+(?=\d)/,'');
-  return v;
-}
 
 /* ═══════════════════════════════════════════════════════
    DECODE BUFFER
@@ -677,7 +685,7 @@ function processAgend(file){
   file.arrayBuffer().then(buf=>{
     try{
       // Tenta importar materiais automaticamente se o arquivo tiver as colunas certas (XLSX)
-      exportMap={};remessaMap={};pesoLiquidoMap={};
+      exportMap={};
       const matCnt=tryImportMaterialsFromAgend(buf);
       if(matCnt>0) showOk('✨ '+matCnt+' linhas de materiais importadas automaticamente do arquivo de agendamento!');
       const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
@@ -694,7 +702,7 @@ function processAgend(file){
         const loc=(c[iLoc]||'').trim();
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         agendRows.push({
-          DT:normalizeDT(c[iDT]),LOCAL:loc,
+          DT:(c[iDT]||'').trim(),LOCAL:loc,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
           AGENDA:parseBR((c[iAg]||'').trim()),
           FIM_AGENDA:parseBR((c[iFim]||'').trim()),
@@ -763,7 +771,7 @@ function tryImportMaterialsFromAgend(buf){
     let cnt=0;
     for(const row of rows){
       const rawDT=row[kDT];
-      const dt=normalizeDT(rawDT);
+      const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
       const rawMat=row[kMat];
       const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
       const qtdRaw=kQtd?String(row[kQtd]||''):'';
@@ -785,124 +793,170 @@ function tryImportMaterialsFromAgend(buf){
   }catch(e){return 0;}
 }
 
+/* ═══════════════════════════════════════════════════════
+   PASSO 3 — ZLES002
+═══════════════════════════════════════════════════════ */
+function processZles(file){
+  if(!file)return;
+  showInf('Lendo ZLES002…');
+  document.getElementById('dz2l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
+  file.arrayBuffer().then(buf=>{
+    const text=decodeBuf(buf);
+    parseZlesText(text);
+  });
+}
+
+function processZlesPaste(){
+  const text=document.getElementById('zles-paste').value.trim();
+  if(!text){showErr('Cole o conteúdo do SAP no campo de texto primeiro.');return;}
+  showInf('Processando texto colado…');
+  setTimeout(()=>parseZlesText(text),50);
+}
+
+function parseZlesText(text){
+  const dbg=document.getElementById('dbgZles');
+  dbg.textContent='';dbg.classList.add('show');
+  try{
+    const lines=text.split(/\r?\n/).filter(l=>l.trim());
+    if(!lines.length)throw new Error('Conteúdo vazio.');
+    const L0=lines[0];
+    const sep=(L0.match(/;/g)||[]).length>=(L0.match(/\t/g)||[]).length?';':'\t';
+    dbg.textContent+=`Separador: "${sep===';'?'ponto-e-vírgula (;)':'tab (\\t)'}"\n`;
+    dbg.textContent+=`Total de linhas: ${lines.length}\n`;
+    const strip=s=>(s||'').trim().replace(/^"|"$/g,'');
+    const h=lines[0].split(sep).map(strip);
+    dbg.textContent+=`Colunas (${h.length}): ${h.slice(0,10).join(' | ')}…\n`;
+    const findIdx=(...termos)=>{
+      for(const t of termos){
+        const i=h.findIndex(v=>v.toUpperCase().includes(t.toUpperCase()));
+        if(i!==-1)return i;
+      }
+      return -1;
+    };
+    // DT padrão ZLES002: col 6 tem cabeçalho ";" mas contém o número de transporte (ex: 23166206)
+    let iDT=6;
+    if(lines.length>1){
+      const primeiraLinha=lines[1].split(sep).map(strip);
+      const valG=(primeiraLinha[6]||'').replace(/\D/g,'');
+      if(valG.length<5){
+        // col6 não tem número de DT → tenta achar coluna com nome de transporte
+        const alt=h.findIndex(v=>{
+          const u=v.toUpperCase();
+          return (u.includes('TRANSPORTE')||u.includes('NR TRANSP')||u.includes('Nº TRANSP'))
+                 && !u.includes('NOME') && !u.includes('COD') && !u.includes('CÓD');
+        });
+        if(alt!==-1) iDT=alt;
+      }
+    }
+    // Tipo: col 9 = "Descrição de Documento" (tem "Venda Normal", "Remessa p/ transf." etc.)
+    const iTipo=findIdx('TIPO','OPERAÇÃO','OPERACAO')!==-1?findIdx('TIPO','OPERAÇÃO','OPERACAO'):9;
+    const iDesc=findIdx('DESCRI')!==-1?findIdx('DESCRI'):9;
+    const iMat =findIdx('MATERIAL')!==-1?findIdx('MATERIAL'):11;
+    const iQtd =findIdx('QTDE REMESSA','QTD REMESSA')!==-1?findIdx('QTDE REMESSA','QTD REMESSA'):12;
+    dbg.textContent+=`Usando: DT=col${iDT}(${h[iDT]||'?'}) | Tipo=col${iTipo}(${h[iTipo]||'?'}) | Mat=col${iMat}(${h[iMat]||'?'}) | Qtd=col${iQtd}(${h[iQtd]||'?'})\n`;
+    exportMap={};tipoOpMap={};descDocMap={};
+    let linhasOk=0,linhasIgnoradas=0;
+    for(let i=1;i<lines.length;i++){
+      const c=lines[i].split(sep).map(strip);
+      if(c.every(v=>!v)){linhasIgnoradas++;continue;}
+      const dtRaw=(c[iDT]||'').replace(/\.0+$/,'').trim();
+      const dt=dtRaw.replace(/\D/g,'');
+      if(!dt||dt.length<5){linhasIgnoradas++;continue;}
+      const matRaw=(c[iMat]||'').replace(/\.0+$/,'').trim();
+      const mat=matRaw.replace(/\D/g,'');
+      const qtdRaw=(c[iQtd]||'').replace(/\./g,'').replace(',','.').trim();
+      const qtd=qtdRaw?String(Math.round(Number(qtdRaw)||0)):'';
+      if(!tipoOpMap[dt]){
+        // Prioriza "Descrição de Documento" (ex: "Venda Normal", "Transf.Abast.Filial")
+        const descDoc=(iDesc!==-1?c[iDesc]||'':'').trim();
+        const tipoCol=(iTipo!==-1?c[iTipo]||'':'').trim();
+        const tipoRaw=(descDoc||tipoCol).toUpperCase();
+        const isTransf=tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/')||tipoRaw.includes('TNF')||tipoRaw.includes('ABAST');
+        tipoOpMap[dt]=isTransf?'TRANSFERÊNCIA':'VENDA NORMAL';
+        if(descDocMap&&!descDocMap[dt]) descDocMap[dt]=descDoc||tipoCol;
+      }
+      if(!descDocMap[dt]){
+        const desc=(iDesc!==-1?String(c[iDesc]||'').trim():'') || (iTipo!==-1?String(c[iTipo]||'').trim():'');
+        descDocMap[dt]=desc;
+      }
+      if(mat){
+        if(!exportMap[dt])exportMap[dt]=[];
+        const existing=exportMap[dt].find(m=>m.material===mat);
+        if(existing){
+          // soma quantidades da mesma DT+material (ex: multi-remessa)
+          const q1=Number(existing.quantidade)||0;
+          const q2=Number(qtd)||0;
+          existing.quantidade=String(q1+q2);
+        }else{
+          exportMap[dt].push({material:mat,quantidade:qtd});
+        }
+      }
+      linhasOk++;
+    }
+    const totalDTs=Object.keys(exportMap).length;
+    const tipos=[...new Set(Object.values(tipoOpMap))];
+    dbg.textContent+=`\n✅ Linhas processadas: ${linhasOk} | Ignoradas: ${linhasIgnoradas}\n`;
+    dbg.textContent+=`DTs com materiais: ${totalDTs}\n`;
+    Object.keys(exportMap).slice(0,3).forEach(dt=>{
+      const mats=exportMap[dt].slice(0,4).map(m=>`${m.material}(${m.quantidade})`).join(', ');
+      dbg.textContent+=`  DT ${dt}: ${mats}${exportMap[dt].length>4?'…':''}\n`;
+    });
+    hideInf();
+    showOk(`ZLES002 OK — ${totalDTs} DTs · ${linhasOk} linhas · tipos: ${tipos.join(', ')}`);
+    buildTable();
+  }catch(e){
+    hideInf();
+    dbg.textContent+='\n❌ ERRO: '+e.message;
+    showErr('Erro ZLES002: '+e.message);
+  }
+}
 
 /* ═══════════════════════════════════════════════════════
-   PASSO 3 — RELATÓRIO DE EXPEDIÇÃO CSV
-   Lê CSV do relatorio_expedicao:
-   Nº transporte, Descrição de Documento, Peso líquido,
-   Nr. Remessa/Recebimento, Material, Qtde Remessa
+   PLANILHA EXTRA XLSX
 ═══════════════════════════════════════════════════════ */
-
-function parseCSVRelatorio(text, sep) {
-  const rows = [];
-  const lines = text.split(/\r?\n/);
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const cols = [];
-    let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') {
-        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
-        else inQ = !inQ;
-      } else if (c === sep && !inQ) {
-        cols.push(cur); cur = '';
-      } else { cur += c; }
-    }
-    cols.push(cur);
-    rows.push(cols);
-  }
-  return rows;
-}
-
-function processRelatorioCSV(file) {
-  if (!file) return;
-  showInf('Lendo CSV do Relatório de Expedição…');
-  document.getElementById('dz2l').innerHTML = '<span class="dz-ok">✓ ' + file.name + '</span>';
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const text = e.target.result;
-      const rows = parseCSVRelatorio(text, ';');
-      if (rows.length < 2) throw new Error('Arquivo vazio ou sem dados.');
-      const headers = rows[0].map(h => h.trim().replace(/^"|"$/g,''));
-      const ci = n => headers.findIndex(h => h.toUpperCase().includes(n.toUpperCase()));
-      const iTransp   = ci('Nº transporte') !== -1 ? ci('Nº transporte') : ci('TRANSPORTE');
-      const iDesc     = ci('Descrição de Documento') !== -1 ? ci('Descrição de Documento') : ci('DESCRI');
-      const iPeso     = ci('Peso líquido') !== -1 ? ci('Peso líquido') : ci('PESO');
-      const iRemessa  = ci('Nr. Remessa') !== -1 ? ci('Nr. Remessa') : ci('REMESSA');
-      const iMat      = ci('Material');
-      const iQtde     = ci('Qtde Remessa') !== -1 ? ci('Qtde Remessa') : ci('QTDE');
-
-      if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
-
-      exportMap = {}; tipoOpMap = {}; descDocMap = {};
-      remessaMap = {}; pesoLiquidoMap = {};
-      let linhasOk = 0;
-
-      const records = rows.slice(1).filter(r => r.some(c => c.trim() !== ''));
-      for (const cols of records) {
-        const strip = v => (v||'').trim().replace(/^"|"$/g,'');
-        const dt = strip(cols[iTransp]).replace(/\.0+$/, '').replace(/\D/g, '');
-        if (!dt || dt.length < 5) continue;
-
-        const descDoc = iDesc !== -1 ? strip(cols[iDesc]) : '';
-        const pesoRaw = iPeso !== -1 ? strip(cols[iPeso]) : '';
-        const remessa = iRemessa !== -1 ? strip(cols[iRemessa]).replace(/\.0+$/, '') : '';
-        const matRaw  = iMat !== -1 ? strip(cols[iMat]).replace(/\.0+$/, '').replace(/\D/g,'') : '';
-        const qtdeRaw = iQtde !== -1 ? strip(cols[iQtde]) : '';
-        const qtde    = qtdeRaw.replace(/\./g,'').replace(',','.');
-
-        // descricao_documento e tipo operacao
-        if (!descDocMap[dt]) descDocMap[dt] = descDoc;
-        if (!tipoOpMap[dt]) {
-          const raw = descDoc.toUpperCase();
-          const isTransf = raw.includes('TRANSFER') || raw.includes('FILIAL') || raw.includes('ABAST') || raw.includes('TNF');
-          tipoOpMap[dt] = isTransf ? 'TRANSFERÊNCIA' : 'VENDA NORMAL';
-        }
-
-        // peso liquido — soma por DT
-        if (pesoRaw) {
-          const p = parseFloat(pesoRaw.replace(/\./g,'').replace(',','.')) || 0;
-          pesoLiquidoMap[dt] = (pesoLiquidoMap[dt] || 0) + p;
-        }
-
-        // remessas por transporte (para aba Materiais / Quantidades)
-        if (remessa && matRaw) {
-          if (!remessaMap[dt]) remessaMap[dt] = [];
-          remessaMap[dt].push({ remessa, material: matRaw, qtde: qtde || qtdeRaw });
-        }
-
-        // exportMap — material+qtde por DT (para painel de separação)
-        if (matRaw) {
-          if (!exportMap[dt]) exportMap[dt] = [];
-          const existing = exportMap[dt].find(m => m.material === matRaw);
-          const q2 = parseFloat(qtde) || 0;
-          if (existing) {
-            existing.quantidade = String((Number(existing.quantidade) || 0) + q2);
-          } else {
-            exportMap[dt].push({ material: matRaw, quantidade: String(q2 || qtdeRaw) });
-          }
-        }
-        linhasOk++;
+function processExtra(file){
+  if(!file)return;
+  showInf('Lendo planilha extra…');
+  document.getElementById('dz3l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
+  const dbg=document.getElementById('dbgExtra');
+  dbg.textContent='';dbg.classList.add('show');
+  file.arrayBuffer().then(buf=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!rows.length)throw new Error('Planilha vazia.');
+      const keys=Object.keys(rows[0]);
+      dbg.textContent='Colunas: '+keys.join(' | ')+'\n';
+      const fc=(...ts)=>{for(const t of ts){const k=keys.find(k=>k.toUpperCase().includes(t.toUpperCase()));if(k)return k;}return null;};
+      const kDT=fc('Nº TRANSPORTE','N TRANSPORTE','TRANSPORTE');
+      const kMat=fc('MATERIAL');
+      const kQtd=fc('QTDE REMESSA','QTD REMESSA','QTDE');
+      dbg.textContent+=`Col DT: ${kDT||'NÃO ACHADA'} | Mat: ${kMat||'NÃO ACHADA'} | Qtd: ${kQtd||'NÃO ACHADA'}\n`;
+      if(!kDT||!kMat)throw new Error(
+        '⚠️ Este campo é para uma planilha auxiliar com colunas: "Nº transporte", "Material" e "Qtde Remessa".\n\n'+
+        'Para a ZLES002 do SAP, use as abas "📂 Subir arquivo CSV" ou "📋 Colar do SAP" acima.\n\n'+
+        'Colunas encontradas neste arquivo: '+keys.join(', ')
+      );
+      let cnt=0;
+      for(const row of rows){
+        const rawDT=row[kDT];
+        const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
+        const rawMat=row[kMat];
+        const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
+        const qtd=kQtd?String(row[kQtd]||''):'';
+        if(!dt||!mat||dt==='NaN'||mat==='NaN')continue;
+        cnt++;
+        if(!exportMap[dt])exportMap[dt]=[];
+        if(!exportMap[dt].some(m=>m.material===mat))exportMap[dt].push({material:mat,quantidade:qtd});
       }
-
-      const totalDTs = Object.keys(exportMap).length;
-      const status = document.getElementById('upload-status-p3');
-      if (status) status.innerHTML = `<b style="color:#4ade80">✓ ${file.name}</b> — <b style="color:#60a5fa">${totalDTs} transportes</b> · ${linhasOk} linhas processadas`;
+      dbg.textContent+=`Linhas mescladas: ${cnt} | Total DTs com materiais: ${Object.keys(exportMap).length}\n`;
       hideInf();
-      showOk(`Relatório OK — ${totalDTs} transportes · ${linhasOk} linhas`);
+      showOk('Planilha extra OK: '+cnt+' linhas mescladas em '+Object.keys(exportMap).length+' DTs.');
       buildTable();
-    } catch(err) {
-      hideInf();
-      showErr('Erro ao ler CSV: ' + err.message);
-      console.error(err);
-    }
-  };
-  reader.onerror = () => { hideInf(); showErr('Erro ao abrir o arquivo.'); };
-  reader.readAsText(file, 'ISO-8859-1');
+    }catch(e){hideInf();dbg.textContent+='\n❌ ERRO: '+e.message;showErr('Erro planilha extra: '+e.message);}
+  });
 }
-
 
 async function persistImportedMaterials(){
   const dtsWithAgenda=new Map(dtsMescladas.map(r=>[String(r.DT), dKey(r.AGENDA||today())]));
@@ -953,20 +1007,6 @@ async function buildTable(){
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
-    const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
-    const logsStatusMap={};
-    if(dtsUpload.length){
-      const logRows=await sbGet('reporte_logs',
-        `dt=in.("${dtsUpload.join('\",\"')}")&order=created_at.desc&limit=1000`
-      );
-      (logRows||[]).forEach(l=>{
-        const dtLog=normalizeDT(l.dt);
-        const st=String(l.status||'').trim();
-        if(!dtLog||!st||logsStatusMap[dtLog]) return;
-        if(st==='UPLOAD_AGENDA'||st==='REAGENDADA') return;
-        logsStatusMap[dtLog]=st;
-      });
-    }
 
 
     const rows=dtsMescladas.map(dt=>{
@@ -975,7 +1015,7 @@ async function buildTable(){
       const diaRef=sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ';
       const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
       // Preserva status e hora_chegada existentes!
-      const statusAtual = ex.status && ex.status !== '' ? ex.status : (logsStatusMap[normalizeDT(dt.DT)]||'AG CHEGADA');
+      const statusAtual = ex.status && ex.status !== '' ? ex.status : 'AG CHEGADA';
       const horaAtual   = ex.hora_chegada || '';
       return {
         dt:String(dt.DT),
@@ -986,7 +1026,6 @@ async function buildTable(){
         status:statusAtual,
         descricao_documento:String(descDocMap[dt.DT]||ex.descricao_documento||''),
         toneladas:String(dt.PESO||''),
-        peso_liquido: pesoLiquidoMap[dt.DT] ? String(pesoLiquidoMap[dt.DT].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : String(dt.PESO||''),
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
         dia_ref:diaRef,
@@ -1017,7 +1056,6 @@ async function buildTable(){
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
       hora_chegada:'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',toneladas:dt.PESO,
-      peso_liquido: pesoLiquidoMap[dt.DT] ? String(pesoLiquidoMap[dt.DT].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : String(dt.PESO||''),
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(dt.AGENDA||T),
@@ -1178,7 +1216,12 @@ function renderRows(){
     const isReagend=row.reagendada;
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
-    const opTag=buildTipoOperacaoBadge(row.tipo_operacao,{small:false,emptyDash:true});
+    const op=(row.tipo_operacao||'').toUpperCase();
+    const opTag=op.includes('TRANSFER')
+      ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
+      :op.includes('VENDA')
+      ?'<span class="tag-venda">🛒 VENDA NORMAL</span>'
+      :'<span class="tag-sem">—</span>';
     const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
     const clock=clockEmoji(row);
     // Botão reagendamento — aparece nas finalizadas
@@ -1196,13 +1239,16 @@ function renderRows(){
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
       `</select>${opTag}</div></td>`+
       `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
-      `<td class="td-sm">${row.peso_liquido||row.toneladas||'—'}</td>`;
+      `<td class="td-sm">${row.toneladas||'—'}</td>`+
+      `<td>${opTag}</td>`+
+      `<td class="td-ag">${row.agenda||'—'}</td>`+
+      `<td>${reagBtn}</td>`;
     tbody.appendChild(tr);
   });
 
   if(!rows.length){
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td colspan="9" style="text-align:center;padding:30px;color:#334155;font-size:13px;">
+    tr.innerHTML=`<td colspan="12" style="text-align:center;padding:30px;color:#334155;font-size:13px;">
       ${currentTableTab==='finalizadas'?'Nenhuma DT finalizada ainda.':'Todas as DTs do dia estão finalizadas.'}
     </td>`;
     tbody.appendChild(tr);
@@ -1351,7 +1397,12 @@ async function openPanel(dt,dataRef){
   panelDT={dt,dataRef};
   const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef)||{};
   document.getElementById('ptitle').textContent='📦  DT '+dt;
-  const opBadge=buildTipoOperacaoBadge(row.tipo_operacao,{small:true,emptyDash:false});
+  const op=(row.tipo_operacao||'').toUpperCase();
+  const opBadge=op.includes('TRANSFER')
+    ?'<span class="tag-transf" style="padding:3px 10px;font-size:11px;">🔄 TRANSFERÊNCIA</span>'
+    :op.includes('VENDA')
+    ?'<span class="tag-venda"  style="padding:3px 10px;font-size:11px;">🛒 VENDA NORMAL</span>'
+    :'';
   document.getElementById('pdt-info').innerHTML=
     `<b style="color:#93c5fd;font-size:15px">${dt}</b>  ${opBadge}<br/>`+
     `<span style="color:#64748b">Transportadora:</span> <b style="color:#e2e8f0">${row.transportadora||'—'}</b><br/>`+
@@ -1387,36 +1438,20 @@ function renderMatList(mats){
     const row=document.createElement('div');row.className='mat-row';
     row.innerHTML=
       `<input class="mat-input" placeholder="Material" value="${m.material||''}" data-f="material"/>`+
-      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade" oninput="updatePanelTotal()"/>`+
-      `<button class="mat-del" onclick="this.parentElement.remove();updatePanelTotal();">🗑</button>`;
+      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade"/>`+
+      `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
     list.appendChild(row);
   });
-  updatePanelTotal();
 }
 
 function addMatRow(){
   const row=document.createElement('div');row.className='mat-row';
   row.innerHTML=
     `<input class="mat-input" placeholder="Material" data-f="material"/>`+
-    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade" oninput="updatePanelTotal()"/>`+
-    `<button class="mat-del" onclick="this.parentElement.remove();updatePanelTotal();">🗑</button>`;
+    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade"/>`+
+    `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
   document.getElementById('mat-list').appendChild(row);
   row.querySelector('input').focus();
-  updatePanelTotal();
-}
-
-function updatePanelTotal(){
-  const qs=[...document.querySelectorAll('#mat-list [data-f=quantidade]')];
-  const total=qs.reduce((s,i)=>s+(parseFloat(String(i.value||'0').replace(/\./g,'').replace(',','.'))||0),0);
-  const el=document.getElementById('mat-total');
-  if(el) el.textContent='Total: '+Math.round(total);
-}
-
-function printPanelMapa(){
-  if(!panelDT) return;
-  document.body.classList.add('print-panel-mode');
-  window.print();
-  setTimeout(()=>document.body.classList.remove('print-panel-mode'),300);
 }
 
 async function saveMateriais(){
@@ -1468,7 +1503,7 @@ async function tryLoadExisting(){
 /* ═══════════════════════════════════════════════════════
    DRAG & DROP
 ═══════════════════════════════════════════════════════ */
-['dz1','dz2'].forEach(id=>{
+['dz1','dz2','dz3'].forEach(id=>{
   const el=document.getElementById(id);if(!el)return;
   el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drag');});
   el.addEventListener('dragleave',()=>el.classList.remove('drag'));
@@ -1476,7 +1511,8 @@ async function tryLoadExisting(){
     e.preventDefault();el.classList.remove('drag');
     const f=e.dataTransfer.files[0];if(!f)return;
     if(id==='dz1')processAgend(f);
-    else processRelatorioCSV(f);
+    else if(id==='dz2')processZles(f);
+    else processExtra(f);
   });
 });
 
@@ -1484,8 +1520,8 @@ async function tryLoadExisting(){
    EXPORT CSV
 ═══════════════════════════════════════════════════════ */
 function exportCSV(){
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO'];
-  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||'']);
+  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','DESC. DOCUMENTO','TONELADAS','OPERAÇÃO','AGENDA'];
+  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.descricao_documento||'',r.toneladas,r.tipo_operacao||'',r.agenda]);
   const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
