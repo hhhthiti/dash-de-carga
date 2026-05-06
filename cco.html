@@ -113,6 +113,19 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 .chips-wrap{display:flex;flex-wrap:wrap;margin-bottom:20px;}
 #spinner{display:none;position:fixed;bottom:20px;right:20px;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-size:12px;color:#94a3b8;z-index:500;}
 
+@media print{
+  @page{size:landscape;margin:10mm;}
+  body *{visibility:hidden !important;}
+  body.print-panel-mode #panel,
+  body.print-panel-mode #panel *{visibility:visible !important;}
+  body.print-panel-mode #panel{position:static;width:100%;height:auto;transform:none;border:none;background:#fff;color:#111;}
+  body.print-panel-mode #panel .bg,
+  body.print-panel-mode #panel .bp,
+  body.print-panel-mode #panel .mat-del,
+  body.print-panel-mode #panel .obs-area,
+  body.print-panel-mode #panel #pfoot{display:none !important;}
+}
+
 /* MODAL DE LOGS */
 #log-overlay{position:fixed;inset:0;background:#000000cc;z-index:300;display:none;align-items:center;justify-content:center;}
 #log-overlay.open{display:flex;}
@@ -252,7 +265,6 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="tab-bar">
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
-      <button class="tab-btn mat-tab" id="tab-materiais" onclick="switchTableTab('materiais')">📦 MATERIAIS / QUANTIDADES</button>
     </div>
 
     <div id="twrap">
@@ -291,9 +303,13 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
   </div>
   <div id="pbody">
     <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
-    <span class="sec-lbl">MATERIAIS / QUANTIDADES</span>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <span class="sec-lbl" style="margin:0;">MATERIAIS / QUANTIDADES</span>
+      <button class="bg" onclick="printPanelMapa()" style="padding:4px 10px;font-size:11px;">🖨️ Imprimir mapa</button>
+    </div>
     <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE</span><span></span></div>
     <div id="mat-list"></div>
+    <div id="mat-total" style="margin-top:8px;text-align:right;color:#a7f3d0;font-weight:800;font-size:13px;">Total: 0</div>
     <button class="bg" onclick="addMatRow()" style="width:100%;margin-top:6px;font-size:12px;">+ Adicionar material</button>
     <span class="sec-lbl" style="margin-top:18px;">OBSERVAÇÕES</span>
     <textarea class="obs-area" id="pobs" placeholder="Anotações gerais desta DT..."></textarea>
@@ -469,8 +485,9 @@ function switchTab(tab){
 let matFiltro='todos';
 
 function switchTableTab(tab){
+  if(tab==='materiais') tab='todas';
   currentTableTab=tab;
-  ['todas','finalizadas','materiais'].forEach(t=>{
+  ['todas','finalizadas'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el) el.classList.toggle('active',t===tab);
   });
@@ -478,15 +495,9 @@ function switchTableTab(tab){
   const twrap=document.getElementById('twrap');
   const mwrap=document.getElementById('materiais-wrap');
   if(board)  board.style.display='none';
-  if(tab==='materiais'){
-    if(twrap)  twrap.style.display='none';
-    if(mwrap)  mwrap.style.display='block';
-    renderMateriaisAba();
-  } else {
-    if(twrap)  twrap.style.display='block';
-    if(mwrap)  mwrap.style.display='none';
-    renderRows();
-  }
+  if(twrap)  twrap.style.display='block';
+  if(mwrap)  mwrap.style.display='none';
+  renderRows();
 }
 
 function filtrarMateriais(f){
@@ -942,6 +953,20 @@ async function buildTable(){
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
+    const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
+    const logsStatusMap={};
+    if(dtsUpload.length){
+      const logRows=await sbGet('reporte_logs',
+        `dt=in.("${dtsUpload.join('\",\"')}")&order=created_at.desc&limit=1000`
+      );
+      (logRows||[]).forEach(l=>{
+        const dtLog=normalizeDT(l.dt);
+        const st=String(l.status||'').trim();
+        if(!dtLog||!st||logsStatusMap[dtLog]) return;
+        if(st==='UPLOAD_AGENDA'||st==='REAGENDADA') return;
+        logsStatusMap[dtLog]=st;
+      });
+    }
 
 
     const rows=dtsMescladas.map(dt=>{
@@ -950,7 +975,7 @@ async function buildTable(){
       const diaRef=sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ';
       const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
       // Preserva status e hora_chegada existentes!
-      const statusAtual = ex.status && ex.status !== '' ? ex.status : 'AG CHEGADA';
+      const statusAtual = ex.status && ex.status !== '' ? ex.status : (logsStatusMap[normalizeDT(dt.DT)]||'AG CHEGADA');
       const horaAtual   = ex.hora_chegada || '';
       return {
         dt:String(dt.DT),
@@ -1362,20 +1387,36 @@ function renderMatList(mats){
     const row=document.createElement('div');row.className='mat-row';
     row.innerHTML=
       `<input class="mat-input" placeholder="Material" value="${m.material||''}" data-f="material"/>`+
-      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade"/>`+
-      `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
+      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade" oninput="updatePanelTotal()"/>`+
+      `<button class="mat-del" onclick="this.parentElement.remove();updatePanelTotal();">🗑</button>`;
     list.appendChild(row);
   });
+  updatePanelTotal();
 }
 
 function addMatRow(){
   const row=document.createElement('div');row.className='mat-row';
   row.innerHTML=
     `<input class="mat-input" placeholder="Material" data-f="material"/>`+
-    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade"/>`+
-    `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
+    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade" oninput="updatePanelTotal()"/>`+
+    `<button class="mat-del" onclick="this.parentElement.remove();updatePanelTotal();">🗑</button>`;
   document.getElementById('mat-list').appendChild(row);
   row.querySelector('input').focus();
+  updatePanelTotal();
+}
+
+function updatePanelTotal(){
+  const qs=[...document.querySelectorAll('#mat-list [data-f=quantidade]')];
+  const total=qs.reduce((s,i)=>s+(parseFloat(String(i.value||'0').replace(/\./g,'').replace(',','.'))||0),0);
+  const el=document.getElementById('mat-total');
+  if(el) el.textContent='Total: '+Math.round(total);
+}
+
+function printPanelMapa(){
+  if(!panelDT) return;
+  document.body.classList.add('print-panel-mode');
+  window.print();
+  setTimeout(()=>document.body.classList.remove('print-panel-mode'),300);
 }
 
 async function saveMateriais(){
