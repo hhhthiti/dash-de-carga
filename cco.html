@@ -636,6 +636,12 @@ function parseAgendaDateTime(row){
   if(agenda) return agenda;
   return new Date(9999,0,1);
 }
+function normalizeDT(raw){
+  const v=String(raw||'').trim();
+  if(!v) return '';
+  if(/^\d+$/.test(v)) return v.replace(/^0+(?=\d)/,'');
+  return v;
+}
 
 /* ═══════════════════════════════════════════════════════
    DECODE BUFFER
@@ -677,7 +683,7 @@ function processAgend(file){
         const loc=(c[iLoc]||'').trim();
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         agendRows.push({
-          DT:(c[iDT]||'').trim(),LOCAL:loc,
+          DT:normalizeDT(c[iDT]),LOCAL:loc,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
           AGENDA:parseBR((c[iAg]||'').trim()),
           FIM_AGENDA:parseBR((c[iFim]||'').trim()),
@@ -746,7 +752,7 @@ function tryImportMaterialsFromAgend(buf){
     let cnt=0;
     for(const row of rows){
       const rawDT=row[kDT];
-      const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
+      const dt=normalizeDT(rawDT);
       const rawMat=row[kMat];
       const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
       const qtdRaw=kQtd?String(row[kQtd]||''):'';
