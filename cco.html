@@ -85,6 +85,8 @@ tr:hover td{background:#1a2540!important;}
 .tag-amanha{background:#2e1065aa;border:1px solid #7c3aed55;border-radius:4px;padding:1px 7px;font-size:9px;color:#a78bfa;font-weight:700;letter-spacing:1px;}
 .tag-venda {background:#052e1688;border:1px solid #22c55e55;border-radius:4px;padding:2px 9px;font-size:10px;color:#4ade80;font-weight:700;}
 .tag-transf{background:#431407aa;border:1px solid #f9731655;border-radius:4px;padding:2px 9px;font-size:10px;color:#fb923c;font-weight:700;}
+.tag-prefat{background:#1e1b4baa;border:1px solid #818cf855;border-radius:4px;padding:2px 9px;font-size:10px;color:#a5b4fc;font-weight:700;}
+.tag-grade {background:#14532daa;border:1px solid #4ade8055;border-radius:4px;padding:2px 9px;font-size:10px;color:#86efac;font-weight:700;}
 .tag-sem   {color:#334155;font-size:10px;}
 .tag-sem-grade{background:#78350f44;border:1px solid #f59e0b55;border-radius:4px;padding:1px 7px;font-size:9px;color:#f59e0b;font-weight:700;letter-spacing:1px;}
 input[type=time]{background:#1e293b;border:1px solid #334155;border-radius:5px;color:#f1f5f9;padding:3px 7px;font-size:12px;width:90px;}
@@ -112,6 +114,19 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 .sl{font-size:10px;letter-spacing:2px;color:#64748b;margin-bottom:6px;display:block;}
 .chips-wrap{display:flex;flex-wrap:wrap;margin-bottom:20px;}
 #spinner{display:none;position:fixed;bottom:20px;right:20px;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-size:12px;color:#94a3b8;z-index:500;}
+
+@media print{
+  @page{size:landscape;margin:10mm;}
+  body *{visibility:hidden !important;}
+  body.print-panel-mode #panel,
+  body.print-panel-mode #panel *{visibility:visible !important;}
+  body.print-panel-mode #panel{position:static;width:100%;height:auto;transform:none;border:none;background:#fff;color:#111;}
+  body.print-panel-mode #panel .bg,
+  body.print-panel-mode #panel .bp,
+  body.print-panel-mode #panel .mat-del,
+  body.print-panel-mode #panel .obs-area,
+  body.print-panel-mode #panel #pfoot{display:none !important;}
+}
 
 /* MODAL DE LOGS */
 #log-overlay{position:fixed;inset:0;background:#000000cc;z-index:300;display:none;align-items:center;justify-content:center;}
@@ -252,7 +267,6 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="tab-bar">
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
-      <button class="tab-btn mat-tab" id="tab-materiais" onclick="switchTableTab('materiais')">📦 MATERIAIS / QUANTIDADES</button>
     </div>
 
     <div id="twrap">
@@ -291,9 +305,13 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
   </div>
   <div id="pbody">
     <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
-    <span class="sec-lbl">MATERIAIS / QUANTIDADES</span>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <span class="sec-lbl" style="margin:0;">MATERIAIS / QUANTIDADES</span>
+      <button class="bg" onclick="printPanelMapa()" style="padding:4px 10px;font-size:11px;">🖨️ Imprimir mapa</button>
+    </div>
     <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE</span><span></span></div>
     <div id="mat-list"></div>
+    <div id="mat-total" style="margin-top:8px;text-align:right;color:#a7f3d0;font-weight:800;font-size:13px;">Total: 0</div>
     <button class="bg" onclick="addMatRow()" style="width:100%;margin-top:6px;font-size:12px;">+ Adicionar material</button>
     <span class="sec-lbl" style="margin-top:18px;">OBSERVAÇÕES</span>
     <textarea class="obs-area" id="pobs" placeholder="Anotações gerais desta DT..."></textarea>
@@ -396,6 +414,14 @@ const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RE
 const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
 const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
 
+function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
+  const op=String(tipoOperacao||'').toUpperCase();
+  const style=small?' style="padding:3px 10px;font-size:11px;"':'';
+  if(op.includes('TRANSFER')) return `<span class="tag-transf"${style}>🔄 TRANSFERÊNCIA</span>`;
+  if(op.includes('VENDA')) return `<span class="tag-venda"${style}>🛒 VENDA NORMAL</span>`;
+  return emptyDash?'<span class="tag-sem">—</span>':'';
+}
+
 let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
 let remessaMap={}, pesoLiquidoMap={};
 let panelDT=null;
@@ -461,8 +487,9 @@ function switchTab(tab){
 let matFiltro='todos';
 
 function switchTableTab(tab){
+  if(tab==='materiais') tab='todas';
   currentTableTab=tab;
-  ['todas','finalizadas','materiais'].forEach(t=>{
+  ['todas','finalizadas'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el) el.classList.toggle('active',t===tab);
   });
@@ -470,15 +497,9 @@ function switchTableTab(tab){
   const twrap=document.getElementById('twrap');
   const mwrap=document.getElementById('materiais-wrap');
   if(board)  board.style.display='none';
-  if(tab==='materiais'){
-    if(twrap)  twrap.style.display='none';
-    if(mwrap)  mwrap.style.display='block';
-    renderMateriaisAba();
-  } else {
-    if(twrap)  twrap.style.display='block';
-    if(mwrap)  mwrap.style.display='none';
-    renderRows();
-  }
+  if(twrap)  twrap.style.display='block';
+  if(mwrap)  mwrap.style.display='none';
+  renderRows();
 }
 
 function filtrarMateriais(f){
@@ -628,6 +649,12 @@ function parseAgendaDateTime(row){
   if(agenda) return agenda;
   return new Date(9999,0,1);
 }
+function normalizeDT(raw){
+  const v=String(raw||'').trim();
+  if(!v) return '';
+  if(/^\d+$/.test(v)) return v.replace(/^0+(?=\d)/,'');
+  return v;
+}
 
 /* ═══════════════════════════════════════════════════════
    DECODE BUFFER
@@ -669,7 +696,7 @@ function processAgend(file){
         const loc=(c[iLoc]||'').trim();
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         agendRows.push({
-          DT:(c[iDT]||'').trim(),LOCAL:loc,
+          DT:normalizeDT(c[iDT]),LOCAL:loc,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
           AGENDA:parseBR((c[iAg]||'').trim()),
           FIM_AGENDA:parseBR((c[iFim]||'').trim()),
@@ -738,7 +765,7 @@ function tryImportMaterialsFromAgend(buf){
     let cnt=0;
     for(const row of rows){
       const rawDT=row[kDT];
-      const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
+      const dt=normalizeDT(rawDT);
       const rawMat=row[kMat];
       const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
       const qtdRaw=kQtd?String(row[kQtd]||''):'';
@@ -928,6 +955,20 @@ async function buildTable(){
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
+    const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
+    const logsStatusMap={};
+    if(dtsUpload.length){
+      const logRows=await sbGet('reporte_logs',
+        `dt=in.("${dtsUpload.join('\",\"')}")&order=created_at.desc&limit=1000`
+      );
+      (logRows||[]).forEach(l=>{
+        const dtLog=normalizeDT(l.dt);
+        const st=String(l.status||'').trim();
+        if(!dtLog||!st||logsStatusMap[dtLog]) return;
+        if(st==='UPLOAD_AGENDA'||st==='REAGENDADA') return;
+        logsStatusMap[dtLog]=st;
+      });
+    }
 
 
     const rows=dtsMescladas.map(dt=>{
@@ -936,7 +977,7 @@ async function buildTable(){
       const diaRef=sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ';
       const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
       // Preserva status e hora_chegada existentes!
-      const statusAtual = ex.status && ex.status !== '' ? ex.status : 'AG CHEGADA';
+      const statusAtual = ex.status && ex.status !== '' ? ex.status : (logsStatusMap[normalizeDT(dt.DT)]||'AG CHEGADA');
       const horaAtual   = ex.hora_chegada || '';
       return {
         dt:String(dt.DT),
@@ -1139,12 +1180,7 @@ function renderRows(){
     const isReagend=row.reagendada;
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
-    const op=(row.tipo_operacao||'').toUpperCase();
-    const opTag=op.includes('TRANSFER')
-      ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
-      :op.includes('VENDA')
-      ?'<span class="tag-venda">🛒 VENDA NORMAL</span>'
-      :'<span class="tag-sem">—</span>';
+    const opTag=buildTipoOperacaoBadge(row.tipo_operacao,{small:false,emptyDash:true});
     const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
     const clock=clockEmoji(row);
     // Botão reagendamento — aparece nas finalizadas
@@ -1317,12 +1353,7 @@ async function openPanel(dt,dataRef){
   panelDT={dt,dataRef};
   const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef)||{};
   document.getElementById('ptitle').textContent='📦  DT '+dt;
-  const op=(row.tipo_operacao||'').toUpperCase();
-  const opBadge=op.includes('TRANSFER')
-    ?'<span class="tag-transf" style="padding:3px 10px;font-size:11px;">🔄 TRANSFERÊNCIA</span>'
-    :op.includes('VENDA')
-    ?'<span class="tag-venda"  style="padding:3px 10px;font-size:11px;">🛒 VENDA NORMAL</span>'
-    :'';
+  const opBadge=buildTipoOperacaoBadge(row.tipo_operacao,{small:true,emptyDash:false});
   document.getElementById('pdt-info').innerHTML=
     `<b style="color:#93c5fd;font-size:15px">${dt}</b>  ${opBadge}<br/>`+
     `<span style="color:#64748b">Transportadora:</span> <b style="color:#e2e8f0">${row.transportadora||'—'}</b><br/>`+
@@ -1358,20 +1389,36 @@ function renderMatList(mats){
     const row=document.createElement('div');row.className='mat-row';
     row.innerHTML=
       `<input class="mat-input" placeholder="Material" value="${m.material||''}" data-f="material"/>`+
-      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade"/>`+
-      `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
+      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade" oninput="updatePanelTotal()"/>`+
+      `<button class="mat-del" onclick="this.parentElement.remove();updatePanelTotal();">🗑</button>`;
     list.appendChild(row);
   });
+  updatePanelTotal();
 }
 
 function addMatRow(){
   const row=document.createElement('div');row.className='mat-row';
   row.innerHTML=
     `<input class="mat-input" placeholder="Material" data-f="material"/>`+
-    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade"/>`+
-    `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
+    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade" oninput="updatePanelTotal()"/>`+
+    `<button class="mat-del" onclick="this.parentElement.remove();updatePanelTotal();">🗑</button>`;
   document.getElementById('mat-list').appendChild(row);
   row.querySelector('input').focus();
+  updatePanelTotal();
+}
+
+function updatePanelTotal(){
+  const qs=[...document.querySelectorAll('#mat-list [data-f=quantidade]')];
+  const total=qs.reduce((s,i)=>s+(parseFloat(String(i.value||'0').replace(/\./g,'').replace(',','.'))||0),0);
+  const el=document.getElementById('mat-total');
+  if(el) el.textContent='Total: '+Math.round(total);
+}
+
+function printPanelMapa(){
+  if(!panelDT) return;
+  document.body.classList.add('print-panel-mode');
+  window.print();
+  setTimeout(()=>document.body.classList.remove('print-panel-mode'),300);
 }
 
 async function saveMateriais(){
