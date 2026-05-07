@@ -116,17 +116,47 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 #spinner{display:none;position:fixed;bottom:20px;right:20px;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-size:12px;color:#94a3b8;z-index:500;}
 
 @media print{
-  @page{size:landscape;margin:10mm;}
+  @page{size:landscape;margin:8mm;}
   body *{visibility:hidden !important;}
-  body.print-panel-mode #panel,
-  body.print-panel-mode #panel *{visibility:visible !important;}
-  body.print-panel-mode #panel{position:static;width:100%;height:auto;transform:none;border:none;background:#fff;color:#111;}
-  body.print-panel-mode #panel .bg,
-  body.print-panel-mode #panel .bp,
-  body.print-panel-mode #panel .mat-del,
-  body.print-panel-mode #panel .obs-area,
-  body.print-panel-mode #panel #pfoot{display:none !important;}
+  body.print-panel-mode #print-panel-area,
+  body.print-panel-mode #print-panel-area *{visibility:visible !important;}
+  body.print-panel-mode #print-panel-area{
+    position:fixed;inset:0;z-index:9999;
+    background:#fff;color:#111;padding:10mm;
+    display:flex;flex-direction:column;
+    font-family:'Segoe UI',Arial,sans-serif;
+  }
+  .print-mat-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .print-mat-table th{background:#1e3a5f;color:#fff;padding:6px 10px;text-align:left;border:1px solid #ccc;}
+  .print-mat-table td{padding:5px 10px;border:1px solid #e2e8f0;}
+  .print-mat-table tr:nth-child(even) td{background:#f8fafc;}
+  .print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:2px solid #334155;padding-bottom:8px;}
+  .print-header h2{font-size:15px;font-weight:800;color:#1e293b;}
+  .print-header .print-meta{font-size:11px;color:#475569;text-align:right;line-height:1.8;}
 }
+
+/* ── Reporte de Status ── */
+.rp-tipo-card{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;text-align:center;}
+.rp-tipo-title{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;}
+.rp-num-plan{font-size:22px;font-weight:800;color:#3b82f6;}
+.rp-num-real{font-size:22px;font-weight:800;color:#22c55e;}
+.rp-num-pend{font-size:22px;font-weight:800;color:#f59e0b;}
+.rp-num-label{font-size:9px;color:#64748b;letter-spacing:1px;}
+.rp-bar-group{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:60px;}
+.rp-bar-wrap{display:flex;gap:3px;align-items:flex-end;height:140px;}
+.rp-bar{border-radius:4px 4px 0 0;min-width:16px;transition:height .3s;}
+.rp-bar-label{font-size:9px;color:#64748b;font-weight:700;letter-spacing:1px;margin-top:4px;}
+.active-turno{background:#1e3a5f!important;border-color:#3b82f6!important;color:#93c5fd!important;}
+.rp-turno-card{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;text-align:center;}
+.rp-turno-label{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:6px;}
+.rp-turno-num{font-size:26px;font-weight:800;color:#a78bfa;}
+.rp-meta-input{background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:6px 10px;font-size:13px;width:100%;font-family:inherit;text-align:center;}
+.rp-meta-input:focus{outline:none;border-color:#3b82f6;}
+/* ── DT sem grade ── */
+.sg-item{background:#162032;border:1px solid #334155;border-radius:8px;padding:10px 14px;display:grid;grid-template-columns:100px 1fr 1fr auto;gap:10px;align-items:center;font-size:12px;}
+@media(max-width:700px){.sg-form-grid,.sg-item{grid-template-columns:1fr!important;}}
+/* ── NF lista ── */
+.nf-item{background:#0f172a;border:1px solid #334155;border-radius:7px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;}
 
 /* MODAL DE LOGS */
 #log-overlay{position:fixed;inset:0;background:#000000cc;z-index:300;display:none;align-items:center;justify-content:center;}
@@ -156,6 +186,10 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
 .dt-clock{margin-right:4px;animation:blink .8s step-start infinite;}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
 .dt-atrasado{color:#ef4444 !important;}
+@media(max-width:700px){
+  .sg-form-grid{grid-template-columns:1fr!important;}
+  .rp-chart{flex-wrap:wrap;}
+}
 </style>
 </head>
 <body>
@@ -267,6 +301,10 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="tab-bar">
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
+      <button class="tab-btn" id="tab-reporte" onclick="switchTableTab('reporte')" style="color:#a78bfa;">📊 REPORTE DE STATUS</button>
+      <button class="tab-btn" id="tab-semgrade" onclick="switchTableTab('semgrade')" style="color:#f59e0b;">⚠️ SEM GRADE</button>
+      <button class="tab-btn" id="tab-dtfake" onclick="switchTableTab('dtfake')" style="color:#fb923c;">🔄 DT FAKE</button>
+      <button class="tab-btn" id="tab-nf" onclick="switchTableTab('nf')" style="color:#34d399;">📎 JUNTAR NFs</button>
     </div>
 
     <div id="twrap">
@@ -293,6 +331,112 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div style="padding:8px 18px;font-size:10px;color:#334155;">
       💡 Clique em qualquer <b style="color:#93c5fd">DT</b> para abrir o mapa de separação com os materiais. · 🕐 = Carreta deve chegar em até 1h.
     </div>
+
+    <!-- ══════ ABA: REPORTE DE STATUS ══════ -->
+    <div id="reporte-wrap" style="display:none;padding:16px 18px;">
+      <!-- Turnos -->
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">TURNO:</span>
+        <button class="bg rp-turno active-turno" id="rp-t0" onclick="rpSetTurno('todos')" style="font-size:10px;padding:4px 12px;">📅 TODOS</button>
+        <button class="bg rp-turno" id="rp-t1" onclick="rpSetTurno('T1')" style="font-size:10px;padding:4px 12px;">🌅 T1 · 07-14h</button>
+        <button class="bg rp-turno" id="rp-t2" onclick="rpSetTurno('T2')" style="font-size:10px;padding:4px 12px;">☀️ T2 · 15-22h</button>
+        <button class="bg rp-turno" id="rp-t3" onclick="rpSetTurno('T3')" style="font-size:10px;padding:4px 12px;">🌙 T3 · 23-06h</button>
+        <span id="rp-turno-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <!-- Metas configuráveis -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📋 PLANEJADO DO DIA (meta)</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;" id="rp-metas-inputs"></div>
+      </div>
+      <!-- Gráfico -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:14px;">📊 PLANEJADO vs REALIZADO</div>
+        <div id="rp-chart" style="display:flex;align-items:flex-end;gap:12px;height:160px;overflow-x:auto;"></div>
+        <div id="rp-legenda" style="display:flex;gap:16px;margin-top:10px;font-size:11px;flex-wrap:wrap;">
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#3b82f6;border-radius:2px;display:inline-block;"></span>Planejado</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#22c55e;border-radius:2px;display:inline-block;"></span>Realizado</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#f59e0b;border-radius:2px;display:inline-block;"></span>Pendente</span>
+        </div>
+      </div>
+      <!-- Números consolidados -->
+      <div id="rp-numeros" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
+      <!-- Separações por turno -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">🔢 SEPARAÇÕES POR TURNO</div>
+        <div id="rp-turnos-resumo" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: SEM GRADE ══════ -->
+    <div id="semgrade-wrap" style="display:none;padding:16px 18px;">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">REGISTRAR DT SEM GRADE</span>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="display:grid;grid-template-columns:120px 1fr 1fr auto;gap:10px;align-items:end;" class="sg-form-grid">
+          <div><label class="sl">Nº DT</label><input id="sg-dt" class="mat-input" placeholder="Ex: 23166206" style="width:100%;"/></div>
+          <div><label class="sl">TRANSPORTADORA</label><input id="sg-transp" class="mat-input" placeholder="Nome" style="width:100%;"/></div>
+          <div><label class="sl">MOTIVO</label><input id="sg-motivo" class="mat-input" placeholder="Ex: Aguardando nota, erro sistema..." style="width:100%;"/></div>
+          <button class="bp" onclick="registrarSemGrade()" style="height:34px;white-space:nowrap;">+ Registrar</button>
+        </div>
+        <div style="margin-top:10px;"><label class="sl">OBSERVAÇÕES</label><textarea id="sg-obs" class="obs-area" placeholder="Detalhes adicionais..." style="min-height:48px;width:100%;"></textarea></div>
+      </div>
+      <div id="sg-lista" style="display:grid;gap:8px;"></div>
+    </div>
+
+    <!-- ══════ ABA: DT FAKE ══════ -->
+    <div id="dtfake-wrap" style="display:none;padding:16px 18px;">
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#f59e0b;font-weight:700;margin-bottom:12px;">🔄 SUBSTITUIÇÃO DE DT FAKE</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:14px;line-height:1.7;">Informe a DT fake (criada para reservar espaço) e a DT original. O sistema irá substituir o número e os materiais, mantendo a agenda intacta.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+          <div>
+            <label class="sl">Nº DT FAKE (a substituir)</label>
+            <input id="fake-dt-from" class="mat-input" placeholder="Ex: 99999999" style="width:100%;"/>
+          </div>
+          <div>
+            <label class="sl">Nº DT ORIGINAL (substituta)</label>
+            <input id="fake-dt-to" class="mat-input" placeholder="Ex: 23166206" style="width:100%;"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="bp" onclick="substituirDTFake()" style="background:#f59e0b;color:#000;">🔄 Substituir DT</button>
+          <span id="fake-status" style="font-size:12px;color:#64748b;align-self:center;"></span>
+        </div>
+      </div>
+      <div id="fake-preview" style="display:none;background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;">
+        <div style="font-size:10px;letter-spacing:1.5px;color:#64748b;font-weight:700;margin-bottom:8px;">PRÉVIA DA SUBSTITUIÇÃO</div>
+        <div id="fake-preview-body" style="font-size:12px;color:#e2e8f0;"></div>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+          <button class="bp" onclick="confirmarSubstituicao()" style="flex:1;">✅ Confirmar substituição</button>
+          <button class="bg" onclick="cancelarSubstituicao()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: JUNTAR NFs ══════ -->
+    <div id="nf-wrap" style="display:none;padding:16px 18px;">
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#34d399;font-weight:700;margin-bottom:6px;">📎 JUNTAR NFs + ESPELHO</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Selecione os PDFs das NFs e o espelho da nota. O sistema junta tudo em um único PDF nomeado com o número da DT.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <div>
+            <label class="sl">Nº DA DT (para nomear o PDF)</label>
+            <input id="nf-dt-num" class="mat-input" placeholder="Ex: 23166206" style="width:160px;"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="bp" onclick="document.getElementById('nf-files').click()" style="background:#1e3a5f;border:1px solid #3b82f655;">📂 Subir NFs / Espelho</button>
+          <input id="nf-files" type="file" multiple accept="application/pdf" style="display:none" onchange="nfAddFiles(this.files)"/>
+          <button class="bp" onclick="nfGerar()" style="background:#059669;">⬇ Gerar PDF único</button>
+          <button class="bp" onclick="nfImprimir()" style="background:#1d4ed8;">🖨️ Imprimir</button>
+          <button class="bg" onclick="nfLimpar()">🗑 Limpar</button>
+        </div>
+        <div id="nf-lista" style="display:grid;gap:6px;margin-top:6px;"></div>
+        <div id="nf-msg" style="margin-top:8px;font-size:12px;display:none;"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -304,14 +448,16 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <button class="bg" onclick="closePanel()" style="padding:4px 10px;">✕</button>
   </div>
   <div id="pbody">
-    <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-      <span class="sec-lbl" style="margin:0;">MATERIAIS / QUANTIDADES</span>
-      <button class="bg" onclick="printPanelMapa()" style="padding:4px 10px;font-size:11px;">🖨️ Imprimir mapa</button>
+    <div id="print-panel-area">
+      <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <span class="sec-lbl" style="margin:0;">MATERIAIS / QUANTIDADES</span>
+        <button class="bg no-print" onclick="printPanelMapa()" style="padding:4px 10px;font-size:11px;">🖨️ Imprimir mapa</button>
+      </div>
+      <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE</span><span></span></div>
+      <div id="mat-list"></div>
+      <div id="mat-total" style="margin-top:8px;text-align:right;color:#a7f3d0;font-weight:800;font-size:13px;">Total: 0</div>
     </div>
-    <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE</span><span></span></div>
-    <div id="mat-list"></div>
-    <div id="mat-total" style="margin-top:8px;text-align:right;color:#a7f3d0;font-weight:800;font-size:13px;">Total: 0</div>
     <button class="bg" onclick="addMatRow()" style="width:100%;margin-top:6px;font-size:12px;">+ Adicionar material</button>
     <span class="sec-lbl" style="margin-top:18px;">OBSERVAÇÕES</span>
     <textarea class="obs-area" id="pobs" placeholder="Anotações gerais desta DT..."></textarea>
@@ -489,17 +635,31 @@ let matFiltro='todos';
 function switchTableTab(tab){
   if(tab==='materiais') tab='todas';
   currentTableTab=tab;
-  ['todas','finalizadas'].forEach(t=>{
+  const allTabs=['todas','finalizadas','reporte','semgrade','dtfake','nf'];
+  allTabs.forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el) el.classList.toggle('active',t===tab);
   });
-  const board=document.getElementById('mat-board');
-  const twrap=document.getElementById('twrap');
-  const mwrap=document.getElementById('materiais-wrap');
-  if(board)  board.style.display='none';
-  if(twrap)  twrap.style.display='block';
-  if(mwrap)  mwrap.style.display='none';
-  renderRows();
+  // Hide all content areas first
+  ['mat-board','twrap','materiais-wrap','reporte-wrap','semgrade-wrap','dtfake-wrap','nf-wrap'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display='none';
+  });
+  if(tab==='reporte'){
+    document.getElementById('reporte-wrap').style.display='block';
+    renderReporte();
+  } else if(tab==='semgrade'){
+    document.getElementById('semgrade-wrap').style.display='block';
+    renderSemGrade();
+  } else if(tab==='dtfake'){
+    document.getElementById('dtfake-wrap').style.display='block';
+  } else if(tab==='nf'){
+    document.getElementById('nf-wrap').style.display='block';
+    nfRenderLista();
+  } else {
+    document.getElementById('twrap').style.display='block';
+    renderRows();
+  }
 }
 
 function filtrarMateriais(f){
@@ -1416,9 +1576,46 @@ function updatePanelTotal(){
 
 function printPanelMapa(){
   if(!panelDT) return;
+  // Build a clean print-friendly table from current mat-list
+  const rows=[...document.querySelectorAll('#mat-list .mat-row')];
+  const mats=rows.map(r=>({
+    mat:r.querySelector('[data-f=material]').value.trim(),
+    qtd:r.querySelector('[data-f=quantidade]').value.trim()
+  })).filter(m=>m.mat);
+  const row=tableData.find(r=>r.dt===panelDT.dt&&r.data_ref===panelDT.dataRef)||{};
+  const total=mats.reduce((s,m)=>s+(parseFloat(String(m.qtd||'0').replace(/\./g,'').replace(',','.'))||0),0);
+  const printArea=document.getElementById('print-panel-area');
+  // Temporarily swap content with print table
+  const origInner=printArea.innerHTML;
+  printArea.innerHTML=`
+    <div class="print-header">
+      <div>
+        <h2>📦 Mapa de Separação — DT ${panelDT.dt}</h2>
+        <div style="font-size:11px;color:#475569;margin-top:4px;">
+          ${row.transportadora||''} &nbsp;|&nbsp; Grade: ${row.grade_carregamento||'—'} → ${row.fim_carregamento||'—'}
+          &nbsp;|&nbsp; ${row.tipo_operacao||''}
+        </div>
+      </div>
+      <div class="print-meta">
+        Impresso em ${new Date().toLocaleString('pt-BR')}<br/>
+        Total de volumes: <b>${Math.round(total)}</b>
+      </div>
+    </div>
+    <table class="print-mat-table">
+      <thead><tr><th>#</th><th>MATERIAL</th><th>QUANTIDADE</th></tr></thead>
+      <tbody>${mats.map((m,i)=>`<tr><td>${i+1}</td><td>${m.mat}</td><td style="text-align:right;">${m.qtd}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding:6px 10px;">TOTAL</td><td style="text-align:right;font-weight:800;padding:6px 10px;">${Math.round(total)}</td></tr></tfoot>
+    </table>
+    ${document.getElementById('pobs').value ? `<div style="margin-top:14px;font-size:11px;color:#475569;">Obs: ${document.getElementById('pobs').value}</div>` : ''}
+  `;
   document.body.classList.add('print-panel-mode');
   window.print();
-  setTimeout(()=>document.body.classList.remove('print-panel-mode'),300);
+  setTimeout(()=>{
+    document.body.classList.remove('print-panel-mode');
+    printArea.innerHTML=origInner;
+    // Re-render mat list after restore
+    openPanel(panelDT.dt, panelDT.dataRef);
+  },600);
 }
 
 async function saveMateriais(){
@@ -1494,6 +1691,367 @@ function exportCSV(){
   a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
   a.click();
 }
+
+/* ═══════════════════════════════════════════════════════
+   REPORTE DE STATUS
+═══════════════════════════════════════════════════════ */
+const RP_TIPOS = ['VENDA','TNF','PRÉ-FAT','TRANSFERÊNCIA','GRADE'];
+const RP_COLORS = {
+  'VENDA':'#22c55e','TNF':'#06b6d4','PRÉ-FAT':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
+};
+let rpTurnoFiltro = 'todos';
+let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
+
+function rpGetTurno(row){
+  // Classifica pelo horário do FIM da agenda
+  const grade = parseBR(row.grade_carregamento||'') || parseBR(row.agenda||'');
+  if(!grade) return null;
+  const h = grade.getHours();
+  if(h>=7 && h<=14) return 'T1';
+  if(h>=15 && h<=22) return 'T2';
+  return 'T3'; // 23-06
+}
+
+function rpNormalizeTipo(row){
+  const op=(row.tipo_operacao||'').toUpperCase();
+  if(op.includes('TRANSFER')||op.includes('TNF')) return 'TRANSFERÊNCIA';
+  if(op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FAT';
+  if(op.includes('GRADE')) return 'GRADE';
+  if(op.includes('TNF')) return 'TNF';
+  if(op.includes('VENDA')) return 'VENDA';
+  return 'VENDA'; // default
+}
+
+function rpSetTurno(t){
+  rpTurnoFiltro=t;
+  document.querySelectorAll('.rp-turno').forEach(btn=>{
+    btn.classList.remove('active-turno');
+  });
+  const id=t==='todos'?'rp-t0':t==='T1'?'rp-t1':t==='T2'?'rp-t2':'rp-t3';
+  const el=document.getElementById(id);
+  if(el) el.classList.add('active-turno');
+  renderReporte();
+}
+
+function rpSaveMeta(tipo,val){
+  rpMetas[tipo]=parseInt(val)||0;
+  try{localStorage.setItem('rp_metas',JSON.stringify(rpMetas));}catch(e){}
+  renderReporte();
+}
+
+function renderReporte(){
+  const rows=rpTurnoFiltro==='todos'?[...tableData]
+    :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
+
+  const infoEl=document.getElementById('rp-turno-info');
+  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual';
+
+  // Inputs de meta
+  const metasEl=document.getElementById('rp-metas-inputs');
+  if(metasEl){
+    metasEl.innerHTML=RP_TIPOS.map(tipo=>`
+      <div>
+        <label style="font-size:9px;letter-spacing:1.5px;color:${RP_COLORS[tipo]||'#64748b'};font-weight:700;display:block;margin-bottom:4px;">${tipo}</label>
+        <input class="rp-meta-input" type="number" min="0" value="${rpMetas[tipo]||0}"
+          oninput="rpSaveMeta('${tipo}',this.value)" title="Meta do dia para ${tipo}"/>
+      </div>
+    `).join('');
+  }
+
+  // Contagem realizado por tipo
+  const realizado={};
+  RP_TIPOS.forEach(t=>realizado[t]=0);
+  rows.forEach(r=>{
+    if(STATUS_FINAIS.includes(r.status)){
+      const t=rpNormalizeTipo(r);
+      if(realizado[t]!==undefined) realizado[t]++;
+    }
+  });
+
+  // Gráfico de barras
+  const chart=document.getElementById('rp-chart');
+  if(chart){
+    const maxVal=Math.max(1,...RP_TIPOS.map(t=>Math.max(rpMetas[t]||0,realizado[t]||0)));
+    chart.innerHTML=RP_TIPOS.map(tipo=>{
+      const plan=rpMetas[tipo]||0;
+      const real=realizado[tipo]||0;
+      const pend=Math.max(0,plan-real);
+      const hPlan=plan?Math.round((plan/maxVal)*130):0;
+      const hReal=real?Math.round((real/maxVal)*130):0;
+      const hPend=pend?Math.round((pend/maxVal)*130):0;
+      const c=RP_COLORS[tipo]||'#3b82f6';
+      return `<div class="rp-bar-group">
+        <div class="rp-bar-wrap">
+          <div class="rp-bar" style="height:${hPlan}px;background:#3b82f6;width:16px;" title="Planejado: ${plan}"></div>
+          <div class="rp-bar" style="height:${hReal}px;background:#22c55e;width:16px;" title="Realizado: ${real}"></div>
+          <div class="rp-bar" style="height:${hPend}px;background:#f59e0b;width:16px;" title="Pendente: ${pend}"></div>
+        </div>
+        <div class="rp-bar-label" style="color:${c}">${tipo}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Números consolidados
+  const numEl=document.getElementById('rp-numeros');
+  if(numEl){
+    numEl.innerHTML=RP_TIPOS.map(tipo=>{
+      const plan=rpMetas[tipo]||0;
+      const real=realizado[tipo]||0;
+      const pend=Math.max(0,plan-real);
+      const c=RP_COLORS[tipo]||'#3b82f6';
+      return `<div class="rp-tipo-card" style="border-color:${c}44;">
+        <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+          <div><div class="rp-num-plan">${plan}</div><div class="rp-num-label">Planejado</div></div>
+          <div><div class="rp-num-real">${real}</div><div class="rp-num-label">Realizado</div></div>
+          <div><div class="rp-num-pend">${pend}</div><div class="rp-num-label">Pendente</div></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Separações por turno
+  const turnosEl=document.getElementById('rp-turnos-resumo');
+  if(turnosEl){
+    const byTurno={T1:0,T2:0,T3:0};
+    tableData.forEach(r=>{const t=rpGetTurno(r);if(t)byTurno[t]++;});
+    const labels={T1:'🌅 T1 · 07-14h',T2:'☀️ T2 · 15-22h',T3:'🌙 T3 · 23-06h'};
+    const cores={T1:'#60a5fa',T2:'#f59e0b',T3:'#a78bfa'};
+    turnosEl.innerHTML=['T1','T2','T3'].map(t=>`
+      <div class="rp-turno-card" style="border-color:${cores[t]}44;">
+        <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
+        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t]}</div>
+        <div style="font-size:10px;color:#64748b;">DTs</div>
+      </div>
+    `).join('');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   DT SEM GRADE
+═══════════════════════════════════════════════════════ */
+let sgRegistros = JSON.parse(localStorage.getItem('sg_registros')||'[]');
+
+async function registrarSemGrade(){
+  const dt=document.getElementById('sg-dt').value.trim();
+  const transp=document.getElementById('sg-transp').value.trim();
+  const motivo=document.getElementById('sg-motivo').value.trim();
+  const obs=document.getElementById('sg-obs').value.trim();
+  if(!dt){showErr('Informe o número da DT.');return;}
+  const reg={dt,transp,motivo,obs,ts:new Date().toLocaleString('pt-BR')};
+  sgRegistros.unshift(reg);
+  try{localStorage.setItem('sg_registros',JSON.stringify(sgRegistros));}catch(e){}
+  // Salvar no Supabase também
+  try{
+    await sbInsert('reporte_semgrade',[{
+      dt:String(dt),transportadora:transp,motivo,observacao:obs,
+      created_at:new Date().toISOString()
+    }]);
+  }catch(e){/* tabela pode não existir ainda */}
+  document.getElementById('sg-dt').value='';
+  document.getElementById('sg-transp').value='';
+  document.getElementById('sg-motivo').value='';
+  document.getElementById('sg-obs').value='';
+  showOk('DT '+dt+' registrada como sem grade.');
+  renderSemGrade();
+}
+
+function renderSemGrade(){
+  const lista=document.getElementById('sg-lista');
+  if(!lista) return;
+  if(!sgRegistros.length){
+    lista.innerHTML='<div style="color:#334155;font-size:12px;padding:10px;">Nenhuma DT sem grade registrada ainda.</div>';
+    return;
+  }
+  lista.innerHTML=sgRegistros.map((r,i)=>`
+    <div class="sg-item">
+      <div><div style="font-weight:800;color:#f59e0b;">${r.dt}</div><div style="font-size:10px;color:#64748b;">${r.ts}</div></div>
+      <div style="font-size:11px;color:#cbd5e1;">${r.transp||'—'}</div>
+      <div style="font-size:11px;color:#94a3b8;">${r.motivo||'—'}${r.obs?' · '+r.obs:''}</div>
+      <button class="bg" onclick="sgRemover(${i})" style="font-size:10px;padding:3px 8px;">✕</button>
+    </div>
+  `).join('');
+}
+
+function sgRemover(i){
+  sgRegistros.splice(i,1);
+  try{localStorage.setItem('sg_registros',JSON.stringify(sgRegistros));}catch(e){}
+  renderSemGrade();
+}
+
+/* ═══════════════════════════════════════════════════════
+   DT FAKE — SUBSTITUIÇÃO
+═══════════════════════════════════════════════════════ */
+let fakeSubstData=null;
+
+async function substituirDTFake(){
+  const dtFrom=document.getElementById('fake-dt-from').value.trim();
+  const dtTo=document.getElementById('fake-dt-to').value.trim();
+  const statusEl=document.getElementById('fake-status');
+  const preview=document.getElementById('fake-preview');
+  const previewBody=document.getElementById('fake-preview-body');
+  if(!dtFrom||!dtTo){showErr('Informe os dois números de DT.');return;}
+  if(dtFrom===dtTo){showErr('DT fake e DT original devem ser diferentes.');return;}
+  statusEl.textContent='🔍 Buscando…';
+  preview.style.display='none';
+  try{
+    // Busca DT fake no banco
+    const refs=await getActiveRefs();
+    const fromRows=await sbGet('reporte_carga',`dt=eq.${encodeURIComponent(dtFrom)}&select=*&limit=5`);
+    const fromMats=await sbGet('reporte_materiais',`dt=eq.${encodeURIComponent(dtFrom)}&select=*`);
+    if(!fromRows||!fromRows.length){showErr('DT fake '+dtFrom+' não encontrada no banco.');statusEl.textContent='';return;}
+    const row=fromRows[0];
+    fakeSubstData={dtFrom,dtTo,row,mats:fromMats||[]};
+    previewBody.innerHTML=`
+      <div style="margin-bottom:10px;">
+        <b style="color:#f59e0b;">DT ${dtFrom}</b> será renomeada para <b style="color:#22c55e;">DT ${dtTo}</b>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">
+        Transportadora: ${row.transportadora||'—'} &nbsp;|&nbsp; Grade: ${row.grade_carregamento||'—'}<br/>
+        Materiais atuais (serão substituídos): ${fakeSubstData.mats.length} item(s)
+      </div>
+      <div style="font-size:11px;color:#f59e0b;">⚠️ Os materiais da DT fake serão removidos. Após a substituição, adicione os materiais corretos no painel da DT ${dtTo}.</div>
+    `;
+    preview.style.display='block';
+    statusEl.textContent='';
+  }catch(e){showErr('Erro: '+e.message);statusEl.textContent='';}
+}
+
+async function confirmarSubstituicao(){
+  if(!fakeSubstData){return;}
+  const {dtFrom,dtTo,row,mats}=fakeSubstData;
+  spin(true);
+  try{
+    // Cria nova linha com dtTo copiando dados da fake
+    const novaRow={...row,dt:dtTo,updated_at:new Date().toISOString()};
+    delete novaRow.id;
+    await sbInsert('reporte_carga',[novaRow]);
+    // Migra materiais
+    if(mats.length){
+      const novosMats=mats.map(m=>({...m,dt:dtTo}));
+      novosMats.forEach(m=>{delete m.id;});
+      await sbDelete('reporte_materiais',{dt:dtTo,data_ref:row.data_ref});
+      await sbInsert('reporte_materiais',novosMats);
+    }
+    // Remove a DT fake
+    await sbDelete('reporte_carga',{dt:dtFrom,data_ref:row.data_ref});
+    await sbDelete('reporte_materiais',{dt:dtFrom,data_ref:row.data_ref});
+    // Log
+    await sbInsert('reporte_logs',[{dt:dtTo,data_ref:row.data_ref,status:'SUBSTITUIÇÃO DE DT FAKE',transportadora:'DT fake: '+dtFrom,created_at:new Date().toISOString()}]);
+    showOk('DT '+dtFrom+' substituída por '+dtTo+' com sucesso!');
+    document.getElementById('fake-preview').style.display='none';
+    document.getElementById('fake-dt-from').value='';
+    document.getElementById('fake-dt-to').value='';
+    document.getElementById('fake-status').textContent='';
+    fakeSubstData=null;
+    await reloadTable();
+  }catch(e){showErr('Erro na substituição: '+e.message);}
+  spin(false);
+}
+
+function cancelarSubstituicao(){
+  fakeSubstData=null;
+  document.getElementById('fake-preview').style.display='none';
+  document.getElementById('fake-status').textContent='';
+}
+
+/* ═══════════════════════════════════════════════════════
+   JUNTAR NFs — PDF
+═══════════════════════════════════════════════════════ */
+let nfArquivos=[];
+let nfBlob=null;
+
+function nfAddFiles(files){
+  nfArquivos=[...nfArquivos,...Array.from(files)];
+  nfBlob=null;
+  nfRenderLista();
+}
+
+function nfRenderLista(){
+  const lista=document.getElementById('nf-lista');
+  if(!lista)return;
+  if(!nfArquivos.length){lista.innerHTML='<div style="color:#334155;font-size:12px;padding:6px;">Nenhum arquivo selecionado.</div>';return;}
+  lista.innerHTML=nfArquivos.map((f,i)=>`
+    <div class="nf-item">
+      <div>
+        <b style="color:#e2e8f0;">${i+1}. ${f.name}</b>
+        <span style="color:#64748b;font-size:11px;"> — ${(f.size/1024).toFixed(1)} KB</span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        ${i>0?`<button class="bg" onclick="nfMover(${i},-1)" style="padding:3px 8px;font-size:11px;">↑</button>`:'<span style="width:34px;"></span>'}
+        ${i<nfArquivos.length-1?`<button class="bg" onclick="nfMover(${i},1)" style="padding:3px 8px;font-size:11px;">↓</button>`:'<span style="width:34px;"></span>'}
+        <button class="bg" onclick="nfRemover(${i})" style="padding:3px 8px;font-size:11px;color:#ef4444;">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function nfMover(i,d){
+  const j=i+d;
+  if(j<0||j>=nfArquivos.length)return;
+  [nfArquivos[i],nfArquivos[j]]=[nfArquivos[j],nfArquivos[i]];
+  nfBlob=null;nfRenderLista();
+}
+
+function nfRemover(i){
+  nfArquivos.splice(i,1);nfBlob=null;nfRenderLista();
+}
+
+function nfLimpar(){
+  nfArquivos=[];nfBlob=null;
+  nfRenderLista();
+  const msg=document.getElementById('nf-msg');
+  if(msg){msg.style.display='none';}
+}
+
+function nfMsg(txt,ok){
+  const el=document.getElementById('nf-msg');
+  if(!el)return;
+  el.style.display='block';
+  el.style.color=ok?'#22c55e':'#ef4444';
+  el.textContent=txt;
+}
+
+async function nfGerar(){
+  if(!nfArquivos.length){nfMsg('Adicione pelo menos 1 PDF.',false);return;}
+  if(typeof PDFLib==='undefined'){
+    // Load pdf-lib dynamically
+    await new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://unpkg.com/pdf-lib/dist/pdf-lib.min.js';
+      s.onload=res;s.onerror=rej;
+      document.head.appendChild(s);
+    });
+  }
+  nfMsg('⏳ Juntando PDFs…',true);
+  const dtNum=(document.getElementById('nf-dt-num').value.trim()||'pdf-unico');
+  try{
+    const merged=await PDFLib.PDFDocument.create();
+    for(const file of nfArquivos){
+      const bytes=await file.arrayBuffer();
+      const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true});
+      const pages=await merged.copyPages(src,src.getPageIndices());
+      pages.forEach(p=>merged.addPage(p));
+    }
+    const mergedBytes=await merged.save();
+    nfBlob=new Blob([mergedBytes],{type:'application/pdf'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(nfBlob);
+    a.download=`DT-${dtNum}.pdf`;
+    document.body.appendChild(a);a.click();a.remove();
+    nfMsg(`✅ PDF gerado: DT-${dtNum}.pdf (${nfArquivos.length} arquivo(s))`,true);
+  }catch(e){nfMsg('Erro ao juntar: '+e.message,false);}
+}
+
+async function nfImprimir(){
+  if(!nfBlob) await nfGerar();
+  if(!nfBlob)return;
+  const url=URL.createObjectURL(nfBlob);
+  const w=window.open(url,'_blank');
+  if(!w){nfMsg('Bloqueio de pop-up detectado. Baixe o PDF e imprima.',false);return;}
+  setTimeout(()=>{w.focus();w.print();},800);
+}
+
 </script>
 </body>
 </html>
