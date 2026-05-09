@@ -84,6 +84,7 @@ tr:hover td{background:#1a2540!important;}
 .tag-hoje  {background:#1e3a8a33;border:1px solid #3b82f655;border-radius:4px;padding:1px 7px;font-size:9px;color:#60a5fa;font-weight:700;letter-spacing:1px;}
 .tag-amanha{background:#2e1065aa;border:1px solid #7c3aed55;border-radius:4px;padding:1px 7px;font-size:9px;color:#a78bfa;font-weight:700;letter-spacing:1px;}
 .tag-venda {background:#052e1688;border:1px solid #22c55e55;border-radius:4px;padding:2px 9px;font-size:10px;color:#4ade80;font-weight:700;}
+.tag-mogi {background:#06b6d41a;border:1px solid #06b6d455;border-radius:4px;padding:2px 9px;font-size:10px;color:#22d3ee;font-weight:700;}
 .tag-transf{background:#431407aa;border:1px solid #f9731655;border-radius:4px;padding:2px 9px;font-size:10px;color:#fb923c;font-weight:700;}
 .tag-prefat{background:#1e1b4baa;border:1px solid #818cf855;border-radius:4px;padding:2px 9px;font-size:10px;color:#a5b4fc;font-weight:700;}
 .tag-grade {background:#14532daa;border:1px solid #4ade8055;border-radius:4px;padding:2px 9px;font-size:10px;color:#86efac;font-weight:700;}
@@ -311,7 +312,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <table>
         <thead><tr>
           <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th>
-          <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th>
+          <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th><th>N° PORTARIA</th>
           <th>STATUS / OPERAÇÃO</th><th>DESC. DOCUMENTO</th><th>PESO LÍQUIDO</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -322,7 +323,8 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div style="padding:12px 18px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">FILTRO:</span>
         <button class="bg" id="mfilt-todos" onclick="filtrarMateriais('todos')" style="font-size:10px;padding:3px 10px;border-color:#3b82f655;color:#93c5fd;">TODOS</button>
-        <button class="bg" id="mfilt-venda" onclick="filtrarMateriais('venda')" style="font-size:10px;padding:3px 10px;border-color:#22c55e55;color:#4ade80;">🛒 VENDA NORMAL</button>
+        <button class="bg" id="mfilt-venda" onclick="filtrarMateriais('venda')" style="font-size:10px;padding:3px 10px;border-color:#22c55e55;color:#4ade80;">🏭 VENDA ARUJA</button>
+        <button class="bg" id="mfilt-mogi" onclick="filtrarMateriais('mogi')" style="font-size:10px;padding:3px 10px;border-color:#06b6d455;color:#22d3ee;">🏙️ VENDA MOGI</button>
         <button class="bg" id="mfilt-transf" onclick="filtrarMateriais('transf')" style="font-size:10px;padding:3px 10px;border-color:#f9731655;color:#fb923c;">🔄 TRANSFERÊNCIA</button>
         <span id="mfilt-resumo" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
       </div>
@@ -360,6 +362,11 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       </div>
       <!-- Números consolidados -->
       <div id="rp-numeros" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
+      <!-- Contagem por Status -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📍 STATUS ATUAL DAS DTs</div>
+        <div id="rp-status-counts" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;"></div>
+      </div>
       <!-- Separações por turno -->
       <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
         <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">🔢 SEPARAÇÕES POR TURNO</div>
@@ -607,12 +614,14 @@ function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
   const op=String(tipoOperacao||'').toUpperCase();
   const style=small?' style="padding:3px 10px;font-size:11px;"':'';
   if(op.includes('TRANSFER')) return `<span class="tag-transf"${style}>🔄 TRANSFERÊNCIA</span>`;
-  if(op.includes('VENDA')) return `<span class="tag-venda"${style}>🛒 VENDA NORMAL</span>`;
+  if(op.includes('VENDA ARUJA')) return `<span class="tag-venda"${style}>🏭 VENDA ARUJA</span>`;
+  if(op.includes('VENDA MOGI')) return `<span class="tag-mogi"${style}>🏙️ VENDA MOGI</span>`;
+  if(op.includes('VENDA')) return `<span class="tag-venda"${style}>🛒 VENDA</span>`;
   return emptyDash?'<span class="tag-sem">—</span>':'';
 }
 
 let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
-let remessaMap={}, pesoLiquidoMap={};
+let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={};
 let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
@@ -734,7 +743,8 @@ async function renderMateriaisAba(){
     const dtsFiltradas=uniq.filter(dt=>{
       const row=tableData.find(r=>r.dt===dt)||{};
       const op=(row.tipo_operacao||tipoOpMap[dt]||'').toUpperCase();
-      if(matFiltro==='venda')  return !op.includes('TRANSFER');
+      if(matFiltro==='venda')  return op.includes('ARUJA')||(op.includes('VENDA')&&!op.includes('MOGI')&&!op.includes('TRANSFER'));
+      if(matFiltro==='mogi')   return op.includes('MOGI');
       if(matFiltro==='transf') return op.includes('TRANSFER');
       return true;
     });
@@ -751,7 +761,7 @@ async function renderMateriaisAba(){
       const isTransf=op.includes('TRANSFER');
       const opBadge=isTransf
         ?'<span class="tag-transf" style="padding:2px 8px;font-size:10px;">🔄 TRANSFERÊNCIA</span>'
-        :'<span class="tag-venda"  style="padding:2px 8px;font-size:10px;">🛒 VENDA NORMAL</span>';
+        :op.includes('MOGI')?'<span class="tag-mogi" style="padding:2px 8px;font-size:10px;">🏙️ VENDA MOGI</span>':'<span class="tag-venda" style="padding:2px 8px;font-size:10px;">🏭 VENDA ARUJA</span>';
       const diaTag=row.dia_ref==='HOJE'
         ?'<span class="tag-hoje" style="padding:1px 6px;font-size:9px;">HOJE</span>'
         :(row.dia_ref==='AMANHÃ'?'<span class="tag-amanha" style="padding:1px 6px;font-size:9px;">AMANHÃ</span>':'');
@@ -1038,11 +1048,13 @@ function processRelatorioCSV(file) {
       const iRemessa  = ci('Nr. Remessa') !== -1 ? ci('Nr. Remessa') : ci('REMESSA');
       const iMat      = ci('Material');
       const iQtde     = ci('Qtde Remessa') !== -1 ? ci('Qtde Remessa') : ci('QTDE');
+      const iHora     = ci('Hora') !== -1 ? ci('Hora') : ci('HORA');
+      const iSap      = ci('SAP') !== -1 ? ci('SAP') : ci('Número SAP') !== -1 ? ci('Número SAP') : ci('NR SAP') !== -1 ? ci('NR SAP') : ci('Nº SAP') !== -1 ? ci('Nº SAP') : -1;
 
       if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
 
       exportMap = {}; tipoOpMap = {}; descDocMap = {};
-      remessaMap = {}; pesoLiquidoMap = {};
+      remessaMap = {}; pesoLiquidoMap = {}; horaChegadaCSVMap = {}; sapNumMap = {};
       let linhasOk = 0;
 
       const records = rows.slice(1).filter(r => r.some(c => c.trim() !== ''));
@@ -1063,7 +1075,7 @@ function processRelatorioCSV(file) {
         if (!tipoOpMap[dt]) {
           const raw = descDoc.toUpperCase();
           const isTransf = raw.includes('TRANSFER') || raw.includes('FILIAL') || raw.includes('ABAST') || raw.includes('TNF');
-          tipoOpMap[dt] = isTransf ? 'TRANSFERÊNCIA' : 'VENDA NORMAL';
+          tipoOpMap[dt] = isTransf ? 'TRANSFERÊNCIA' : 'VENDA ARUJA';
         }
 
         // peso liquido — soma por DT
@@ -1154,7 +1166,7 @@ async function buildTable(){
     // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(r.AGENDA||T)))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=in.("${refsUpload.join('\",\"')}")&select=dt,data_ref,status,hora_chegada,tipo_operacao,descricao_documento,reagendada`
+      `data_ref=in.("${refsUpload.join('\",\"')}")&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,reagendada`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
@@ -1187,7 +1199,8 @@ async function buildTable(){
         transportadora:String(dt.TRANSPORTADORA||''),
         grade_carregamento:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         fim_carregamento:String(dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):''),
-        hora_chegada:horaAtual,
+        hora_chegada:horaAtual || horaChegadaCSVMap[dt.DT] || '',
+        n_portaria:sapNumMap[dt.DT] || ex.n_portaria || '',
         status:statusAtual,
         descricao_documento:String(descDocMap[dt.DT]||ex.descricao_documento||''),
         toneladas:String(dt.PESO||''),
@@ -1221,7 +1234,7 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',toneladas:dt.PESO,
+      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',toneladas:dt.PESO,
       peso_liquido: pesoLiquidoMap[dt.DT] ? String(pesoLiquidoMap[dt.DT].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : String(dt.PESO||''),
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ',
@@ -1392,11 +1405,15 @@ function renderRows(){
       : '';
     tr.innerHTML=
       `<td>${diaTag}</td>`+
-      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${clock}${row.dt}</span></td>`+
+      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span></td>`+
       `<td class="td-transp">${row.transportadora||'—'}</td>`+
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
       `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
       `<td><input type="time" value="${row.hora_chegada||''}" onchange="saveField('${row.dt}','${row.data_ref}','hora_chegada',this.value)"/></td>`+
+      `<td style="text-align:center;">${row.n_portaria
+  ? '<div style="cursor:pointer;" onclick="promptPortaria(''+row.dt+'',''+row.data_ref+'',''+row.n_portaria+'')"><span title="SAP: '+row.n_portaria+'" style="color:#4ade80;font-size:15px;">✅</span><div style="font-size:9px;color:#4ade80;letter-spacing:.5px;">'+row.n_portaria+'</div></div>'
+  : (clockEmoji(row)||'') + '<button onclick="promptPortaria(''+row.dt+'',''+row.data_ref+'','')" style="font-size:9px;padding:1px 5px;margin-top:2px;background:#1e293b;border:1px solid #334155;color:#64748b;border-radius:3px;cursor:pointer;">SAP</button>'
+}</td>`+
       `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
       `</select></div></td>`+
@@ -1412,6 +1429,18 @@ function renderRows(){
     </td>`;
     tbody.appendChild(tr);
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   N° PORTARIA (SAP)
+═══════════════════════════════════════════════════════ */
+async function promptPortaria(dt,dataRef,current){
+  const val=prompt('Informe o N° SAP/Portaria para DT '+dt+':', current||'');
+  if(val===null) return; // cancelado
+  const sap=val.trim().replace(/[^\d]/g,'');
+  await saveField(dt,dataRef,'n_portaria',sap);
+  const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
+  if(row){ row.n_portaria=sap; renderRows(); }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1726,8 +1755,8 @@ async function tryLoadExisting(){
    EXPORT CSV
 ═══════════════════════════════════════════════════════ */
 function exportCSV(){
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO'];
-  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||'']);
+  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO'];
+  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||'']);
   const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
@@ -1738,9 +1767,9 @@ function exportCSV(){
 /* ═══════════════════════════════════════════════════════
    REPORTE DE STATUS
 ═══════════════════════════════════════════════════════ */
-const RP_TIPOS = ['VENDA','TNF','PRÉ-FAT','TRANSFERÊNCIA','GRADE'];
+const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','PRÉ-FAT','TRANSFERÊNCIA','GRADE'];
 const RP_COLORS = {
-  'VENDA':'#22c55e','TNF':'#06b6d4','PRÉ-FAT':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
+  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','PRÉ-FAT':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
@@ -1757,12 +1786,13 @@ function rpGetTurno(row){
 
 function rpNormalizeTipo(row){
   const op=(row.tipo_operacao||'').toUpperCase();
+  const desc=(row.descricao_documento||'').toUpperCase();
   if(op.includes('TRANSFER')||op.includes('TNF')) return 'TRANSFERÊNCIA';
   if(op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FAT';
   if(op.includes('GRADE')) return 'GRADE';
-  if(op.includes('TNF')) return 'TNF';
-  if(op.includes('VENDA')) return 'VENDA';
-  return 'VENDA'; // default
+  // VENDA ARUJA vs VENDA MOGI — detecta pela descrição ou transportadora
+  if(op.includes('MOGI')||desc.includes('MOGI')) return 'VENDA MOGI';
+  return 'VENDA ARUJA'; // default para vendas normais
 }
 
 function rpSetTurno(t){
@@ -1851,6 +1881,25 @@ function renderReporte(){
         </div>
       </div>`;
     }).join('');
+  }
+
+  // Contagem por Status atual
+  const statusCountEl=document.getElementById('rp-status-counts');
+  if(statusCountEl){
+    const statusList=['AG CHEGADA','PATIO','CARREGANDO','EM FATURAMENTO','SEPARANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','FOI EMBORA'];
+    const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
+    const sCounts={};
+    tableData.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
+    statusCountEl.innerHTML=statusList
+      .filter(s=>sCounts[s]>0)
+      .map(s=>{
+        const c=statusColors[s]||'#334155';
+        return `<div class="rp-turno-card" style="border-color:${c}44;">
+          <div class="rp-turno-label" style="color:${c};font-size:9px;">${s}</div>
+          <div class="rp-turno-num" style="color:${c}">${sCounts[s]}</div>
+          <div style="font-size:10px;color:#64748b;">DTs</div>
+        </div>`;
+      }).join('');
   }
 
   // Separações por turno
