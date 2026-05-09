@@ -511,6 +511,49 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
   </div>
 </div>
 
+<!-- ═══ MODAL IMPORTAR PLANILHA (Ctrl+B) ═══ -->
+<div id="import-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:400;display:none;align-items:center;justify-content:center;">
+  <div id="import-modal" style="background:#1e293b;border:2px solid #3b82f655;border-radius:16px;width:94%;max-width:560px;padding:28px;box-shadow:0 20px 60px #000a;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+      <span style="font-size:22px;">📋</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;letter-spacing:.5px;">Importar Relatório de Expedição</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Atualiza status das carretas com base no CSV</div>
+      </div>
+      <button onclick="closeImportModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+
+    <div id="import-dropzone" style="border:2px dashed #334155;border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;background:#0f172a;transition:all .2s;margin-bottom:16px;"
+      onclick="document.getElementById('import-file-input').click()"
+      ondragover="event.preventDefault();this.style.borderColor='#3b82f6';this.style.background='#1e3a5f';"
+      ondragleave="this.style.borderColor='#334155';this.style.background='#0f172a';"
+      ondrop="event.preventDefault();this.style.borderColor='#334155';this.style.background='#0f172a';handleImportFile(event.dataTransfer.files[0])">
+      <div style="font-size:30px;margin-bottom:6px;">📄</div>
+      <div id="import-drop-label" style="color:#64748b;font-size:13px;">Clique ou arraste o CSV aqui</div>
+      <div style="font-size:11px;color:#334155;margin-top:4px;">Formato: Relatório de Expedição (.csv)</div>
+    </div>
+    <input type="file" id="import-file-input" accept=".csv" style="display:none" onchange="handleImportFile(this.files[0])"/>
+
+    <div id="import-preview" style="display:none;margin-bottom:14px;">
+      <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:8px;">PRÉ-VISUALIZAÇÃO</div>
+      <div id="import-preview-body" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;font-size:11px;max-height:180px;overflow-y:auto;"></div>
+    </div>
+
+    <div id="import-result" style="display:none;margin-bottom:14px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:10px 14px;font-size:12px;color:#86efac;"></div>
+    <div id="import-err" style="display:none;margin-bottom:14px;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:10px 14px;font-size:12px;color:#fca5a5;"></div>
+
+    <div style="display:flex;gap:8px;">
+      <button id="import-btn" class="bp" style="flex:1;" onclick="runImport()" disabled>⚡ Atualizar Dashboard</button>
+      <button class="bg" onclick="closeImportModal()">Cancelar</button>
+    </div>
+    <div style="margin-top:12px;padding:8px 12px;background:#1a2540;border-radius:7px;font-size:10px;color:#64748b;line-height:1.7;">
+      💡 <b style="color:#94a3b8;">Regras aplicadas:</b><br>
+      • DT presente no CSV → status atualizado para o da planilha<br>
+      • DT no dash com horário ≤ agora e ausente do CSV → marcada como <b style="color:#22c55e">EXPEDIDO</b>
+    </div>
+  </div>
+</div>
+
 <div id="spinner">⏳ Salvando…</div>
 
 <script>
@@ -1356,8 +1399,8 @@ function renderRows(){
       `<td><input type="time" value="${row.hora_chegada||''}" onchange="saveField('${row.dt}','${row.data_ref}','hora_chegada',this.value)"/></td>`+
       `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
-      `</select>${opTag}</div></td>`+
-      `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
+      `</select></div></td>`+
+      `<td class="td-sm"><div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">${opTag?opTag+' ':''}<span>${row.descricao_documento||'—'}</span></div></td>`+
       `<td class="td-sm">${row.peso_liquido||row.toneladas||'—'}</td>`;
     tbody.appendChild(tr);
   });
@@ -2050,6 +2093,201 @@ async function nfImprimir(){
   const w=window.open(url,'_blank');
   if(!w){nfMsg('Bloqueio de pop-up detectado. Baixe o PDF e imprima.',false);return;}
   setTimeout(()=>{w.focus();w.print();},800);
+}
+
+/* ═══════════════════════════════════════════════════════
+   IMPORTAR PLANILHA — Ctrl+B
+═══════════════════════════════════════════════════════ */
+let importCsvData = null; // parsed rows from CSV
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='b') {
+    e.preventDefault();
+    openImportModal();
+  }
+});
+
+function openImportModal(){
+  importCsvData=null;
+  document.getElementById('import-btn').disabled=true;
+  document.getElementById('import-drop-label').textContent='Clique ou arraste o CSV aqui';
+  document.getElementById('import-preview').style.display='none';
+  document.getElementById('import-result').style.display='none';
+  document.getElementById('import-err').style.display='none';
+  document.getElementById('import-file-input').value='';
+  document.getElementById('import-overlay').style.display='flex';
+}
+
+function closeImportModal(){
+  document.getElementById('import-overlay').style.display='none';
+}
+
+// Mapa de status do CSV → status do dashboard
+const CSV_STATUS_MAP = {
+  'CARREGANDO':    'CARREGANDO',
+  'EXPEDIDO':      'EXPEDIDO',
+  'PATIO':         'PATIO',
+  'EM PATIO':      'PATIO',
+  'NO SHOW':       'NO SHOW',
+  'SEPARANDO':     'SEPARANDO',
+  'EM FATURAMENTO':'EM FATURAMENTO',
+  'AG CHEGADA':    'AG CHEGADA',
+  'VEICULO RECUSADO':'VEICULO RECUSADO',
+  'MOTORISTA FOI EMBORA':'FOI EMBORA',
+  'FOI EMBORA':    'FOI EMBORA',
+  'DT EXCLUIDA':   'DT EXCLUIDA',
+  'BAIXA NOCUPAÇÃO':'AG CHEGADA',
+};
+
+function normalizeStatus(raw){
+  const s=(raw||'').trim().toUpperCase();
+  return CSV_STATUS_MAP[s] || null;
+}
+
+function handleImportFile(file){
+  if(!file) return;
+  document.getElementById('import-err').style.display='none';
+  document.getElementById('import-result').style.display='none';
+  document.getElementById('import-drop-label').textContent='⏳ Lendo arquivo…';
+
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const text=e.target.result;
+      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      if(!lines.length) throw new Error('Arquivo vazio');
+
+      // Detect separator (semicolon or comma)
+      const sep=lines[0].includes(';')?';':',';
+      const headers=lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,'').toUpperCase());
+
+      // Find column indices
+      const iDT=headers.findIndex(h=>h==='DT');
+      const iStatus=headers.findIndex(h=>h==='STATUS'||h==='STATUS.1');
+      // prefer last STATUS col (STATUS.1 in the sample)
+      const iStatusFinal=headers.lastIndexOf('STATUS.1')!==-1
+        ?headers.lastIndexOf('STATUS.1')
+        :(iStatus!==-1?iStatus:-1);
+
+      if(iDT===-1) throw new Error('Coluna DT não encontrada no CSV. Verifique o formato.');
+
+      importCsvData=[];
+      const seen=new Set();
+      for(let i=1;i<lines.length;i++){
+        const cols=lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
+        const dt=String(cols[iDT]||'').trim();
+        if(!dt||seen.has(dt)) continue;
+        seen.add(dt);
+        const rawStatus=iStatusFinal!==-1?(cols[iStatusFinal]||''):'';
+        importCsvData.push({dt, rawStatus});
+      }
+
+      if(!importCsvData.length) throw new Error('Nenhuma DT encontrada no CSV.');
+
+      // Preview
+      const previewHtml=importCsvData.slice(0,8).map(r=>{
+        const mapped=normalizeStatus(r.rawStatus);
+        return `<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
+          <span style="color:#93c5fd;font-weight:700;">${r.dt}</span>
+          <span style="color:#64748b;">${r.rawStatus||'—'}</span>
+          <span style="color:${mapped?'#22c55e':'#f59e0b'};">${mapped||'(não mapeado)'}</span>
+        </div>`;
+      }).join('')+(importCsvData.length>8?`<div style="color:#64748b;font-size:10px;padding-top:4px;">…mais ${importCsvData.length-8} DTs</div>`:'');
+
+      document.getElementById('import-preview-body').innerHTML=
+        `<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">DT</span>
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">STATUS CSV</span>
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">→ DASH</span>
+        </div>`+previewHtml;
+      document.getElementById('import-preview').style.display='block';
+      document.getElementById('import-drop-label').textContent=`✅ ${file.name} — ${importCsvData.length} DTs encontradas`;
+      document.getElementById('import-btn').disabled=false;
+    }catch(err){
+      document.getElementById('import-err').textContent='❌ '+err.message;
+      document.getElementById('import-err').style.display='block';
+      document.getElementById('import-drop-label').textContent='Clique ou arraste o CSV aqui';
+    }
+  };
+  reader.readAsText(file,'latin1');
+}
+
+async function runImport(){
+  if(!importCsvData||!importCsvData.length) return;
+
+  document.getElementById('import-btn').disabled=true;
+  document.getElementById('import-btn').textContent='⏳ Processando…';
+  document.getElementById('import-result').style.display='none';
+  document.getElementById('import-err').style.display='none';
+
+  try{
+    const now=new Date();
+    const nowMinutes=now.getHours()*60+now.getMinutes();
+
+    // Build a Set of DTs in the CSV
+    const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
+
+    let updated=0, expedited=0, skipped=0;
+
+    // 1) Update DTs present in CSV
+    for(const csvRow of importCsvData){
+      const dt=String(csvRow.dt);
+      const mappedStatus=normalizeStatus(csvRow.rawStatus);
+      if(!mappedStatus){skipped++;continue;}
+
+      const dashRow=tableData.find(r=>String(r.dt)===dt);
+      if(!dashRow){skipped++;continue;}
+      if(dashRow.status===mappedStatus){continue;} // already correct
+
+      try{
+        await saveStatus(dt,dashRow.data_ref,mappedStatus);
+        dashRow.status=mappedStatus;
+        updated++;
+      }catch(e){skipped++;}
+    }
+
+    // 2) Mark as EXPEDIDO: DTs in dash with grade ≤ now, not in CSV, not already final
+    const finalSet=new Set(STATUS_FINAIS);
+    for(const dashRow of tableData){
+      const dt=String(dashRow.dt);
+      if(csvDtSet.has(dt)) continue;                    // present in CSV, skip
+      if(finalSet.has(dashRow.status)) continue;         // already finalized
+
+      // Parse grade time to check if it's past
+      const gradeStr=dashRow.grade_carregamento||'';
+      const gradeMatch=gradeStr.match(/(\d{1,2}):(\d{2})/);
+      if(gradeMatch){
+        const gradeMinutes=parseInt(gradeMatch[1])*60+parseInt(gradeMatch[2]);
+        if(gradeMinutes>nowMinutes) continue; // grade is in the future, don't mark
+      } else {
+        // No grade time — use hora_chegada or skip if no reference
+        if(!dashRow.hora_chegada) continue;
+        const [hh,mm]=(dashRow.hora_chegada||'').split(':').map(Number);
+        if(isNaN(hh)) continue;
+        if(hh*60+mm>nowMinutes) continue;
+      }
+
+      try{
+        await saveStatus(dt,dashRow.data_ref,'EXPEDIDO');
+        dashRow.status='EXPEDIDO';
+        expedited++;
+      }catch(e){}
+    }
+
+    // Refresh table view
+    renderTable();
+
+    const msg=`✅ Concluído! Atualizadas: ${updated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
+    document.getElementById('import-result').textContent=msg;
+    document.getElementById('import-result').style.display='block';
+
+  }catch(err){
+    document.getElementById('import-err').textContent='❌ Erro: '+err.message;
+    document.getElementById('import-err').style.display='block';
+  }
+
+  document.getElementById('import-btn').disabled=false;
+  document.getElementById('import-btn').textContent='⚡ Atualizar Dashboard';
 }
 
 </script>
