@@ -2224,20 +2224,23 @@ async function runImport(){
     const now=new Date();
     const nowMinutes=now.getHours()*60+now.getMinutes();
 
+    // Filtrar só DTs de HOJE e AMANHÃ do dashboard
+    const dashHojeAmanha=tableData.filter(r=>r.dia_ref==='HOJE'||r.dia_ref==='AMANHÃ');
+
     // Build a Set of DTs in the CSV
     const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
 
     let updated=0, expedited=0, skipped=0;
 
-    // 1) Update DTs present in CSV
+    // 1) Update DTs present in CSV (só as que estão no dash de hoje/amanhã)
     for(const csvRow of importCsvData){
       const dt=String(csvRow.dt);
       const mappedStatus=normalizeStatus(csvRow.rawStatus);
       if(!mappedStatus){skipped++;continue;}
 
-      const dashRow=tableData.find(r=>String(r.dt)===dt);
+      const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
       if(!dashRow){skipped++;continue;}
-      if(dashRow.status===mappedStatus){continue;} // already correct
+      if(dashRow.status===mappedStatus){continue;} // já correto
 
       try{
         await saveStatus(dt,dashRow.data_ref,mappedStatus);
@@ -2246,25 +2249,24 @@ async function runImport(){
       }catch(e){skipped++;}
     }
 
-    // 2) Mark as EXPEDIDO: DTs in dash with grade ≤ now, not in CSV, not already final
+    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, grade ≤ agora, ausentes do CSV
     const finalSet=new Set(STATUS_FINAIS);
-    for(const dashRow of tableData){
+    for(const dashRow of dashHojeAmanha){
+      if(dashRow.dia_ref!=='HOJE') continue;            // só HOJE
       const dt=String(dashRow.dt);
-      if(csvDtSet.has(dt)) continue;                    // present in CSV, skip
-      if(finalSet.has(dashRow.status)) continue;         // already finalized
+      if(csvDtSet.has(dt)) continue;                    // está no CSV, pular
+      if(finalSet.has(dashRow.status)) continue;         // já finalizada
 
-      // Parse grade time to check if it's past
+      // Checa se a grade já passou
       const gradeStr=dashRow.grade_carregamento||'';
       const gradeMatch=gradeStr.match(/(\d{1,2}):(\d{2})/);
       if(gradeMatch){
         const gradeMinutes=parseInt(gradeMatch[1])*60+parseInt(gradeMatch[2]);
-        if(gradeMinutes>nowMinutes) continue; // grade is in the future, don't mark
+        if(gradeMinutes>nowMinutes) continue; // grade ainda no futuro
       } else {
-        // No grade time — use hora_chegada or skip if no reference
         if(!dashRow.hora_chegada) continue;
         const [hh,mm]=(dashRow.hora_chegada||'').split(':').map(Number);
-        if(isNaN(hh)) continue;
-        if(hh*60+mm>nowMinutes) continue;
+        if(isNaN(hh)||hh*60+mm>nowMinutes) continue;
       }
 
       try{
@@ -2274,8 +2276,8 @@ async function runImport(){
       }catch(e){}
     }
 
-    // Refresh table view
-    renderTable();
+    // Atualiza tabela
+    renderRows();
 
     const msg=`✅ Concluído! Atualizadas: ${updated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
     document.getElementById('import-result').textContent=msg;
