@@ -71,6 +71,8 @@ input,select,button,textarea{font-family:inherit;}
 table{width:100%;border-collapse:collapse;font-size:12px;}
 th{padding:9px 12px;text-align:left;color:#475569;font-size:9px;letter-spacing:1.5px;font-weight:700;border-bottom:2px solid #334155;white-space:nowrap;background:#162032;}
 td{padding:7px 12px;border-bottom:1px solid #1e293b;vertical-align:middle;}
+
+.prefat-mode body::before{content:'✏️ MODO PRÉ-FAT ATIVO — Ctrl+Ç para sair';position:fixed;top:0;left:0;right:0;background:#a78bfa;color:#1e1b4b;text-align:center;font-size:11px;font-weight:800;padding:4px;z-index:9999;letter-spacing:1px;}
 tr.row-hoje td{background:#0f172a;}
 tr.row-amanha td{background:#0d1117;}
 tr.row-reagendada td{background:#431407 !important;}
@@ -622,6 +624,7 @@ function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
 
 let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
 let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={};
+let preFatMode=false; // Ctrl+Ç ativa checkboxes de Pré-Fat nas DTs
 let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
@@ -631,6 +634,17 @@ let activeRefsOverride=[];
 /* ═══════════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════════ */
+// Ctrl+Ç — ativa/desativa modo Pré-Fat
+document.addEventListener('keydown', e=>{
+  if(e.ctrlKey && (e.key==='ç'||e.key==='Ç'||e.keyCode===231||e.keyCode===199)){
+    e.preventDefault();
+    preFatMode=!preFatMode;
+    document.body.classList.toggle('prefat-mode', preFatMode);
+    showOk(preFatMode?'✅ Modo PRÉ-FAT ativado — marque as DTs pré-faturadas':'❌ Modo PRÉ-FAT desativado');
+    renderRows();
+  }
+});
+
 window.addEventListener('DOMContentLoaded', async ()=>{
   document.getElementById('sync-txt').textContent='ONLINE';
   await tryLoadExisting();
@@ -1050,6 +1064,7 @@ function processRelatorioCSV(file) {
       const iQtde     = ci('Qtde Remessa') !== -1 ? ci('Qtde Remessa') : ci('QTDE');
       const iHora     = ci('Hora') !== -1 ? ci('Hora') : ci('HORA');
       const iSap      = ci('SAP') !== -1 ? ci('SAP') : ci('Número SAP') !== -1 ? ci('Número SAP') : ci('NR SAP') !== -1 ? ci('NR SAP') : ci('Nº SAP') !== -1 ? ci('Nº SAP') : -1;
+      const iCentro   = ci('Centro') !== -1 ? ci('Centro') : ci('CENTRO') !== -1 ? ci('CENTRO') : ci('Ctr') !== -1 ? ci('Ctr') : -1;
 
       if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
 
@@ -1070,12 +1085,19 @@ function processRelatorioCSV(file) {
         const qtdeRaw = iQtde !== -1 ? strip(cols[iQtde]) : '';
         const qtde    = qtdeRaw.replace(/\./g,'').replace(',','.');
 
-        // descricao_documento e tipo operacao
+        // descricao_documento e tipo operacao — centro 1111=ARUJA, 1110=MOGI
         if (!descDocMap[dt]) descDocMap[dt] = descDoc;
         if (!tipoOpMap[dt]) {
           const raw = descDoc.toUpperCase();
+          const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
+          const isMogi  = centroRaw === '1110';
+          const isAruja = centroRaw === '1111' || centroRaw === '';
           const isTransf = raw.includes('TRANSFER') || raw.includes('FILIAL') || raw.includes('ABAST') || raw.includes('TNF');
-          tipoOpMap[dt] = isTransf ? 'TRANSFERÊNCIA' : 'VENDA ARUJA';
+          if (isTransf) {
+            tipoOpMap[dt] = isMogi ? 'TRANSFERÊNCIA MOGI' : 'TRANSFERÊNCIA ARUJA';
+          } else {
+            tipoOpMap[dt] = isMogi ? 'VENDA MOGI' : 'VENDA ARUJA';
+          }
         }
 
         // peso liquido — soma por DT
@@ -1253,7 +1275,8 @@ async function getActiveRefs(){
   const T=today(),AM=tomorrow();
   const base=[dKey(T),dKey(AM)];
   try{
-    const todayRows=await sbGet('reporte_carga',`data_ref=in.("${base[0]}","${base[1]}")&select=dt&limit=1`);
+    // Sempre prioriza hoje/amanhã se existir no banco
+    const todayRows=await sbGet('reporte_carga',`data_ref=eq.${base[0]}&select=dt&limit=1`);
     if(todayRows&&todayRows.length) return base;
 
     // Regra principal: usar o último upload de agenda registrado em log
@@ -1405,7 +1428,7 @@ function renderRows(){
       : '';
     tr.innerHTML=
       `<td>${diaTag}</td>`+
-      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span></td>`+
+      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}` +
       `<td class="td-transp">${row.transportadora||'—'}</td>`+
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
       `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
@@ -1447,6 +1470,13 @@ async function promptPortaria(dt,dataRef,current){
 /* ═══════════════════════════════════════════════════════
    SALVAR CAMPO GENÉRICO
 ═══════════════════════════════════════════════════════ */
+async function togglePreFat(dt,dataRef,checked){
+  const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
+  const novoTipo=checked?'PRÉ-FAT':(tipoOpMap[dt]||'VENDA ARUJA');
+  await saveField(dt,dataRef,'tipo_operacao',novoTipo);
+  if(row){row.tipo_operacao=novoTipo; renderRows(); renderReporte();}
+}
+
 async function saveField(dt,dataRef,field,value){
   spin(true);
   try{
@@ -1463,14 +1493,17 @@ async function saveStatus(dt,dataRef,value){
   try{
     await sbPatch('reporte_carga',{status:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    // Grava log
-    await sbInsert('reporte_logs',[{
-      dt:String(dt),
-      data_ref:String(dataRef),
-      status:String(value),
-      transportadora:row?String(row.transportadora||''):'',
-      created_at:new Date().toISOString(),
-    }]);
+    // Grava log só para status relevantes (evita poluição)
+    const STATUS_LOG=['EXPEDIDO','NO SHOW','EM FATURAMENTO','VEICULO RECUSADO','FOI EMBORA'];
+    if(STATUS_LOG.includes(value)){
+      await sbInsert('reporte_logs',[{
+        dt:String(dt),
+        data_ref:String(dataRef),
+        status:String(value),
+        transportadora:row?String(row.transportadora||''):'',
+        created_at:new Date().toISOString(),
+      }]);
+    }
     if(row){row.status=value;renderRows();}
   }catch(e){showErr('Erro ao salvar status: '+e.message);}
   spin(false);
@@ -1768,9 +1801,9 @@ function exportCSV(){
 /* ═══════════════════════════════════════════════════════
    REPORTE DE STATUS
 ═══════════════════════════════════════════════════════ */
-const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','PRÉ-FAT','TRANSFERÊNCIA','GRADE'];
+const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','TRANSFERÊNCIA ARUJA','TRANSFERÊNCIA MOGI','PRÉ-FAT','GRADE'];
 const RP_COLORS = {
-  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','PRÉ-FAT':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
+  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','TRANSFERÊNCIA ARUJA':'#f97316','TRANSFERÊNCIA MOGI':'#fb923c','PRÉ-FAT':'#a78bfa','GRADE':'#60a5fa'
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
@@ -1786,14 +1819,18 @@ function rpGetTurno(row){
 }
 
 function rpNormalizeTipo(row){
-  const op=(row.tipo_operacao||'').toUpperCase();
-  const desc=(row.descricao_documento||'').toUpperCase();
-  if(op.includes('TRANSFER')||op.includes('TNF')) return 'TRANSFERÊNCIA';
-  if(op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FAT';
-  if(op.includes('GRADE')) return 'GRADE';
-  // VENDA ARUJA vs VENDA MOGI — detecta pela descrição ou transportadora
-  if(op.includes('MOGI')||desc.includes('MOGI')) return 'VENDA MOGI';
-  return 'VENDA ARUJA'; // default para vendas normais
+  const op=(row.tipo_operacao||'').trim().toUpperCase();
+  // Tipos exatos que vêm do tipoOpMap (ZLES002)
+  if(op==='VENDA ARUJA')         return 'VENDA ARUJA';
+  if(op==='VENDA MOGI')          return 'VENDA MOGI';
+  if(op==='TRANSFERÊNCIA ARUJA') return 'TRANSFERÊNCIA ARUJA';
+  if(op==='TRANSFERÊNCIA MOGI')  return 'TRANSFERÊNCIA MOGI';
+  if(op==='PRÉ-FAT'||op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FAT';
+  if(op==='GRADE'||op.includes('GRADE')) return 'GRADE';
+  // Fallback por texto
+  if(op.includes('TRANSFER')) return 'TRANSFERÊNCIA ARUJA';
+  if(op.includes('MOGI'))     return 'VENDA MOGI';
+  return 'VENDA ARUJA';
 }
 
 function rpSetTurno(t){
@@ -1832,13 +1869,29 @@ function renderReporte(){
     `).join('');
   }
 
-  // Contagem realizado por tipo
-  const realizado={};
-  RP_TIPOS.forEach(t=>realizado[t]=0);
+  // Status que contam como "realizado" (em andamento + concluído)
+  const STATUS_REALIZADO=['CARREGANDO','EM FATURAMENTO','EXPEDIDO'];
+  const agora=new Date();
+
+  const realizado={}, realizadoTon={};
+  RP_TIPOS.forEach(t=>{realizado[t]=0; realizadoTon[t]=0;});
+
   rows.forEach(r=>{
-    if(STATUS_FINAIS.includes(r.status)){
-      const t=rpNormalizeTipo(r);
-      if(realizado[t]!==undefined) realizado[t]++;
+    const tipo=rpNormalizeTipo(r);
+    if(!realizado.hasOwnProperty(tipo)) return;
+
+    // GRADE: só conta se fim_carregamento <= agora
+    if(tipo==='GRADE'){
+      const fimRaw=r.fim_carregamento||'';
+      if(!fimRaw) return;
+      const fim=parseBR(fimRaw);
+      if(!fim||fim>agora) return;
+    }
+
+    if(STATUS_REALIZADO.includes(r.status)){
+      realizado[tipo]++;
+      const ton=parseFloat(String(r.peso_liquido||r.toneladas||'').replace(/\./g,'').replace(',','.'))||0;
+      realizadoTon[tipo]+=ton;
     }
   });
 
@@ -1872,13 +1925,23 @@ function renderReporte(){
       const plan=rpMetas[tipo]||0;
       const real=realizado[tipo]||0;
       const pend=Math.max(0,plan-real);
+      const ton=(realizadoTon[tipo]||0);
+      const tonStr=ton>0?(ton/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'t':'—';
+      const pct=plan>0?Math.min(100,Math.round(real/plan*100)):0;
       const c=RP_COLORS[tipo]||'#3b82f6';
+      const barW=plan>0?Math.round(real/plan*100):0;
       return `<div class="rp-tipo-card" style="border-color:${c}44;">
         <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-          <div><div class="rp-num-plan">${plan}</div><div class="rp-num-label">Planejado</div></div>
-          <div><div class="rp-num-real">${real}</div><div class="rp-num-label">Realizado</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
+          <div><div class="rp-num-plan">${plan}</div><div class="rp-num-label">Planej.</div></div>
+          <div><div class="rp-num-real">${real}</div><div class="rp-num-label">Carretas</div></div>
           <div><div class="rp-num-pend">${pend}</div><div class="rp-num-label">Pendente</div></div>
+        </div>
+        <div style="background:#0f172a;border-radius:4px;height:4px;margin-bottom:6px;overflow:hidden;">
+          <div style="height:100%;width:${barW}%;background:${c};border-radius:4px;transition:.4s;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
+          <span>⚖️ ${tonStr}</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
         </div>
       </div>`;
     }).join('');
