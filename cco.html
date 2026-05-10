@@ -1094,7 +1094,7 @@ function processRelatorioCSV(file) {
           const isAruja = centroRaw === '1111' || centroRaw === '';
           const isTransf = raw.includes('TRANSFER') || raw.includes('FILIAL') || raw.includes('ABAST') || raw.includes('TNF');
           if (isTransf) {
-            tipoOpMap[dt] = 'TRANSFERÊNCIA';
+            tipoOpMap[dt] = isMogi ? 'TRANSFERÊNCIA MOGI' : 'TRANSFERÊNCIA ARUJA';
           } else {
             tipoOpMap[dt] = isMogi ? 'VENDA MOGI' : 'VENDA ARUJA';
           }
@@ -1801,9 +1801,9 @@ function exportCSV(){
 /* ═══════════════════════════════════════════════════════
    REPORTE DE STATUS
 ═══════════════════════════════════════════════════════ */
-const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','TRANSFERÊNCIA','PRÉ-FAT','GRADE'];
+const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','TRANSFERÊNCIA ARUJA','TRANSFERÊNCIA MOGI','PRÉ-FAT','GRADE'];
 const RP_COLORS = {
-  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','TRANSFERÊNCIA':'#fb923c','PRÉ-FAT':'#a78bfa','GRADE':'#60a5fa'
+  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','TRANSFERÊNCIA ARUJA':'#f97316','TRANSFERÊNCIA MOGI':'#fb923c','PRÉ-FAT':'#a78bfa','GRADE':'#60a5fa'
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
@@ -1823,11 +1823,12 @@ function rpNormalizeTipo(row){
   // Tipos exatos que vêm do tipoOpMap (ZLES002)
   if(op==='VENDA ARUJA')         return 'VENDA ARUJA';
   if(op==='VENDA MOGI')          return 'VENDA MOGI';
-  if(op==='TRANSFERÊNCIA ARUJA'||op==='TRANSFERÊNCIA MOGI'||op==='TRANSFERÊNCIA') return 'TRANSFERÊNCIA';
+  if(op==='TRANSFERÊNCIA ARUJA') return 'TRANSFERÊNCIA ARUJA';
+  if(op==='TRANSFERÊNCIA MOGI')  return 'TRANSFERÊNCIA MOGI';
   if(op==='PRÉ-FAT'||op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FAT';
   if(op==='GRADE'||op.includes('GRADE')) return 'GRADE';
   // Fallback por texto
-  if(op.includes('TRANSFER')) return 'TRANSFERÊNCIA';
+  if(op.includes('TRANSFER')) return 'TRANSFERÊNCIA ARUJA';
   if(op.includes('MOGI'))     return 'VENDA MOGI';
   return 'VENDA ARUJA';
 }
@@ -1869,7 +1870,7 @@ function renderReporte(){
   }
 
   // Status que contam como "realizado" (em andamento + concluído)
-  const STATUS_REALIZADO=['CARREGANDO','EM FATURAMENTO','EXPEDIDO'];
+  const STATUS_REALIZADO=['CARREGANDO','EM FATURAMENTO','EXPEDIDO','PATIO'];
   const agora=new Date();
 
   const realizado={}, realizadoTon={};
@@ -1923,9 +1924,9 @@ function renderReporte(){
     numEl.innerHTML=RP_TIPOS.map(tipo=>{
       const plan=rpMetas[tipo]||0;
       const real=realizado[tipo]||0;
+      const pend=Math.max(0,plan-real);
       const ton=(realizadoTon[tipo]||0);
       const tonStr=ton>0?(ton/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'t':'—';
-      const pend=Math.max(0,plan-real);
       const pct=plan>0?Math.min(100,Math.round(real/plan*100)):0;
       const c=RP_COLORS[tipo]||'#3b82f6';
       const barW=plan>0?Math.round(real/plan*100):0;
@@ -1933,14 +1934,14 @@ function renderReporte(){
         <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
           <div><div class="rp-num-plan">${plan}</div><div class="rp-num-label">Planej.</div></div>
-          <div><div class="rp-num-real" style="font-size:13px;">${tonStr}</div><div class="rp-num-label">⚖️ Tons</div></div>
+          <div><div class="rp-num-real">${real}</div><div class="rp-num-label">Carretas</div></div>
           <div><div class="rp-num-pend">${pend}</div><div class="rp-num-label">Pendente</div></div>
         </div>
         <div style="background:#0f172a;border-radius:4px;height:4px;margin-bottom:6px;overflow:hidden;">
           <div style="height:100%;width:${barW}%;background:${c};border-radius:4px;transition:.4s;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
-          <span style="color:${c}">${real} carretas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
+          <span>⚖️ ${tonStr}</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
         </div>
       </div>`;
     }).join('');
