@@ -3,10 +3,13 @@
 ═══════════════════════════════════════════════════════ */
 const SB_URL = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
 // ⚠️ TROQUE PELA anon key do Supabase: Dashboard → Settings → API → anon public (começa com eyJ...)
-const SB_KEY = 'COLE_SUA_ANON_KEY_AQUI';
+const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 
 async function sbGet(table, qs=''){
+  if(!SB_KEY || SB_KEY.includes('COLE_SUA_ANON_KEY_AQUI')){
+    throw new Error('Chave Supabase não configurada em cco_script.js (SB_KEY).');
+  }
   const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
   if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
   return r.json();
