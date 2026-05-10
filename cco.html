@@ -863,6 +863,11 @@ function fmtDT(d,t){
   if(!d)return '';
   return t?d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('pt-BR');
 }
+function fmtTon(kg){
+  if(!kg||kg===0)return '0t';
+  if(kg>=1000) return (kg/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'t';
+  return kg.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'kg';
+}
 function parseBR(s){
   if(!s||!s.trim())return null;
   const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[T\s](\d{2}):(\d{2}))?/);
@@ -1070,6 +1075,7 @@ function processRelatorioCSV(file) {
 
       exportMap = {}; tipoOpMap = {}; descDocMap = {};
       remessaMap = {}; pesoLiquidoMap = {}; horaChegadaCSVMap = {}; sapNumMap = {};
+      window.zles002Rows = [];
       let linhasOk = 0;
 
       const records = rows.slice(1).filter(r => r.some(c => c.trim() !== ''));
@@ -1101,10 +1107,18 @@ function processRelatorioCSV(file) {
         }
 
         // peso liquido — soma por DT
+        let pLinha = 0;
         if (pesoRaw) {
-          const p = parseFloat(pesoRaw.replace(/\./g,'').replace(',','.')) || 0;
-          pesoLiquidoMap[dt] = (pesoLiquidoMap[dt] || 0) + p;
+          pLinha = parseFloat(pesoRaw.replace(/\./g,'').replace(',','.')) || 0;
+          pesoLiquidoMap[dt] = (pesoLiquidoMap[dt] || 0) + pLinha;
         }
+
+        // Armazena linha raw para cálculo da aba STATUS (por hora/centro/descDoc)
+        const horaRaw = iHora !== -1 ? strip(cols[iHora]) : '';
+        const centroRaw2 = iCentro !== -1 ? strip(cols[iCentro]).replace(/\.0+$/,'') : '';
+        window.zles002Rows.push({
+          dt, centro: centroRaw2, descDoc, hora: horaRaw, peso: pLinha
+        });
 
         // remessas por transporte (para aba Materiais / Quantidades)
         if (remessa && matRaw) {
@@ -1850,579 +1864,39 @@ function rpSaveMeta(tipo,val){
 }
 
 function renderReporte(){
-  const rows=rpTurnoFiltro==='todos'?[...tableData]
-    :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
+  const agora = new Date();
+  const inicioDia = new Date(agora); inicioDia.setHours(0,0,0,0);
 
-  const infoEl=document.getElementById('rp-turno-info');
-  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual';
-
-  // Inputs de meta
-  const metasEl=document.getElementById('rp-metas-inputs');
+  // ── Metas (inputs manuais) ──────────────────────────────────────────────
+  const metasEl = document.getElementById('rp-metas-inputs');
   if(metasEl){
-    metasEl.innerHTML=RP_TIPOS.map(tipo=>`
+    // PRÉ-FAT é só input; GRADE não tem input (planejado é calculado)
+    const tiposInput = ['VENDA ARUJA','VENDA MOGI','TRANSFERÊNCIA','PRÉ-FAT'];
+    metasEl.innerHTML = tiposInput.map(tipo=>`
       <div>
         <label style="font-size:9px;letter-spacing:1.5px;color:${RP_COLORS[tipo]||'#64748b'};font-weight:700;display:block;margin-bottom:4px;">${tipo}</label>
-        <input class="rp-meta-input" type="number" min="0" value="${rpMetas[tipo]||0}"
-          oninput="rpSaveMeta('${tipo}',this.value)" title="Meta do dia para ${tipo}"/>
+        <input class="rp-meta-input" type="number" min="0" step="0.1" value="${rpMetas[tipo]||0}"
+          oninput="rpSaveMeta('${tipo}',this.value)" title="Meta do dia para ${tipo} (toneladas)"/>
       </div>
-    `).join('');
-  }
-
-  // Status que contam como "realizado" (em andamento + concluído)
-  // Status que contam como carreta realizada (contagem)
-  const STATUS_CARRETA=['CARREGANDO','EM FATURAMENTO','EXPEDIDO','PATIO'];
-  // Status que contam toneladas (ja saiu ou esta em processo final)
-  const STATUS_TON=['EM FATURAMENTO','EXPEDIDO'];
-  const agora=new Date();
-  const inicioDia=new Date(agora); inicioDia.setHours(0,0,0,0);
-
-  const realizado={}, realizadoTon={};
-  RP_TIPOS.forEach(t=>{realizado[t]=0; realizadoTon[t]=0;});
-
-  rows.forEach(r=>{
-    const tipo=rpNormalizeTipo(r);
-    if(!realizado.hasOwnProperty(tipo)) return;
-
-    const ton=parseFloat(String(r.peso_liquido||r.toneladas||'').replace(/\./g,'').replace(',','.'))||0;
-
-    if(tipo==='GRADE'){
-      // GRADE: carreta e tonelada contam se fim_carregamento entre inicio do dia e agora, status em STATUS_CARRETA
-      const fimRaw=r.fim_carregamento||'';
-      if(!fimRaw) return;
-      const fim=parseBR(fimRaw);
-      if(!fim||fim<inicioDia||fim>agora) return;
-      if(STATUS_CARRETA.includes(r.status)){
-        realizado[tipo]++;
-        realizadoTon[tipo]+=ton;
-      }
-    } else {
-      // Demais tipos: carreta conta se status em STATUS_CARRETA
-      if(STATUS_CARRETA.includes(r.status)){
-        realizado[tipo]++;
-      }
-      // Toneladas contam so se inicio da grade <= agora E status em STATUS_TON
-      if(STATUS_TON.includes(r.status)){
-        const inicioRaw=r.grade_carregamento||'';
-        const inicio=inicioRaw?parseBR(inicioRaw):null;
-        const ref=inicio||parseBR(r.hora_chegada||'')||null;
-        if(!ref||ref<=agora){
-          realizadoTon[tipo]+=ton;
-        }
-      }
-    }
-  });
-
-  // Gráfico de barras
-  const chart=document.getElementById('rp-chart');
-  if(chart){
-    const maxVal=Math.max(1,...RP_TIPOS.map(t=>Math.max(rpMetas[t]||0,realizado[t]||0)));
-    chart.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=rpMetas[tipo]||0;
-      const real=realizado[tipo]||0;
-      const pend=Math.max(0,plan-real);
-      const hPlan=plan?Math.round((plan/maxVal)*130):0;
-      const hReal=real?Math.round((real/maxVal)*130):0;
-      const hPend=pend?Math.round((pend/maxVal)*130):0;
-      const c=RP_COLORS[tipo]||'#3b82f6';
-      return `<div class="rp-bar-group">
-        <div class="rp-bar-wrap">
-          <div class="rp-bar" style="height:${hPlan}px;background:#3b82f6;width:16px;" title="Planejado: ${plan}"></div>
-          <div class="rp-bar" style="height:${hReal}px;background:#22c55e;width:16px;" title="Realizado: ${real}"></div>
-          <div class="rp-bar" style="height:${hPend}px;background:#f59e0b;width:16px;" title="Pendente: ${pend}"></div>
-        </div>
-        <div class="rp-bar-label" style="color:${c}">${tipo}</div>
-      </div>`;
-    }).join('');
-  }
-
-  // Números consolidados
-  const numEl=document.getElementById('rp-numeros');
-  if(numEl){
-    numEl.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=rpMetas[tipo]||0;
-      const real=realizado[tipo]||0;
-      const ton=(realizadoTon[tipo]||0);
-      const tonStr=ton>0?(ton/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'t':'—';
-      // Pendente = carretas planejadas - carretas realizadas
-      const pend=Math.max(0,plan-real);
-      const pct=plan>0?Math.min(100,Math.round(real/plan*100)):0;
-      const c=RP_COLORS[tipo]||'#3b82f6';
-      const barW=plan>0?Math.round(real/plan*100):0;
-      return `<div class="rp-tipo-card" style="border-color:${c}44;">
-        <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
-          <div><div class="rp-num-plan">${plan}</div><div class="rp-num-label">Planej.</div></div>
-          <div><div class="rp-num-real">${tonStr}</div><div class="rp-num-label">⚖️ Tons</div></div>
-          <div><div class="rp-num-pend">${pend}</div><div class="rp-num-label">Pendente</div></div>
-        </div>
-        <div style="background:#0f172a;border-radius:4px;height:4px;margin-bottom:6px;overflow:hidden;">
-          <div style="height:100%;width:${barW}%;background:${c};border-radius:4px;transition:.4s;"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
-          <span>${real} carretas realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  // Contagem por Status atual
-  const statusCountEl=document.getElementById('rp-status-counts');
-  if(statusCountEl){
-    const statusList=['AG CHEGADA','PATIO','CARREGANDO','EM FATURAMENTO','SEPARANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','FOI EMBORA'];
-    const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
-    const sCounts={};
-    tableData.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
-    statusCountEl.innerHTML=statusList
-      .filter(s=>sCounts[s]>0)
-      .map(s=>{
-        const c=statusColors[s]||'#334155';
-        return `<div class="rp-turno-card" style="border-color:${c}44;">
-          <div class="rp-turno-label" style="color:${c};font-size:9px;">${s}</div>
-          <div class="rp-turno-num" style="color:${c}">${sCounts[s]}</div>
-          <div style="font-size:10px;color:#64748b;">DTs</div>
-        </div>`;
-      }).join('');
-  }
-
-  // Separações por turno
-  const turnosEl=document.getElementById('rp-turnos-resumo');
-  if(turnosEl){
-    const byTurno={T1:0,T2:0,T3:0};
-    tableData.forEach(r=>{const t=rpGetTurno(r);if(t)byTurno[t]++;});
-    const labels={T1:'🌅 T1 · 07-14h',T2:'☀️ T2 · 15-22h',T3:'🌙 T3 · 23-06h'};
-    const cores={T1:'#60a5fa',T2:'#f59e0b',T3:'#a78bfa'};
-    turnosEl.innerHTML=['T1','T2','T3'].map(t=>`
-      <div class="rp-turno-card" style="border-color:${cores[t]}44;">
-        <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
-        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t]}</div>
-        <div style="font-size:10px;color:#64748b;">DTs</div>
-      </div>
-    `).join('');
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
-   DT SEM GRADE
-═══════════════════════════════════════════════════════ */
-let sgRegistros = JSON.parse(localStorage.getItem('sg_registros')||'[]');
-
-async function registrarSemGrade(){
-  const dt=document.getElementById('sg-dt').value.trim();
-  const transp=document.getElementById('sg-transp').value.trim();
-  const motivo=document.getElementById('sg-motivo').value.trim();
-  const obs=document.getElementById('sg-obs').value.trim();
-  if(!dt){showErr('Informe o número da DT.');return;}
-  const reg={dt,transp,motivo,obs,ts:new Date().toLocaleString('pt-BR')};
-  sgRegistros.unshift(reg);
-  try{localStorage.setItem('sg_registros',JSON.stringify(sgRegistros));}catch(e){}
-  // Salvar no Supabase também
-  try{
-    await sbInsert('reporte_semgrade',[{
-      dt:String(dt),transportadora:transp,motivo,observacao:obs,
-      created_at:new Date().toISOString()
-    }]);
-  }catch(e){/* tabela pode não existir ainda */}
-  document.getElementById('sg-dt').value='';
-  document.getElementById('sg-transp').value='';
-  document.getElementById('sg-motivo').value='';
-  document.getElementById('sg-obs').value='';
-  showOk('DT '+dt+' registrada como sem grade.');
-  renderSemGrade();
-}
-
-function renderSemGrade(){
-  const lista=document.getElementById('sg-lista');
-  if(!lista) return;
-  if(!sgRegistros.length){
-    lista.innerHTML='<div style="color:#334155;font-size:12px;padding:10px;">Nenhuma DT sem grade registrada ainda.</div>';
-    return;
-  }
-  lista.innerHTML=sgRegistros.map((r,i)=>`
-    <div class="sg-item">
-      <div><div style="font-weight:800;color:#f59e0b;">${r.dt}</div><div style="font-size:10px;color:#64748b;">${r.ts}</div></div>
-      <div style="font-size:11px;color:#cbd5e1;">${r.transp||'—'}</div>
-      <div style="font-size:11px;color:#94a3b8;">${r.motivo||'—'}${r.obs?' · '+r.obs:''}</div>
-      <button class="bg" onclick="sgRemover(${i})" style="font-size:10px;padding:3px 8px;">✕</button>
-    </div>
-  `).join('');
-}
-
-function sgRemover(i){
-  sgRegistros.splice(i,1);
-  try{localStorage.setItem('sg_registros',JSON.stringify(sgRegistros));}catch(e){}
-  renderSemGrade();
-}
-
-/* ═══════════════════════════════════════════════════════
-   DT FAKE — SUBSTITUIÇÃO
-═══════════════════════════════════════════════════════ */
-let fakeSubstData=null;
-
-async function substituirDTFake(){
-  const dtFrom=document.getElementById('fake-dt-from').value.trim();
-  const dtTo=document.getElementById('fake-dt-to').value.trim();
-  const statusEl=document.getElementById('fake-status');
-  const preview=document.getElementById('fake-preview');
-  const previewBody=document.getElementById('fake-preview-body');
-  if(!dtFrom||!dtTo){showErr('Informe os dois números de DT.');return;}
-  if(dtFrom===dtTo){showErr('DT fake e DT original devem ser diferentes.');return;}
-  statusEl.textContent='🔍 Buscando…';
-  preview.style.display='none';
-  try{
-    // Busca DT fake no banco
-    const refs=await getActiveRefs();
-    const fromRows=await sbGet('reporte_carga',`dt=eq.${encodeURIComponent(dtFrom)}&select=*&limit=5`);
-    const fromMats=await sbGet('reporte_materiais',`dt=eq.${encodeURIComponent(dtFrom)}&select=*`);
-    if(!fromRows||!fromRows.length){showErr('DT fake '+dtFrom+' não encontrada no banco.');statusEl.textContent='';return;}
-    const row=fromRows[0];
-    fakeSubstData={dtFrom,dtTo,row,mats:fromMats||[]};
-    previewBody.innerHTML=`
-      <div style="margin-bottom:10px;">
-        <b style="color:#f59e0b;">DT ${dtFrom}</b> será renomeada para <b style="color:#22c55e;">DT ${dtTo}</b>
-      </div>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">
-        Transportadora: ${row.transportadora||'—'} &nbsp;|&nbsp; Grade: ${row.grade_carregamento||'—'}<br/>
-        Materiais atuais (serão substituídos): ${fakeSubstData.mats.length} item(s)
-      </div>
-      <div style="font-size:11px;color:#f59e0b;">⚠️ Os materiais da DT fake serão removidos. Após a substituição, adicione os materiais corretos no painel da DT ${dtTo}.</div>
-    `;
-    preview.style.display='block';
-    statusEl.textContent='';
-  }catch(e){showErr('Erro: '+e.message);statusEl.textContent='';}
-}
-
-async function confirmarSubstituicao(){
-  if(!fakeSubstData){return;}
-  const {dtFrom,dtTo,row,mats}=fakeSubstData;
-  spin(true);
-  try{
-    // Cria nova linha com dtTo copiando dados da fake
-    const novaRow={...row,dt:dtTo,updated_at:new Date().toISOString()};
-    delete novaRow.id;
-    await sbInsert('reporte_carga',[novaRow]);
-    // Migra materiais
-    if(mats.length){
-      const novosMats=mats.map(m=>({...m,dt:dtTo}));
-      novosMats.forEach(m=>{delete m.id;});
-      await sbDelete('reporte_materiais',{dt:dtTo,data_ref:row.data_ref});
-      await sbInsert('reporte_materiais',novosMats);
-    }
-    // Remove a DT fake
-    await sbDelete('reporte_carga',{dt:dtFrom,data_ref:row.data_ref});
-    await sbDelete('reporte_materiais',{dt:dtFrom,data_ref:row.data_ref});
-    // Log
-    await sbInsert('reporte_logs',[{dt:dtTo,data_ref:row.data_ref,status:'SUBSTITUIÇÃO DE DT FAKE',transportadora:'DT fake: '+dtFrom,created_at:new Date().toISOString()}]);
-    showOk('DT '+dtFrom+' substituída por '+dtTo+' com sucesso!');
-    document.getElementById('fake-preview').style.display='none';
-    document.getElementById('fake-dt-from').value='';
-    document.getElementById('fake-dt-to').value='';
-    document.getElementById('fake-status').textContent='';
-    fakeSubstData=null;
-    await reloadTable();
-  }catch(e){showErr('Erro na substituição: '+e.message);}
-  spin(false);
-}
-
-function cancelarSubstituicao(){
-  fakeSubstData=null;
-  document.getElementById('fake-preview').style.display='none';
-  document.getElementById('fake-status').textContent='';
-}
-
-/* ═══════════════════════════════════════════════════════
-   JUNTAR NFs — PDF
-═══════════════════════════════════════════════════════ */
-let nfArquivos=[];
-let nfBlob=null;
-
-function nfAddFiles(files){
-  nfArquivos=[...nfArquivos,...Array.from(files)];
-  nfBlob=null;
-  nfRenderLista();
-}
-
-function nfRenderLista(){
-  const lista=document.getElementById('nf-lista');
-  if(!lista)return;
-  if(!nfArquivos.length){lista.innerHTML='<div style="color:#334155;font-size:12px;padding:6px;">Nenhum arquivo selecionado.</div>';return;}
-  lista.innerHTML=nfArquivos.map((f,i)=>`
-    <div class="nf-item">
+    `).join('') + `
       <div>
-        <b style="color:#e2e8f0;">${i+1}. ${f.name}</b>
-        <span style="color:#64748b;font-size:11px;"> — ${(f.size/1024).toFixed(1)} KB</span>
+        <label style="font-size:9px;letter-spacing:1.5px;color:${RP_COLORS['GRADE']||'#60a5fa'};font-weight:700;display:block;margin-bottom:4px;">GRADE <span style="color:#475569;font-weight:400;">(auto)</span></label>
+        <div class="rp-meta-input" style="background:#0a1628;color:#60a5fa;display:flex;align-items:center;justify-content:center;" id="rp-grade-plan-display">—</div>
       </div>
-      <div style="display:flex;gap:6px;">
-        ${i>0?`<button class="bg" onclick="nfMover(${i},-1)" style="padding:3px 8px;font-size:11px;">↑</button>`:'<span style="width:34px;"></span>'}
-        ${i<nfArquivos.length-1?`<button class="bg" onclick="nfMover(${i},1)" style="padding:3px 8px;font-size:11px;">↓</button>`:'<span style="width:34px;"></span>'}
-        <button class="bg" onclick="nfRemover(${i})" style="padding:3px 8px;font-size:11px;color:#ef4444;">✕</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-function nfMover(i,d){
-  const j=i+d;
-  if(j<0||j>=nfArquivos.length)return;
-  [nfArquivos[i],nfArquivos[j]]=[nfArquivos[j],nfArquivos[i]];
-  nfBlob=null;nfRenderLista();
-}
-
-function nfRemover(i){
-  nfArquivos.splice(i,1);nfBlob=null;nfRenderLista();
-}
-
-function nfLimpar(){
-  nfArquivos=[];nfBlob=null;
-  nfRenderLista();
-  const msg=document.getElementById('nf-msg');
-  if(msg){msg.style.display='none';}
-}
-
-function nfMsg(txt,ok){
-  const el=document.getElementById('nf-msg');
-  if(!el)return;
-  el.style.display='block';
-  el.style.color=ok?'#22c55e':'#ef4444';
-  el.textContent=txt;
-}
-
-async function nfGerar(){
-  if(!nfArquivos.length){nfMsg('Adicione pelo menos 1 PDF.',false);return;}
-  if(typeof PDFLib==='undefined'){
-    // Load pdf-lib dynamically
-    await new Promise((res,rej)=>{
-      const s=document.createElement('script');
-      s.src='https://unpkg.com/pdf-lib/dist/pdf-lib.min.js';
-      s.onload=res;s.onerror=rej;
-      document.head.appendChild(s);
-    });
-  }
-  nfMsg('⏳ Juntando PDFs…',true);
-  const dtNum=(document.getElementById('nf-dt-num').value.trim()||'pdf-unico');
-  try{
-    const merged=await PDFLib.PDFDocument.create();
-    for(const file of nfArquivos){
-      const bytes=await file.arrayBuffer();
-      const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true});
-      const pages=await merged.copyPages(src,src.getPageIndices());
-      pages.forEach(p=>merged.addPage(p));
-    }
-    const mergedBytes=await merged.save();
-    nfBlob=new Blob([mergedBytes],{type:'application/pdf'});
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(nfBlob);
-    a.download=`DT-${dtNum}.pdf`;
-    document.body.appendChild(a);a.click();a.remove();
-    nfMsg(`✅ PDF gerado: DT-${dtNum}.pdf (${nfArquivos.length} arquivo(s))`,true);
-  }catch(e){nfMsg('Erro ao juntar: '+e.message,false);}
-}
-
-async function nfImprimir(){
-  if(!nfBlob) await nfGerar();
-  if(!nfBlob)return;
-  const url=URL.createObjectURL(nfBlob);
-  const w=window.open(url,'_blank');
-  if(!w){nfMsg('Bloqueio de pop-up detectado. Baixe o PDF e imprima.',false);return;}
-  setTimeout(()=>{w.focus();w.print();},800);
-}
-
-/* ═══════════════════════════════════════════════════════
-   IMPORTAR PLANILHA — Ctrl+B
-═══════════════════════════════════════════════════════ */
-let importCsvData = null; // parsed rows from CSV
-
-document.addEventListener('keydown', e => {
-  if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='b') {
-    e.preventDefault();
-    openImportModal();
-  }
-});
-
-function openImportModal(){
-  importCsvData=null;
-  document.getElementById('import-btn').disabled=true;
-  document.getElementById('import-drop-label').textContent='Clique ou arraste o CSV aqui';
-  document.getElementById('import-preview').style.display='none';
-  document.getElementById('import-result').style.display='none';
-  document.getElementById('import-err').style.display='none';
-  document.getElementById('import-file-input').value='';
-  document.getElementById('import-overlay').style.display='flex';
-}
-
-function closeImportModal(){
-  document.getElementById('import-overlay').style.display='none';
-}
-
-// Mapa de status do CSV → status do dashboard
-const CSV_STATUS_MAP = {
-  'CARREGANDO':    'CARREGANDO',
-  'EXPEDIDO':      'EXPEDIDO',
-  'PATIO':         'PATIO',
-  'EM PATIO':      'PATIO',
-  'NO SHOW':       'NO SHOW',
-  'SEPARANDO':     'SEPARANDO',
-  'EM FATURAMENTO':'EM FATURAMENTO',
-  'AG CHEGADA':    'AG CHEGADA',
-  'VEICULO RECUSADO':'VEICULO RECUSADO',
-  'MOTORISTA FOI EMBORA':'FOI EMBORA',
-  'FOI EMBORA':    'FOI EMBORA',
-  'DT EXCLUIDA':   'DT EXCLUIDA',
-  'BAIXA NOCUPAÇÃO':'AG CHEGADA',
-};
-
-function normalizeStatus(raw){
-  const s=(raw||'').trim().toUpperCase();
-  return CSV_STATUS_MAP[s] || null;
-}
-
-function handleImportFile(file){
-  if(!file) return;
-  document.getElementById('import-err').style.display='none';
-  document.getElementById('import-result').style.display='none';
-  document.getElementById('import-drop-label').textContent='⏳ Lendo arquivo…';
-
-  const reader=new FileReader();
-  reader.onload=e=>{
-    try{
-      const text=e.target.result;
-      const lines=text.split(/\r?\n/).filter(l=>l.trim());
-      if(!lines.length) throw new Error('Arquivo vazio');
-
-      // Detect separator (semicolon or comma)
-      const sep=lines[0].includes(';')?';':',';
-      const headers=lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,'').toUpperCase());
-
-      // Find column indices
-      const iDT=headers.findIndex(h=>h==='DT');
-      const iStatus=headers.findIndex(h=>h==='STATUS'||h==='STATUS.1');
-      // prefer last STATUS col (STATUS.1 in the sample)
-      const iStatusFinal=headers.lastIndexOf('STATUS.1')!==-1
-        ?headers.lastIndexOf('STATUS.1')
-        :(iStatus!==-1?iStatus:-1);
-
-      if(iDT===-1) throw new Error('Coluna DT não encontrada no CSV. Verifique o formato.');
-
-      importCsvData=[];
-      const seen=new Set();
-      for(let i=1;i<lines.length;i++){
-        const cols=lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
-        const dt=String(cols[iDT]||'').trim();
-        if(!dt||seen.has(dt)) continue;
-        seen.add(dt);
-        const rawStatus=iStatusFinal!==-1?(cols[iStatusFinal]||''):'';
-        importCsvData.push({dt, rawStatus});
-      }
-
-      if(!importCsvData.length) throw new Error('Nenhuma DT encontrada no CSV.');
-
-      // Preview
-      const previewHtml=importCsvData.slice(0,8).map(r=>{
-        const mapped=normalizeStatus(r.rawStatus);
-        return `<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
-          <span style="color:#93c5fd;font-weight:700;">${r.dt}</span>
-          <span style="color:#64748b;">${r.rawStatus||'—'}</span>
-          <span style="color:${mapped?'#22c55e':'#f59e0b'};">${mapped||'(não mapeado)'}</span>
-        </div>`;
-      }).join('')+(importCsvData.length>8?`<div style="color:#64748b;font-size:10px;padding-top:4px;">…mais ${importCsvData.length-8} DTs</div>`:'');
-
-      document.getElementById('import-preview-body').innerHTML=
-        `<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">DT</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">STATUS CSV</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">→ DASH</span>
-        </div>`+previewHtml;
-      document.getElementById('import-preview').style.display='block';
-      document.getElementById('import-drop-label').textContent=`✅ ${file.name} — ${importCsvData.length} DTs encontradas`;
-      document.getElementById('import-btn').disabled=false;
-    }catch(err){
-      document.getElementById('import-err').textContent='❌ '+err.message;
-      document.getElementById('import-err').style.display='block';
-      document.getElementById('import-drop-label').textContent='Clique ou arraste o CSV aqui';
-    }
-  };
-  reader.readAsText(file,'latin1');
-}
-
-async function runImport(){
-  if(!importCsvData||!importCsvData.length) return;
-
-  document.getElementById('import-btn').disabled=true;
-  document.getElementById('import-btn').textContent='⏳ Processando…';
-  document.getElementById('import-result').style.display='none';
-  document.getElementById('import-err').style.display='none';
-
-  try{
-    const now=new Date();
-    const nowMinutes=now.getHours()*60+now.getMinutes();
-
-    // Filtrar só DTs de HOJE e AMANHÃ do dashboard
-    const dashHojeAmanha=tableData.filter(r=>r.dia_ref==='HOJE'||r.dia_ref==='AMANHÃ');
-
-    // Build a Set of DTs in the CSV
-    const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
-
-    let updated=0, expedited=0, skipped=0;
-
-    // 1) Update DTs present in CSV (só as que estão no dash de hoje/amanhã)
-    for(const csvRow of importCsvData){
-      const dt=String(csvRow.dt);
-      const mappedStatus=normalizeStatus(csvRow.rawStatus);
-      if(!mappedStatus){skipped++;continue;}
-
-      const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
-      if(!dashRow){skipped++;continue;}
-      if(dashRow.status===mappedStatus){continue;} // já correto
-
-      try{
-        await saveStatus(dt,dashRow.data_ref,mappedStatus);
-        dashRow.status=mappedStatus;
-        updated++;
-      }catch(e){skipped++;}
-    }
-
-    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, grade ≤ agora, ausentes do CSV
-    const finalSet=new Set(STATUS_FINAIS);
-    for(const dashRow of dashHojeAmanha){
-      if(dashRow.dia_ref!=='HOJE') continue;            // só HOJE
-      const dt=String(dashRow.dt);
-      if(csvDtSet.has(dt)) continue;                    // está no CSV, pular
-      if(finalSet.has(dashRow.status)) continue;         // já finalizada
-
-      // Checa se a grade já passou
-      const gradeStr=dashRow.grade_carregamento||'';
-      const gradeMatch=gradeStr.match(/(\d{1,2}):(\d{2})/);
-      if(gradeMatch){
-        const gradeMinutes=parseInt(gradeMatch[1])*60+parseInt(gradeMatch[2]);
-        if(gradeMinutes>nowMinutes) continue; // grade ainda no futuro
-      } else {
-        if(!dashRow.hora_chegada) continue;
-        const [hh,mm]=(dashRow.hora_chegada||'').split(':').map(Number);
-        if(isNaN(hh)||hh*60+mm>nowMinutes) continue;
-      }
-
-      try{
-        await saveStatus(dt,dashRow.data_ref,'EXPEDIDO');
-        dashRow.status='EXPEDIDO';
-        expedited++;
-      }catch(e){}
-    }
-
-    // Atualiza tabela
-    renderRows();
-
-    const msg=`✅ Concluído! Atualizadas: ${updated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
-    document.getElementById('import-result').textContent=msg;
-    document.getElementById('import-result').style.display='block';
-
-  }catch(err){
-    document.getElementById('import-err').textContent='❌ Erro: '+err.message;
-    document.getElementById('import-err').style.display='block';
+    `;
   }
 
-  document.getElementById('import-btn').disabled=false;
-  document.getElementById('import-btn').textContent='⚡ Atualizar Dashboard';
-}
+  // ── Lê dados do ZLES002 (pesoLiquidoMap já agrega por DT) ──────────────
+  // Precisamos iterar linha a linha pelo CSV original para filtrar por centro e descDoc e hora
+  // Usamos as estruturas já preenchidas no upload: zles002Rows (se existir) ou fallback via tableData
 
-</script>
-</body>
-</html>
+  // Acumuladores em toneladas
+  const planTon  = { 'VENDA ARUJA':0, 'VENDA MOGI':0, 'TRANSFERÊNCIA':0, 'PRÉ-FAT': parseFloat(rpMetas['PRÉ-FAT'])||0, 'GRADE':0 };
+  const realTon  = { 'VENDA ARUJA':0, 'VENDA MOGI':0, 'TRANSFERÊNCIA':0, 'PRÉ-FAT':0, 'GRADE':0 };
+
+  // ── VENDA ARUJA / VENDA MOGI / TRANSFERÊNCIA via zles002Rows ───────────
+  if(window.zles002Rows && window.zles002Rows.length){
+    window.zles002Rows.forEach(row=>{
+      const centro  = String(row.centro||'').trim().replace(/\.0+$/,'');
+      const desc    = String(row.descDoc||'').trim().toUpperCase();
+      const horaStr = String(row.hora||'').trim(); // format
