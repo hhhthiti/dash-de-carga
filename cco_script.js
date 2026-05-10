@@ -1248,9 +1248,9 @@ function exportCSV(){
 /* ═══════════════════════════════════════════════════════
    REPORTE DE STATUS
 ═══════════════════════════════════════════════════════ */
-const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','TRANSFERÊNCIA','PRÉ-FAT','GRADE'];
+const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','PRÉ-FATURA','TRANSFERÊNCIA','GRADE'];
 const RP_COLORS = {
-  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','TRANSFERÊNCIA':'#fb923c','PRÉ-FAT':'#a78bfa','GRADE':'#60a5fa'
+  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','PRÉ-FATURA':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
@@ -1271,7 +1271,7 @@ function rpNormalizeTipo(row){
   if(op==='VENDA ARUJA')         return 'VENDA ARUJA';
   if(op==='VENDA MOGI')          return 'VENDA MOGI';
   if(op==='TRANSFERÊNCIA ARUJA'||op==='TRANSFERÊNCIA MOGI'||op==='TRANSFERÊNCIA') return 'TRANSFERÊNCIA';
-  if(op==='PRÉ-FAT'||op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FAT';
+  if(op==='PRÉ-FAT'||op==='PRÉ-FATURA'||op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FATURA';
   if(op==='GRADE'||op.includes('GRADE')) return 'GRADE';
   // Fallback por texto
   if(op.includes('TRANSFER')) return 'TRANSFERÊNCIA';
@@ -1296,6 +1296,24 @@ function rpSaveMeta(tipo,val){
   renderReporte();
 }
 
+
+function rpParseToneladas(row){
+  const raw = row.peso_liquido ?? row.toneladas ?? row.peso ?? '';
+  let s=String(raw).trim();
+  if(!s) return 0;
+  s=s.replace(/\s/g,'');
+  if(s.includes(',') && s.includes('.')){
+    if(s.lastIndexOf(',')>s.lastIndexOf('.')) s=s.replace(/\./g,'').replace(',','.');
+    else s=s.replace(/,/g,'');
+  }else if(s.includes(',')) s=s.replace(',', '.');
+  const n=parseFloat(s.replace(/[^\d.-]/g,''));
+  return Number.isFinite(n)?n:0;
+}
+
+function rpWithinWindow(dt,start,end){
+  return !!dt && dt>=start && dt<=end;
+}
+
 function renderReporte(){
   const rows=rpTurnoFiltro==='todos'?[...tableData]
     :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
@@ -1315,57 +1333,58 @@ function renderReporte(){
     `).join('');
   }
 
-  // Status que contam como "realizado" (em andamento + concluído)
-  // Status que contam como carreta realizada (contagem)
-  const STATUS_CARRETA=['CARREGANDO','EM FATURAMENTO','EXPEDIDO','PATIO'];
-  // Status que contam toneladas (ja saiu ou esta em processo final)
-  const STATUS_TON=['EM FATURAMENTO','EXPEDIDO'];
-  const agora=new Date();
+    const agora=new Date();
   const inicioDia=new Date(agora); inicioDia.setHours(0,0,0,0);
 
-  const realizado={}, realizadoTon={};
-  RP_TIPOS.forEach(t=>{realizado[t]=0; realizadoTon[t]=0;});
+  const realizadoTon={};
+  RP_TIPOS.forEach(t=>{realizadoTon[t]=0;});
+
+  const GRADE_STATUS_REALIZADO=['CARREGANDO','EM FATURAMENTO','EXPEDIDO'];
 
   rows.forEach(r=>{
     const tipo=rpNormalizeTipo(r);
-    if(!realizado.hasOwnProperty(tipo)) return;
+    const ton=rpParseToneladas(r);
 
-    const ton=parseFloat(String(r.peso_liquido||r.toneladas||'').replace(/\./g,'').replace(',','.'))||0;
+    // GRADE: planejado automático por fim_carregamento no período
+    const fim=parseBR(r.fim_carregamento||'');
+    if(rpWithinWindow(fim,inicioDia,agora)){
+      rpMetas['GRADE']=(rpMetas['GRADE']||0); // preserva campo mas planejado visual é dinâmico
+      if(GRADE_STATUS_REALIZADO.includes(r.status)) realizadoTon['GRADE']+=ton;
+    }
 
-    if(tipo==='GRADE'){
-      // GRADE: carreta e tonelada contam se fim_carregamento entre inicio do dia e agora, status em STATUS_CARRETA
-      const fimRaw=r.fim_carregamento||'';
-      if(!fimRaw) return;
-      const fim=parseBR(fimRaw);
-      if(!fim||fim<inicioDia||fim>agora) return;
-      if(STATUS_CARRETA.includes(r.status)){
-        realizado[tipo]++;
-        realizadoTon[tipo]+=ton;
-      }
-    } else {
-      // Demais tipos: carreta conta se status em STATUS_CARRETA
-      if(STATUS_CARRETA.includes(r.status)){
-        realizado[tipo]++;
-      }
-      // Toneladas contam so se inicio da grade <= agora E status em STATUS_TON
-      if(STATUS_TON.includes(r.status)){
-        const inicioRaw=r.grade_carregamento||'';
-        const inicio=inicioRaw?parseBR(inicioRaw):null;
-        const ref=inicio||parseBR(r.hora_chegada||'')||null;
-        if(!ref||ref<=agora){
-          realizadoTon[tipo]+=ton;
-        }
-      }
+    if(tipo==='VENDA ARUJA'){
+      const centro=String(r.centro||'').trim();
+      const desc=String(r.descricao_documento||'').toUpperCase();
+      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
+      if(centro==='1111' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA ARUJA']+=ton;
+      return;
+    }
+    if(tipo==='VENDA MOGI'){
+      const centro=String(r.centro||'').trim();
+      const desc=String(r.descricao_documento||'').toUpperCase();
+      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
+      if(centro==='1110' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA MOGI']+=ton;
+      return;
+    }
+    if(tipo==='TRANSFERÊNCIA'){
+      const desc=String(r.descricao_documento||'').toUpperCase();
+      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
+      if((desc.includes('TRANSFER')||desc.includes('TNF')) && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['TRANSFERÊNCIA']+=ton;
+      return;
     }
   });
 
-  // Gráfico de barras
+  // Planejado da grade é automático por fim_carregamento no período
+  const planejadoGrade = rows
+    .filter(r=>rpWithinWindow(parseBR(r.fim_carregamento||''),inicioDia,agora))
+    .reduce((acc,r)=>acc+rpParseToneladas(r),0);
+// Gráfico de barras
   const chart=document.getElementById('rp-chart');
   if(chart){
-    const maxVal=Math.max(1,...RP_TIPOS.map(t=>Math.max(rpMetas[t]||0,realizado[t]||0)));
+    const maxVal=Math.max(1,...RP_TIPOS.map(t=>{ const p=t==='GRADE'?planejadoGrade:(rpMetas[t]||0); return Math.max(p,realizadoTon[t]||0);}));
     chart.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=rpMetas[tipo]||0;
-      const real=realizado[tipo]||0;
+      const plan=tipo==='GRADE'?planejadoGrade:(rpMetas[tipo]||0);
+      const real=realizadoTon[tipo]||0;
       const pend=Math.max(0,plan-real);
       const hPlan=plan?Math.round((plan/maxVal)*130):0;
       const hReal=real?Math.round((real/maxVal)*130):0;
@@ -1386,15 +1405,13 @@ function renderReporte(){
   const numEl=document.getElementById('rp-numeros');
   if(numEl){
     numEl.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=rpMetas[tipo]||0;
-      const real=realizado[tipo]||0;
-      const ton=(realizadoTon[tipo]||0);
-      const tonStr=ton>0?(ton/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'t':'—';
-      // Pendente = carretas planejadas - carretas realizadas
-      const pend=Math.max(0,plan-real);
-      const pct=plan>0?Math.min(100,Math.round(real/plan*100)):0;
+      const realTon=(realizadoTon[tipo]||0);
+      const plan = tipo==='GRADE' ? planejadoGrade : (rpMetas[tipo]||0);
+      const tonStr=realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+      const pend=Math.max(0,plan-realTon);
+      const pct=plan>0?Math.min(100,Math.round(realTon/plan*100)):0;
       const c=RP_COLORS[tipo]||'#3b82f6';
-      const barW=plan>0?Math.round(real/plan*100):0;
+      const barW=plan>0?Math.round(realTon/plan*100):0;
       return `<div class="rp-tipo-card" style="border-color:${c}44;">
         <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
@@ -1406,7 +1423,7 @@ function renderReporte(){
           <div style="height:100%;width:${barW}%;background:${c};border-radius:4px;transition:.4s;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
-          <span>${real} carretas realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
+          <span>${realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
         </div>
       </div>`;
     }).join('');
@@ -1869,4 +1886,3 @@ async function runImport(){
   document.getElementById('import-btn').disabled=false;
   document.getElementById('import-btn').textContent='⚡ Atualizar Dashboard';
 }
-
