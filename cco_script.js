@@ -1400,14 +1400,49 @@ function csvGradeValue(v){
   return String(v||'').replace(/,\s*/,' ');
 }
 
-function exportCSV(){
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO'];
-  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||'']);
-  const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
-  a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
-  a.click();
+async function exportCSV(){
+  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO','MATERIAL','PALETES','SOBRA','QUANTIDADE TOTAL'];
+  const refs=[...new Set(tableData.map(r=>String(r.data_ref||'')).filter(Boolean))];
+  const materiaisPorDT={};
+
+  try{
+    if(refs.length){
+      showInf('Preparando CSV com materiais…');
+      const mats=await sbGet('reporte_materiais',`data_ref=in.("${refs.join('\",\"')}")&select=dt,data_ref,material,quantidade&order=dt.asc,ordem.asc`);
+      (mats||[]).forEach(m=>{
+        const key=`${m.dt}__${m.data_ref}`;
+        const material=String(m.material||'').trim();
+        if(!material) return;
+        if(!materiaisPorDT[key]) materiaisPorDT[key]={};
+        if(!materiaisPorDT[key][material]) materiaisPorDT[key][material]={material,quantidade:0};
+        materiaisPorDT[key][material].quantidade+=parseQuantidadeFardos(m.quantidade);
+      });
+    }
+
+    const rows=[];
+    tableData.forEach(r=>{
+      const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||''];
+      const materiais=Object.values(materiaisPorDT[`${r.dt}__${r.data_ref}`]||{});
+      if(!materiais.length){
+        rows.push([...base,'','','','']);
+        return;
+      }
+      materiais.forEach(m=>{
+        const pal=formatPaletes(m.material,m.quantidade);
+        rows.push([...base,m.material,pal.paletes,formatNumeroBR(pal.sobra),formatNumeroBR(m.quantidade)]);
+      });
+    });
+
+    const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+    a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
+    a.click();
+    hideInf();
+  }catch(e){
+    hideInf();
+    showErr('Erro ao exportar CSV: '+e.message);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
