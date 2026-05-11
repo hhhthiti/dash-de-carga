@@ -1460,11 +1460,26 @@ function renderReporte(){
   const turnosEl=document.getElementById('rp-turnos-resumo');
   if(turnosEl){
     const byTurno={T1:0,T2:0,T3:0};
+    let t3DiaProd=0;
+    let t3TurnoProd=0;
+    const hoje0=new Date(); hoje0.setHours(0,0,0,0);
+    const amanha0=new Date(hoje0); amanha0.setDate(amanha0.getDate()+1);
+    const t3DiaIni=new Date(hoje0); t3DiaIni.setHours(23,0,0,0);
+    const t3DiaFim=new Date(hoje0); t3DiaFim.setHours(23,59,59,999);
+    const t3TurnoIni=new Date(hoje0); t3TurnoIni.setHours(23,0,0,0);
+    const t3TurnoFim=new Date(amanha0); t3TurnoFim.setHours(6,59,59,999);
+
     rows.forEach(r=>{
       const grade=parseBR(r.grade_carregamento||'');
       const turno=rpTurnoFromDate(grade);
       if(!turno) return;
-      byTurno[turno]+=rpParseToneladas(r);
+      const ton=rpParseToneladas(r);
+      byTurno[turno]+=ton;
+
+      if(turno==='T3' && grade){
+        if(grade>=t3DiaIni && grade<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
+        if(grade>=t3TurnoIni && grade<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno
+      }
     });
     const totalTurnos=byTurno.T1+byTurno.T2+byTurno.T3;
     const labels={T1:'🌅 T1 · 07-14h',T2:'☀️ T2 · 15-22h',T3:'🌙 T3 · 23-06h'};
@@ -1474,6 +1489,13 @@ function renderReporte(){
         <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
         <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t].toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
         <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
+        ${t==='T3'
+          ? `<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.6;">
+              Dia (23-00): <b style="color:#c4b5fd;">${t3DiaProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b><br/>
+              Turno (23-06): <b style="color:#c4b5fd;">${t3TurnoProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b>
+            </div>`
+          : ''
+        }
       </div>
     `).join('');
     const totalCard=`
