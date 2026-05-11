@@ -289,7 +289,7 @@ async function renderMateriaisAba(){
       html+=`</div>`;
       html+=`<div style="text-align:right;">`;
       html+=`<div style="color:#64748b;font-size:10px;">${remessas.length} remessa(s) · ${itens.length} item(ns)</div>`;
-      html+=`<div style="font-size:12px;font-weight:700;color:#a7f3d0;">Total: ${paletesTotalDT} palete(s)${sobrasTotalDT?` + ${sobrasTotalDT.toLocaleString('pt-BR',{maximumFractionDigits:2})} fardo(s) de sobra`:''}</div>`;
+      html+=`<div style="font-size:12px;font-weight:700;color:#a7f3d0;">Total: ${paletesTotalDT} palete(s) necessário(s) + ${formatNumeroBR(sobrasTotalDT)} fardo(s) sobra</div>`;
       html+=`</div>`;
       html+=`</div>`;
 
@@ -383,17 +383,30 @@ function parseQuantidadeFardos(qtde){
   return Number.isFinite(n)?n:0;
 }
 
+function formatNumeroBR(n){
+  return Number(n||0).toLocaleString('pt-BR',{maximumFractionDigits:2});
+}
+
 function formatPaletes(material,qtde){
   const sku=String(material||'').trim().replace(/\D/g,'');
   const fardos=parseQuantidadeFardos(qtde);
   const porPalete=FARDOS_POR_PALETE[sku];
   if(!porPalete){
-    return {paletes:0,sobra:fardos,porPalete:null,label:fardos?`${Math.round(fardos)} fardos`:'—'};
+    return {
+      paletes:0,
+      sobra:fardos,
+      porPalete:null,
+      label:fardos?`Sem fator: ${formatNumeroBR(fardos)} fardo(s)`:'—'
+    };
   }
   const paletes=Math.floor(fardos/porPalete);
   const sobra=Math.round((fardos%porPalete)*100)/100;
-  const sobraLabel=sobra?` + sobra ${sobra.toLocaleString('pt-BR',{maximumFractionDigits:2})}`:'';
-  return {paletes,sobra,porPalete,label:`${paletes} palete${paletes===1?'':'s'}${sobraLabel}`};
+  return {
+    paletes,
+    sobra,
+    porPalete,
+    label:`${paletes} palete(s) necessário(s) + ${formatNumeroBR(sobra)} fardo(s) sobra`
+  };
 }
 function normalizeDT(raw){
   const v=String(raw||'').trim();
@@ -1224,10 +1237,11 @@ function renderMatList(mats){
   (mats||[]).forEach(m=>{
     const row=document.createElement('div');row.className='mat-row';
     row.innerHTML=
-      `<input class="mat-input" placeholder="Material" value="${m.material||''}" data-f="material"/>`+
-      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade" oninput="updatePanelTotal()"/>`+
+      `<input class="mat-input" placeholder="Material" value="${m.material||''}" data-f="material" oninput="updateMatRowPreview(this.closest('.mat-row'));updatePanelTotal()"/>`+
+      `<div class="mat-qty-cell"><input class="mat-input" placeholder="Fardos" value="${m.quantidade||''}" data-f="quantidade" oninput="updateMatRowPreview(this.closest('.mat-row'));updatePanelTotal()"/><div class="mat-palete-preview"></div></div>`+
       `<button class="mat-del" onclick="this.parentElement.remove();updatePanelTotal();">🗑</button>`;
     list.appendChild(row);
+    updateMatRowPreview(row);
   });
   updatePanelTotal();
 }
@@ -1235,19 +1249,42 @@ function renderMatList(mats){
 function addMatRow(){
   const row=document.createElement('div');row.className='mat-row';
   row.innerHTML=
-    `<input class="mat-input" placeholder="Material" data-f="material"/>`+
-    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade" oninput="updatePanelTotal()"/>`+
+    `<input class="mat-input" placeholder="Material" data-f="material" oninput="updateMatRowPreview(this.closest('.mat-row'));updatePanelTotal()"/>`+
+    `<div class="mat-qty-cell"><input class="mat-input" placeholder="Fardos" data-f="quantidade" oninput="updateMatRowPreview(this.closest('.mat-row'));updatePanelTotal()"/><div class="mat-palete-preview"></div></div>`+
     `<button class="mat-del" onclick="this.parentElement.remove();updatePanelTotal();">🗑</button>`;
   document.getElementById('mat-list').appendChild(row);
   row.querySelector('input').focus();
+  updateMatRowPreview(row);
   updatePanelTotal();
 }
 
+function updateMatRowPreview(row){
+  if(!row) return;
+  const material=row.querySelector('[data-f=material]')?.value||'';
+  const quantidade=row.querySelector('[data-f=quantidade]')?.value||'';
+  const preview=row.querySelector('.mat-palete-preview');
+  if(!preview) return;
+  const pal=formatPaletes(material,quantidade);
+  const fardos=parseQuantidadeFardos(quantidade);
+  preview.textContent=pal.porPalete
+    ? `${pal.label} · ${formatNumeroBR(fardos)} fardo(s) no pedido · ${pal.porPalete}/palete`
+    : pal.label;
+}
+
 function updatePanelTotal(){
-  const qs=[...document.querySelectorAll('#mat-list [data-f=quantidade]')];
-  const total=qs.reduce((s,i)=>s+(parseFloat(String(i.value||'0').replace(/\./g,'').replace(',','.'))||0),0);
+  const rows=[...document.querySelectorAll('#mat-list .mat-row')];
+  const total=rows.reduce((s,row)=>{
+    const material=row.querySelector('[data-f=material]')?.value||'';
+    const quantidade=row.querySelector('[data-f=quantidade]')?.value||'';
+    return s+formatPaletes(material,quantidade).paletes;
+  },0);
+  const sobras=rows.reduce((s,row)=>{
+    const material=row.querySelector('[data-f=material]')?.value||'';
+    const quantidade=row.querySelector('[data-f=quantidade]')?.value||'';
+    return s+formatPaletes(material,quantidade).sobra;
+  },0);
   const el=document.getElementById('mat-total');
-  if(el) el.textContent='Total: '+Math.round(total);
+  if(el) el.textContent=`Total: ${total} palete(s) necessário(s) + ${formatNumeroBR(sobras)} fardo(s) sobra`;
 }
 
 function printPanelMapa(){
@@ -1259,7 +1296,8 @@ function printPanelMapa(){
     qtd:r.querySelector('[data-f=quantidade]').value.trim()
   })).filter(m=>m.mat);
   const row=tableData.find(r=>r.dt===panelDT.dt&&r.data_ref===panelDT.dataRef)||{};
-  const total=mats.reduce((s,m)=>s+(parseFloat(String(m.qtd||'0').replace(/\./g,'').replace(',','.'))||0),0);
+  const total=mats.reduce((s,m)=>s+formatPaletes(m.mat,m.qtd).paletes,0);
+  const sobras=mats.reduce((s,m)=>s+formatPaletes(m.mat,m.qtd).sobra,0);
   const printArea=document.getElementById('print-panel-area');
   // Temporarily swap content with print table
   const origInner=printArea.innerHTML;
@@ -1274,13 +1312,13 @@ function printPanelMapa(){
       </div>
       <div class="print-meta">
         Impresso em ${new Date().toLocaleString('pt-BR')}<br/>
-        Total de volumes: <b>${Math.round(total)}</b>
+        Total: <b>${total} palete(s) necessário(s) + ${formatNumeroBR(sobras)} fardo(s) sobra</b>
       </div>
     </div>
     <table class="print-mat-table">
       <thead><tr><th>#</th><th>MATERIAL</th><th>QUANTIDADE</th></tr></thead>
-      <tbody>${mats.map((m,i)=>`<tr><td>${i+1}</td><td>${m.mat}</td><td style="text-align:right;">${m.qtd}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding:6px 10px;">TOTAL</td><td style="text-align:right;font-weight:800;padding:6px 10px;">${Math.round(total)}</td></tr></tfoot>
+      <tbody>${mats.map((m,i)=>`<tr><td>${i+1}</td><td>${m.mat}</td><td style="text-align:right;">${formatPaletes(m.mat,m.qtd).label}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding:6px 10px;">TOTAL</td><td style="text-align:right;font-weight:800;padding:6px 10px;">${total} palete(s) necessário(s) + ${formatNumeroBR(sobras)} fardo(s) sobra</td></tr></tfoot>
     </table>
     ${document.getElementById('pobs').value ? `<div style="margin-top:14px;font-size:11px;color:#475569;">Obs: ${document.getElementById('pobs').value}</div>` : ''}
   `;
