@@ -5,18 +5,38 @@ const SB_URL = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
 // ⚠️ TROQUE PELA anon key do Supabase: Dashboard → Settings → API → anon public (começa com eyJ...)
 const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+const SB_RETRY_MS = [300, 900, 1800];
+
+async function sbFetch(url, options={}){
+  let lastErr;
+  for(let i=0;i<=SB_RETRY_MS.length;i++){
+    try{
+      const r=await fetch(url,options);
+      if(r.ok) return r;
+      const msg=await r.text();
+      const isRetryable=r.status>=500||r.status===429;
+      if(!isRetryable || i===SB_RETRY_MS.length) throw new Error(msg||`HTTP ${r.status}`);
+      await new Promise(res=>setTimeout(res,SB_RETRY_MS[i]));
+    }catch(e){
+      lastErr=e;
+      if(i===SB_RETRY_MS.length) break;
+      await new Promise(res=>setTimeout(res,SB_RETRY_MS[i]));
+    }
+  }
+  throw lastErr || new Error('Falha de rede ao acessar Supabase.');
+}
 
 async function sbGet(table, qs=''){
   if(!SB_KEY || SB_KEY.includes('COLE_SUA_ANON_KEY_AQUI')){
     throw new Error('Chave Supabase não configurada em cco_script.js (SB_KEY).');
   }
-  const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
+  const r=await sbFetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
   if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
   return r.json();
 }
 async function sbUpsert(table, rows){
   for(let i=0;i<rows.length;i+=30){
-    const r=await fetch(`${SB_URL}/${table}`,{
+    const r=await sbFetch(`${SB_URL}/${table}`,{
       method:'POST',
       headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=minimal'},
       body:JSON.stringify(rows.slice(i,i+30))
@@ -26,18 +46,18 @@ async function sbUpsert(table, rows){
 }
 async function sbPatch(table, data, filters){
   const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${v.includes('/')?'"'+v+'"':encodeURIComponent(v)}`).join('&');
-  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
+  const r=await sbFetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
   if(!r.ok) throw new Error(`PATCH ${table}: `+await r.text());
 }
 async function sbDelete(table, filters){
   const q=Object.entries(filters).map(([k,v])=>{
     const vs=String(v); return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
   }).join('&');
-  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
+  const r=await sbFetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
   if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
 }
 async function sbInsert(table, rows){
-  const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
+  const r=await sbFetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
   if(!r.ok) throw new Error(`INSERT ${table}: `+await r.text());
 }
 
@@ -97,6 +117,17 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   }
   // Ticker para atualizar emojis de relógio a cada minuto
   setInterval(()=>{ if(tableData.length) renderRows(); }, 60000);
+  // Auto-sync para ambiente com múltiplos usuários
+  setInterval(async ()=>{
+    try{
+      await tryLoadExisting();
+      syncTxt.textContent='ONLINE';
+      if(syncDot){ syncDot.style.background='#22c55e'; syncDot.style.animation='pulse 1.5s infinite'; }
+    }catch(e){
+      syncTxt.textContent='OFFLINE';
+      if(syncDot){ syncDot.style.background='#f59e0b'; }
+    }
+  }, 20000);
 });
 
 /* ═══════════════════════════════════════════════════════
