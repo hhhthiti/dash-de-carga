@@ -1314,6 +1314,14 @@ function rpWithinWindow(dt,start,end){
   return !!dt && dt>=start && dt<=end;
 }
 
+function rpTurnoFromDate(dt){
+  if(!dt) return null;
+  const h=dt.getHours();
+  if(h>=7 && h<=14) return 'T1';
+  if(h>=15 && h<=22) return 'T2';
+  return 'T3'; // 23-06
+}
+
 function renderReporte(){
   const rows=rpTurnoFiltro==='todos'?[...tableData]
     :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
@@ -1452,16 +1460,30 @@ function renderReporte(){
   const turnosEl=document.getElementById('rp-turnos-resumo');
   if(turnosEl){
     const byTurno={T1:0,T2:0,T3:0};
-    tableData.forEach(r=>{const t=rpGetTurno(r);if(t)byTurno[t]++;});
+    rows.forEach(r=>{
+      const grade=parseBR(r.grade_carregamento||'');
+      const turno=rpTurnoFromDate(grade);
+      if(!turno) return;
+      byTurno[turno]+=rpParseToneladas(r);
+    });
+    const totalTurnos=byTurno.T1+byTurno.T2+byTurno.T3;
     const labels={T1:'🌅 T1 · 07-14h',T2:'☀️ T2 · 15-22h',T3:'🌙 T3 · 23-06h'};
     const cores={T1:'#60a5fa',T2:'#f59e0b',T3:'#a78bfa'};
-    turnosEl.innerHTML=['T1','T2','T3'].map(t=>`
+    const cards=['T1','T2','T3'].map(t=>`
       <div class="rp-turno-card" style="border-color:${cores[t]}44;">
         <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
-        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t]}</div>
-        <div style="font-size:10px;color:#64748b;">DTs</div>
+        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t].toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
+        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
       </div>
     `).join('');
+    const totalCard=`
+      <div class="rp-turno-card" style="border-color:#22c55e44;">
+        <div class="rp-turno-label" style="color:#22c55e">📦 TOTAL DO DIA</div>
+        <div class="rp-turno-num" style="color:#22c55e">${totalTurnos.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
+        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
+      </div>
+    `;
+    turnosEl.innerHTML=cards+totalCard;
   }
 }
 
