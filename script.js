@@ -177,7 +177,17 @@ function parseDotDate(dateStr, timeStr){
   return new Date(+y,+mo-1,+d,t?+t[1]:0,t?+t[2]:0);
 }
 
-/* Processa Relatório de Expedição — agrupa por Nº transporte e usa Data/Hora Agendamento */
+/* Normaliza a Descrição de Documento para o tipo de operação padrão */
+function normalizarTipoOp(desc){
+  const d=(desc||'').toUpperCase().trim();
+  if(d.includes('TRANSFER')||d.includes('FILIAL')||d.includes('INTERCOMP')||d.includes('REMESSA P/')||d.includes('TNF')) return 'TRANSFERÊNCIA';
+  if(d.includes('PRÉ') || d.includes('PRE') || d.includes('PREFAT') || d.includes('PRÉ-FAT') || d.includes('PRE-FAT')) return 'PRÉ-FAT';
+  if(d.includes('GRADE')) return 'GRADE';
+  if(d.includes('VENDA')) return 'VENDA NORMAL';
+  return desc||''; // mantém o valor original se não reconhecido
+}
+
+/* Processa Relatório de Expedição — agrupa por Nº transporte e usa Data/Hora Agendamento + Descrição de Documento */
 function processRelatorioExpedicao(text){
   const sep=text.indexOf(';')>text.indexOf('\t')?'\t':';';
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
@@ -192,6 +202,7 @@ function processRelatorioExpedicao(text){
   const iHoraCa=ci('Hora Carregar');
   const iLocal =ci('Local','LOCAL');
   const iPeso  =ci('Peso líquido','Peso');
+  const iDesc  =ci('Descrição de Documento','Descricao de Documento','Descrição Doc');
   if(iDT===-1) throw new Error('Coluna "Nº transporte" não encontrada no arquivo.\nColunas detectadas: '+h.join(' | '));
   const byDT={};
   for(let i=1;i<lines.length;i++){
@@ -205,6 +216,9 @@ function processRelatorioExpedicao(text){
       const agDate=iDataAg!==-1?parseDotDate(c[iDataAg],iHoraAg!==-1?c[iHoraAg]:''):null;
       const caDate=iDataCa!==-1?parseDotDate(c[iDataCa],iHoraCa!==-1?c[iHoraCa]:''):null;
       const agenda=agDate||caDate;
+      const descDoc=iDesc!==-1?(c[iDesc]||'').trim():'';
+      const tipoOp=normalizarTipoOp(descDoc);
+      if(tipoOp) tipoOpMap[dt]=tipoOp;
       byDT[dt]={
         DT:dt,
         LOCAL:iLocal!==-1?(c[iLocal]||'').trim():'1110',
@@ -424,7 +438,7 @@ function parseZlesText(text){
         const t1=(iTipo!==-1?c[iTipo]||'':'').toUpperCase();
         const t2=(iDesc!==-1&&iDesc!==iTipo?c[iDesc]||'':'').toUpperCase();
         const tipoRaw=t1+' '+t2;
-        tipoOpMap[dt]=(tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/')||tipoRaw.includes('TNF'))?'TRANSFERÊNCIA':'VENDA NORMAL';
+        tipoOpMap[dt]=normalizarTipoOp(tipoRaw)||'VENDA NORMAL';
       }
       if(mat){
         if(!exportMap[dt])exportMap[dt]=[];
@@ -683,6 +697,25 @@ async function renderMaterialsBoard(){
 }
 
 /* ═══════════════════════════════════════════════════════
+   TAG DE TIPO DE OPERAÇÃO
+═══════════════════════════════════════════════════════ */
+function makeTipoTag(tipoOp, small){
+  const op=(tipoOp||'').toUpperCase();
+  const p=small?'padding:2px 7px;font-size:10px;':'';
+  if(op.includes('TRANSFER')||op.includes('TNF'))
+    return '<span class="tag-transf" style="'+p+'">🔄 TRANSFERÊNCIA</span>';
+  if(op.includes('PRÉ')||op.includes('PRE'))
+    return '<span class="tag-prefat" style="'+p+'">📄 PRÉ-FAT</span>';
+  if(op.includes('GRADE'))
+    return '<span class="tag-grade" style="'+p+'">📅 GRADE</span>';
+  if(op.includes('VENDA'))
+    return '<span class="tag-venda" style="'+p+'">🛒 VENDA NORMAL</span>';
+  if(op)
+    return '<span class="tag-sem" style="'+p+'">'+tipoOp+'</span>';
+  return '<span class="tag-sem">—</span>';
+}
+
+/* ═══════════════════════════════════════════════════════
    RENDERIZAR
 ═══════════════════════════════════════════════════════ */
 function renderRows(){
@@ -723,12 +756,7 @@ function renderRows(){
     const isReagend=row.reagendada;
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
-    const op=(row.tipo_operacao||'').toUpperCase();
-    const opTag=op.includes('TRANSFER')
-      ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
-      :op.includes('VENDA')
-      ?'<span class="tag-venda">🛒 VENDA NORMAL</span>'
-      :'<span class="tag-sem">—</span>';
+    const opTag=makeTipoTag(row.tipo_operacao);
     const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
     const clock=clockEmoji(row);
     const reagBtn=isFinal
@@ -895,12 +923,7 @@ async function openPanel(dt,dataRef){
   panelDT={dt,dataRef};
   const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef)||{};
   document.getElementById('ptitle').textContent='📦  DT '+dt;
-  const op=(row.tipo_operacao||'').toUpperCase();
-  const opBadge=op.includes('TRANSFER')
-    ?'<span class="tag-transf" style="padding:3px 10px;font-size:11px;">🔄 TRANSFERÊNCIA</span>'
-    :op.includes('VENDA')
-    ?'<span class="tag-venda"  style="padding:3px 10px;font-size:11px;">🛒 VENDA NORMAL</span>'
-    :'';
+  const opBadge=makeTipoTag(row.tipo_operacao, true);
   document.getElementById('pdt-info').innerHTML=
     `<b style="color:#93c5fd;font-size:15px">${dt}</b>  ${opBadge}<br/>`+
     `<span style="color:#64748b">Transportadora:</span> <b style="color:#e2e8f0">${row.transportadora||'—'}</b><br/>`+
