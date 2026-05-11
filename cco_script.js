@@ -361,6 +361,33 @@ function normalizeDT(raw){
   return v;
 }
 
+function normalizeHora(raw){
+  const s=String(raw||'').trim();
+  if(!s) return '';
+  const m=s.match(/(\d{1,2})[:hH](\d{2})/);
+  if(m){
+    const hh=Math.max(0,Math.min(23,parseInt(m[1],10)));
+    const mm=Math.max(0,Math.min(59,parseInt(m[2],10)));
+    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+  }
+  if(/^\d+(?:[,.]\d+)?$/.test(s)){
+    const n=Number(s.replace(',','.'));
+    if(n>0 && n<1){
+      const total=Math.round(n*24*60);
+      return String(Math.floor(total/60)%24).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+    }
+    if(s.length===3||s.length===4){
+      const pad=s.padStart(4,'0');
+      return pad.slice(0,2)+':'+pad.slice(2);
+    }
+  }
+  return '';
+}
+
+function normalizeSap(raw){
+  return String(raw||'').trim().replace(/\.0+$/,'').replace(/\D/g,'');
+}
+
 /* ═══════════════════════════════════════════════════════
    DECODE BUFFER
 ═══════════════════════════════════════════════════════ */
@@ -562,6 +589,11 @@ function processRelatorioCSV(file) {
         const matRaw  = iMat !== -1 ? strip(cols[iMat]).replace(/\.0+$/, '').replace(/\D/g,'') : '';
         const qtdeRaw = iQtde !== -1 ? strip(cols[iQtde]) : '';
         const qtde    = qtdeRaw.replace(/\./g,'').replace(',','.');
+        const horaCsv = iHora !== -1 ? normalizeHora(strip(cols[iHora])) : '';
+        const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
+
+        if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
+        if (sapCsv) sapNumMap[dt] = sapCsv;
 
         // descricao_documento e tipo operacao — centro 1111=ARUJA, 1110=MOGI
         if (!descDocMap[dt]) descDocMap[dt] = descDoc;
@@ -644,13 +676,15 @@ async function persistImportedMaterials(){
 
 async function saveUploadSnapshot(rows){
   try{
-    const logs=rows.map(r=>({
-      dt:String(r.dt||''),
-      data_ref:String(r.data_ref||''),
+    const refs=[...new Set(rows.map(r=>String(r.data_ref||'')).filter(Boolean))];
+    const uploadTs=new Date().toISOString();
+    const logs=refs.map(ref=>({
+      dt:'__AGENDA__',
+      data_ref:ref,
       status:'UPLOAD_AGENDA',
-      transportadora:String(r.transportadora||''),
-      created_at:new Date().toISOString(),
-    })).filter(r=>r.dt&&r.data_ref);
+      transportadora:'AGENDA_ATIVA',
+      created_at:uploadTs,
+    }));
     if(logs.length) await sbInsert('reporte_logs',logs);
   }catch(e){}
 }
@@ -753,11 +787,24 @@ async function getActiveRefs(){
   const T=today(),AM=tomorrow();
   const base=[dKey(T),dKey(AM)];
   try{
-    // Sempre prioriza hoje/amanhã se existir no banco
+    // Hoje/amanhã têm prioridade quando já existe agenda atual no banco.
     const todayRows=await sbGet('reporte_carga',`data_ref=eq.${base[0]}&select=dt&limit=1`);
     if(todayRows&&todayRows.length) return base;
 
-    // Regra principal: usar o último upload de agenda registrado em log
+    // Depois de cada upload salvamos marcadores __AGENDA__; eles evitam reabrir uma grade antiga (ex.: 05/05).
+    const markers=await sbGet('reporte_logs','dt=eq.__AGENDA__&status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=20');
+    const latestTs=markers&&markers.length?markers[0].created_at:null;
+    if(latestTs){
+      const active=[];
+      (markers||[]).forEach(r=>{
+        if(r.created_at!==latestTs) return;
+        const k=String(r.data_ref||'');
+        if(k&&!active.includes(k)) active.push(k);
+      });
+      if(active.length) return active.slice(0,2);
+    }
+
+    // Fallback legado: usa os data_ref mais recentes em logs de upload existentes.
     const lastUpload=await sbGet('reporte_logs',`status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=300`);
     const byUpload=[];
     (lastUpload||[]).forEach(r=>{
@@ -766,8 +813,7 @@ async function getActiveRefs(){
     });
     if(byUpload.length) return byUpload.slice(0,2);
 
-    // Fallback robusto: ordena por data_ref real (dd/mm/aaaa), não por texto
-    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=1000');
+    const rec=await sbGet('reporte_carga','select=data_ref&limit=1000');
     const uniq=[...new Set((rec||[]).map(r=>String(r.data_ref||'')).filter(Boolean))];
     const toDate=(k)=>{const m=String(k).match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?new Date(+m[3],+m[2]-1,+m[1]):new Date(0);};
     uniq.sort((a,b)=>toDate(b)-toDate(a));
@@ -801,10 +847,16 @@ function clockEmoji(row){
   const grade=parseBR(row.grade_carregamento);
   if(!grade) return '';
   const agora=new Date();
-  const diffMin=(grade - agora)/60000; // positivo = grade ainda no futuro
-  // Carreta deve chegar 1h antes = diffMin entre 0 e 60 => alerta
-  if(diffMin>=0 && diffMin<=60) return '<span class="dt-clock" title="Carreta deve chegar até '+new Date(grade-3600000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">🕐</span>';
-  if(diffMin<0 && diffMin>-120) return '<span style="font-size:11px;opacity:.6" title="Grade iniciada">⏰</span>';
+  const chegadaLimite=new Date(grade.getTime()-3600000);
+  const diffChegadaMin=(chegadaLimite-agora)/60000;
+  const diffGradeMin=(grade-agora)/60000;
+  if(diffChegadaMin>=0 && diffChegadaMin<=60){
+    return '<span class="dt-clock" title="Carreta deve chegar até '+chegadaLimite.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">🕐</span>';
+  }
+  if(diffChegadaMin<0 && diffGradeMin>=0){
+    return '<span class="dt-clock" title="Carreta já deveria ter chegado até '+chegadaLimite.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">⚠️🕐</span>';
+  }
+  if(diffGradeMin<0 && diffGradeMin>-120) return '<span style="font-size:11px;opacity:.6" title="Grade iniciada">⏰</span>';
   return '';
 }
 
@@ -906,7 +958,7 @@ function renderRows(){
       : '';
     tr.innerHTML=
       `<td>${diaTag}</td>`+
-      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}` +
+      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${clock?` <span style="margin-left:4px;">${clock}</span>`:''}${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}` +
       `<td class="td-transp">${row.transportadora||'—'}</td>`+
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
       `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
@@ -1551,22 +1603,29 @@ async function registrarSemGrade(){
   const motivo=document.getElementById('sg-motivo').value.trim();
   const obs=document.getElementById('sg-obs').value.trim();
   if(!dt){showErr('Informe o número da DT.');return;}
-  const reg={dt,transp,motivo,obs,ts:new Date().toLocaleString('pt-BR')};
+  const dtNorm=normalizeDT(dt);
+  const reg={dt:dtNorm,transp,motivo,obs,ts:new Date().toLocaleString('pt-BR')};
   sgRegistros.unshift(reg);
   try{localStorage.setItem('sg_registros',JSON.stringify(sgRegistros));}catch(e){}
-  // Salvar no Supabase também
+  const dataRef=dKey(today());
+  const row={dt:String(dtNorm),transportadora:transp,grade_carregamento:'',fim_carregamento:'',hora_chegada:'',n_portaria:'',status:'AG CHEGADA',descricao_documento:motivo||'SEM GRADE',toneladas:'',peso_liquido:'',agenda:'',local_cd:'',dia_ref:'HOJE',data_ref:dataRef,tipo_operacao:'',reagendada:false};
   try{
     await sbInsert('reporte_semgrade',[{
-      dt:String(dt),transportadora:transp,motivo,observacao:obs,
+      dt:String(dtNorm),transportadora:transp,motivo,observacao:obs,
       created_at:new Date().toISOString()
     }]);
+    const exists=await sbGet('reporte_carga',`dt=eq.${encodeURIComponent(dtNorm)}&data_ref=eq.${encodeURIComponent(dataRef)}&select=dt&limit=1`);
+    if(!exists||!exists.length) await sbInsert('reporte_carga',[row]);
   }catch(e){/* tabela pode não existir ainda */}
+  const idx=tableData.findIndex(r=>String(r.dt)===String(dtNorm)&&r.data_ref===dataRef);
+  if(idx===-1) tableData.push(row); else tableData[idx]={...tableData[idx],...row};
   document.getElementById('sg-dt').value='';
   document.getElementById('sg-transp').value='';
   document.getElementById('sg-motivo').value='';
   document.getElementById('sg-obs').value='';
-  showOk('DT '+dt+' registrada como sem grade.');
+  showOk('DT '+dtNorm+' registrada como sem grade e incluída na grade principal.');
   renderSemGrade();
+  renderRows();
 }
 
 function renderSemGrade(){
@@ -1829,10 +1888,13 @@ function handleImportFile(file){
 
       // Detect separator (semicolon or comma)
       const sep=lines[0].includes(';')?';':',';
-      const headers=lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,'').toUpperCase());
+      const parsed=parseCSVRelatorio(text,sep).filter(r=>r.some(c=>String(c||'').trim()));
+      const headers=parsed[0].map(h=>String(h||'').trim().replace(/^"|"$/g,'').toUpperCase());
 
       // Find column indices
-      const iDT=headers.findIndex(h=>h==='DT');
+      const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
+      const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
+      const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('Nº SAP')||h.includes('NR SAP'));
       const iStatus=headers.findIndex(h=>h==='STATUS'||h==='STATUS.1');
       // prefer last STATUS col (STATUS.1 in the sample)
       const iStatusFinal=headers.lastIndexOf('STATUS.1')!==-1
@@ -1843,13 +1905,15 @@ function handleImportFile(file){
 
       importCsvData=[];
       const seen=new Set();
-      for(let i=1;i<lines.length;i++){
-        const cols=lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
-        const dt=String(cols[iDT]||'').trim();
+      for(let i=1;i<parsed.length;i++){
+        const cols=parsed[i].map(c=>String(c||'').trim().replace(/^"|"$/g,''));
+        const dt=normalizeDT(String(cols[iDT]||'').replace(/\.0+$/,'').replace(/\D/g,''));
         if(!dt||seen.has(dt)) continue;
         seen.add(dt);
         const rawStatus=iStatusFinal!==-1?(cols[iStatusFinal]||''):'';
-        importCsvData.push({dt, rawStatus});
+        const hora=iHora!==-1?normalizeHora(cols[iHora]):'';
+        const sap=iSap!==-1?normalizeSap(cols[iSap]):'';
+        importCsvData.push({dt, rawStatus, hora, sap});
       }
 
       if(!importCsvData.length) throw new Error('Nenhuma DT encontrada no CSV.');
@@ -1857,18 +1921,20 @@ function handleImportFile(file){
       // Preview
       const previewHtml=importCsvData.slice(0,8).map(r=>{
         const mapped=normalizeStatus(r.rawStatus);
-        return `<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
+        return `<div style="display:grid;grid-template-columns:90px 70px 90px 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
           <span style="color:#93c5fd;font-weight:700;">${r.dt}</span>
-          <span style="color:#64748b;">${r.rawStatus||'—'}</span>
-          <span style="color:${mapped?'#22c55e':'#f59e0b'};">${mapped||'(não mapeado)'}</span>
+          <span style="color:#e2e8f0;">${r.hora||'—'}</span>
+          <span style="color:#e2e8f0;">${r.sap||'—'}</span>
+          <span style="color:${mapped?'#22c55e':'#f59e0b'};">${mapped||r.rawStatus||'(sem status)'}</span>
         </div>`;
       }).join('')+(importCsvData.length>8?`<div style="color:#64748b;font-size:10px;padding-top:4px;">…mais ${importCsvData.length-8} DTs</div>`:'');
 
       document.getElementById('import-preview-body').innerHTML=
-        `<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">
+        `<div style="display:grid;grid-template-columns:90px 70px 90px 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">
           <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">DT</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">STATUS CSV</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">→ DASH</span>
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">HORA</span>
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">SAP</span>
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">STATUS</span>
         </div>`+previewHtml;
       document.getElementById('import-preview').style.display='block';
       document.getElementById('import-drop-label').textContent=`✅ ${file.name} — ${importCsvData.length} DTs encontradas`;
@@ -1900,16 +1966,29 @@ async function runImport(){
     // Build a Set of DTs in the CSV
     const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
 
-    let updated=0, expedited=0, skipped=0;
+    let updated=0, fieldUpdated=0, expedited=0, skipped=0;
 
     // 1) Update DTs present in CSV (só as que estão no dash de hoje/amanhã)
     for(const csvRow of importCsvData){
       const dt=String(csvRow.dt);
       const mappedStatus=normalizeStatus(csvRow.rawStatus);
-      if(!mappedStatus){skipped++;continue;}
 
       const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
       if(!dashRow){skipped++;continue;}
+
+      const patch={};
+      if(csvRow.hora && dashRow.hora_chegada!==csvRow.hora) patch.hora_chegada=csvRow.hora;
+      if(csvRow.sap && dashRow.n_portaria!==csvRow.sap) patch.n_portaria=csvRow.sap;
+      if(Object.keys(patch).length){
+        await sbPatch('reporte_carga',{...patch,updated_at:new Date().toISOString()},{dt,data_ref:dashRow.data_ref});
+        Object.assign(dashRow,patch);
+        fieldUpdated++;
+      }
+
+      if(!mappedStatus){
+        if(!Object.keys(patch).length) skipped++;
+        continue;
+      }
       if(dashRow.status===mappedStatus){continue;} // já correto
 
       try{
@@ -1949,7 +2028,7 @@ async function runImport(){
     // Atualiza tabela
     renderRows();
 
-    const msg=`✅ Concluído! Atualizadas: ${updated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
+    const msg=`✅ Concluído! Status atualizados: ${updated} | Hora/SAP preenchidos: ${fieldUpdated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
     document.getElementById('import-result').textContent=msg;
     document.getElementById('import-result').style.display='block';
 
