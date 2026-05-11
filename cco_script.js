@@ -416,19 +416,21 @@ function processAgend(file){
       if(matCnt>0) showOk('✨ '+matCnt+' linhas de materiais importadas automaticamente do arquivo de agendamento!');
       const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
       const h=lines[0].split('\t').map(s=>s.trim());
-      const ci=n=>h.indexOf(n);
+      const ci=n=>h.findIndex(x=>String(x||'').trim().toUpperCase()===String(n||'').toUpperCase());
       const iDT=ci('DT'),iLoc=ci('LOCAL'),iTransp=ci('NOME TRANSPORTADORA');
       const iAg=ci('AGENDA TRANSPORTADOR'),iFim=ci('FIM AGENDA TRANSPORTADOR');
-      const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO');
+      const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO'),iDoca=ci('DOCA');
       if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
       agendRows=[];
       for(let i=1;i<lines.length;i++){
         const c=lines[i].split('\t');
         if(!c[iDT]?.trim())continue;
         const loc=(c[iLoc]||'').trim();
+        const doca=iDoca!==-1?(c[iDoca]||'').trim():'';
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
+        if(iDoca!==-1&&!doca)continue;
         agendRows.push({
-          DT:normalizeDT(c[iDT]),LOCAL:loc,
+          DT:normalizeDT(c[iDT]),LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
           AGENDA:parseBR((c[iAg]||'').trim()),
           FIM_AGENDA:parseBR((c[iFim]||'').trim()),
@@ -436,7 +438,7 @@ function processAgend(file){
           PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
         });
       }
-      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111 encontrada.');
+      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111'+(iDoca!==-1?' e DOCA preenchida':'')+' encontrada.');
       hideInf();
       renderStep2();
     }catch(e){hideInf();showErr(e.message);}
@@ -1318,9 +1320,13 @@ async function tryLoadExisting(){
 /* ═══════════════════════════════════════════════════════
    EXPORT CSV
 ═══════════════════════════════════════════════════════ */
+function csvGradeValue(v){
+  return String(v||'').replace(/,\s*/,' ');
+}
+
 function exportCSV(){
   const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO'];
-  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||'']);
+  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||'']);
   const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
