@@ -225,7 +225,7 @@ async function renderMateriaisAba(){
   try{
     // Ordem das DTs conforme grade
     const ordem=[...tableData]
-      .sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b))
+      .sort(compareAgendaRows)
       .map(r=>String(r.dt));
     const uniq=[]; ordem.forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
     // Adiciona DTs de remessaMap não presentes na tabela
@@ -273,11 +273,9 @@ async function renderMateriaisAba(){
       totalRemessas+=remessas.length;
       totalItens+=itens.length;
 
-      // Soma total de qtde de todos os itens da DT
-      const qtdeTotalDT = itens.reduce((sum, i) => {
-        const n = parseFloat(String(i.qtde||'0').replace(/\./g,'').replace(',','.')) || 0;
-        return sum + n;
-      }, 0);
+      // Soma total em paletes (a quantidade original vem em fardos)
+      const paletesTotalDT = itens.reduce((sum, i) => sum + formatPaletes(i.material,i.qtde).paletes, 0);
+      const sobrasTotalDT = itens.reduce((sum, i) => sum + formatPaletes(i.material,i.qtde).sobra, 0);
 
       html+=`<div class="mat-group" style="margin-bottom:14px;">`;
       html+=`<div class="mat-group-h" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:10px 14px;">`;
@@ -291,7 +289,7 @@ async function renderMateriaisAba(){
       html+=`</div>`;
       html+=`<div style="text-align:right;">`;
       html+=`<div style="color:#64748b;font-size:10px;">${remessas.length} remessa(s) · ${itens.length} item(ns)</div>`;
-      html+=`<div style="font-size:12px;font-weight:700;color:#a7f3d0;">Total: ${Math.round(qtdeTotalDT)} un.</div>`;
+      html+=`<div style="font-size:12px;font-weight:700;color:#a7f3d0;">Total: ${paletesTotalDT} palete(s)${sobrasTotalDT?` + ${sobrasTotalDT.toLocaleString('pt-BR',{maximumFractionDigits:2})} fardo(s) de sobra`:''}</div>`;
       html+=`</div>`;
       html+=`</div>`;
 
@@ -300,16 +298,18 @@ async function renderMateriaisAba(){
       remessas.forEach(remessa=>{
         const linhas=byRemessa[remessa];
         html+=`<div style="margin-bottom:6px;">`;
-        html+=`<div style="display:grid;grid-template-columns:1fr 120px 100px;gap:4px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:2px;">`;
+        html+=`<div style="display:grid;grid-template-columns:1fr 120px 160px;gap:4px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:2px;">`;
         html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#3b82f6;font-weight:700;">REMESSA ${remessa}</span>`;
         html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">MATERIAL</span>`;
-        html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;text-align:right;">QTDE</span>`;
+        html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;text-align:right;">PALETES</span>`;
         html+=`</div>`;
         linhas.forEach(({material,qtde},idx)=>{
-          html+=`<div style="display:grid;grid-template-columns:1fr 120px 100px;gap:4px;padding:2px 0;border-bottom:1px solid #1e293b;font-size:12px;">`;
+          const pal=formatPaletes(material,qtde);
+          const detalhe=pal.porPalete?`<div style="font-size:9px;color:#64748b;font-weight:500;">${parseQuantidadeFardos(qtde).toLocaleString('pt-BR',{maximumFractionDigits:2})} fardos · ${pal.porPalete}/palete</div>`:'';
+          html+=`<div style="display:grid;grid-template-columns:1fr 120px 160px;gap:4px;padding:2px 0;border-bottom:1px solid #1e293b;font-size:12px;">`;
           html+=`<span style="color:#475569;font-size:10px;">${idx===0?'':'—'}</span>`;
           html+=`<span style="color:#cbd5e1;">${material}</span>`;
-          html+=`<span style="text-align:right;color:#a7f3d0;font-weight:700;">${qtde||'—'}</span>`;
+          html+=`<span style="text-align:right;color:#a7f3d0;font-weight:700;">${pal.label}${detalhe}</span>`;
           html+=`</div>`;
         });
         html+=`</div>`;
@@ -353,6 +353,47 @@ function parseAgendaDateTime(row){
   const agenda=parseBR(row.agenda||'');
   if(agenda) return agenda;
   return new Date(9999,0,1);
+}
+function compareAgendaRows(a,b){
+  const iniA=parseAgendaDateTime(a);
+  const iniB=parseAgendaDateTime(b);
+  const diffIni=iniA-iniB;
+  if(diffIni) return diffIni;
+  const fimA=parseBR(a.fim_carregamento||'')||new Date(9999,0,1);
+  const fimB=parseBR(b.fim_carregamento||'')||new Date(9999,0,1);
+  const diffFim=fimA-fimB;
+  if(diffFim) return diffFim;
+  return String(a.dt||'').localeCompare(String(b.dt||''),'pt-BR',{numeric:true});
+}
+
+const FARDOS_POR_PALETE={
+  '20104414':36,'20104415':36,'20104416':36,'20104419':33,'20104418':28,
+  '20106704':36,'20106705':36,'20104405':48,'20104407':32,'20104410':36,
+  '20104412':28,'20104413':36,'20104409':36,'20104408':36,'20081464':36,
+  '20081466':36,'20081481':28,'20081961':36,'20089387':24,'20095269':36,
+  '20081984':28,'20081465':36,'20081467':36,'20081469':28,'20111061':36,
+  '20104309':45,'20104421':63,'20104422':56,'20109594':56,'20104430':15,
+  '20104429':27,'20104426':27,'20104313':36,'20104425':36,'20104312':36,
+  '20110078':36,'20091834':36,'20091835':42,'30227945':15,'30179006':18,
+  '30228198':15,'20109727':24,'20091836':36,'20104310':225
+};
+
+function parseQuantidadeFardos(qtde){
+  const n=parseFloat(String(qtde||'0').replace(/\./g,'').replace(',','.'));
+  return Number.isFinite(n)?n:0;
+}
+
+function formatPaletes(material,qtde){
+  const sku=String(material||'').trim().replace(/\D/g,'');
+  const fardos=parseQuantidadeFardos(qtde);
+  const porPalete=FARDOS_POR_PALETE[sku];
+  if(!porPalete){
+    return {paletes:0,sobra:fardos,porPalete:null,label:fardos?`${Math.round(fardos)} fardos`:'—'};
+  }
+  const paletes=Math.floor(fardos/porPalete);
+  const sobra=Math.round((fardos%porPalete)*100)/100;
+  const sobraLabel=sobra?` + sobra ${sobra.toLocaleString('pt-BR',{maximumFractionDigits:2})}`:'';
+  return {paletes,sobra,porPalete,label:`${paletes} palete${paletes===1?'':'s'}${sobraLabel}`};
 }
 function normalizeDT(raw){
   const v=String(raw||'').trim();
@@ -831,7 +872,7 @@ async function reloadTable(){
       `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
     );
     tableData=(data||[]).sort((a,b)=>{
-      return parseAgendaDateTime(a)-parseAgendaDateTime(b);
+      return compareAgendaRows(a,b);
     });
     renderRows();
   }catch(e){showErr('Erro ao carregar tabela: '+e.message);}
@@ -844,21 +885,18 @@ async function reloadTable(){
 ═══════════════════════════════════════════════════════ */
 function clockEmoji(row){
   if(row.dia_ref!=='HOJE') return '';
+  if(row.n_portaria) return '';
   if(STATUS_FINAIS.includes(row.status)) return '';
   if(!row.grade_carregamento) return '';
   const grade=parseBR(row.grade_carregamento);
   if(!grade) return '';
   const agora=new Date();
   const chegadaLimite=new Date(grade.getTime()-3600000);
-  const diffChegadaMin=(chegadaLimite-agora)/60000;
   const diffGradeMin=(grade-agora)/60000;
-  if(diffChegadaMin>=0 && diffChegadaMin<=60){
-    return '<span class="dt-clock" title="Carreta deve chegar até '+chegadaLimite.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">🕐</span>';
+  if(diffGradeMin>=0 && diffGradeMin<=60){
+    return '<span class="dt-clock" title="Falta 1h ou menos para iniciar a grade; carreta deveria chegar até '+chegadaLimite.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">🕐</span>';
   }
-  if(diffChegadaMin<0 && diffGradeMin>=0){
-    return '<span class="dt-clock" title="Carreta já deveria ter chegado até '+chegadaLimite.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">⚠️🕐</span>';
-  }
-  if(diffGradeMin<0 && diffGradeMin>-120) return '<span style="font-size:11px;opacity:.6" title="Grade iniciada">⏰</span>';
+  if(diffGradeMin<0 && diffGradeMin>-120) return '<span style="font-size:11px;opacity:.6" title="Grade iniciada sem portaria preenchida">⏰</span>';
   return '';
 }
 
@@ -886,7 +924,7 @@ async function renderMaterialsBoard(){
       const qtd=Number(String(m.quantidade||'0').replace(',','.'))||0;
       byDT[key][mat]=(byDT[key][mat]||0)+qtd;
     });
-    const ordem=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b)).map(r=>String(r.dt));
+    const ordem=[...tableData].sort(compareAgendaRows).map(r=>String(r.dt));
     const uniq=[]; ordem.forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
     let html='';
     uniq.forEach(dt=>{
@@ -927,7 +965,7 @@ function renderRows(){
     `<span style="color:#60a5fa">${cH} hoje</span> · <span style="color:#a78bfa">${cA} amanhã</span>`;
 
   // Filtro de aba
-  let rows=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b));
+  let rows=[...tableData].sort(compareAgendaRows);
   if(currentTableTab==='finalizadas'){
     rows=rows.filter(r=>STATUS_FINAIS.includes(r.status));
   }else{
@@ -1442,11 +1480,11 @@ function renderReporte(){
     const tipo=rpNormalizeTipo(r);
     const ton=rpParseToneladas(r);
 
-    // GRADE: planejado automático por fim_carregamento no período
-    const fim=parseBR(r.fim_carregamento||'');
-    if(rpWithinWindow(fim,inicioDia,agora)){
-      rpMetas['GRADE']=(rpMetas['GRADE']||0); // preserva campo mas planejado visual é dinâmico
-      if(GRADE_STATUS_REALIZADO.includes(r.status)) realizadoTon['GRADE']+=ton;
+    // GRADE: realizado automático pelas DTs do dia com início de carregamento hoje
+    const inicioCarga=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'');
+    const fimDia=new Date(inicioDia); fimDia.setHours(23,59,59,999);
+    if(rpWithinWindow(inicioCarga,inicioDia,fimDia) && GRADE_STATUS_REALIZADO.includes(r.status)){
+      realizadoTon['GRADE']+=ton;
     }
 
     if(tipo==='VENDA ARUJA'){
@@ -1471,9 +1509,10 @@ function renderReporte(){
     }
   });
 
-  // Planejado da grade é automático por fim_carregamento no período
+  // Planejado da grade é automático pelo início de carregamento dentro do dia atual
+  const fimDiaPlanejado=new Date(inicioDia); fimDiaPlanejado.setHours(23,59,59,999);
   const planejadoGrade = rows
-    .filter(r=>rpWithinWindow(parseBR(r.fim_carregamento||''),inicioDia,agora))
+    .filter(r=>rpWithinWindow(parseBR(r.grade_carregamento||'')||parseBR(r.agenda||''),inicioDia,fimDiaPlanejado))
     .reduce((acc,r)=>acc+rpParseToneladas(r),0);
 // Gráfico de barras
   const chart=document.getElementById('rp-chart');
