@@ -3,17 +3,40 @@
 ═══════════════════════════════════════════════════════ */
 const SB_URL = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
 // ⚠️ TROQUE PELA anon key do Supabase: Dashboard → Settings → API → anon public (começa com eyJ...)
-const SB_KEY = 'COLE_SUA_ANON_KEY_AQUI';
+const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+const SB_RETRY_MS = [300, 900, 1800];
+
+async function sbFetch(url, options={}){
+  let lastErr;
+  for(let i=0;i<=SB_RETRY_MS.length;i++){
+    try{
+      const r=await fetch(url,options);
+      if(r.ok) return r;
+      const msg=await r.text();
+      const isRetryable=r.status>=500||r.status===429;
+      if(!isRetryable || i===SB_RETRY_MS.length) throw new Error(msg||`HTTP ${r.status}`);
+      await new Promise(res=>setTimeout(res,SB_RETRY_MS[i]));
+    }catch(e){
+      lastErr=e;
+      if(i===SB_RETRY_MS.length) break;
+      await new Promise(res=>setTimeout(res,SB_RETRY_MS[i]));
+    }
+  }
+  throw lastErr || new Error('Falha de rede ao acessar Supabase.');
+}
 
 async function sbGet(table, qs=''){
-  const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
+  if(!SB_KEY || SB_KEY.includes('COLE_SUA_ANON_KEY_AQUI')){
+    throw new Error('Chave Supabase não configurada em cco_script.js (SB_KEY).');
+  }
+  const r=await sbFetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
   if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
   return r.json();
 }
 async function sbUpsert(table, rows){
   for(let i=0;i<rows.length;i+=30){
-    const r=await fetch(`${SB_URL}/${table}`,{
+    const r=await sbFetch(`${SB_URL}/${table}`,{
       method:'POST',
       headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=minimal'},
       body:JSON.stringify(rows.slice(i,i+30))
@@ -23,18 +46,18 @@ async function sbUpsert(table, rows){
 }
 async function sbPatch(table, data, filters){
   const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${v.includes('/')?'"'+v+'"':encodeURIComponent(v)}`).join('&');
-  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
+  const r=await sbFetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
   if(!r.ok) throw new Error(`PATCH ${table}: `+await r.text());
 }
 async function sbDelete(table, filters){
   const q=Object.entries(filters).map(([k,v])=>{
     const vs=String(v); return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
   }).join('&');
-  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
+  const r=await sbFetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
   if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
 }
 async function sbInsert(table, rows){
-  const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
+  const r=await sbFetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
   if(!r.ok) throw new Error(`INSERT ${table}: `+await r.text());
 }
 
@@ -94,6 +117,17 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   }
   // Ticker para atualizar emojis de relógio a cada minuto
   setInterval(()=>{ if(tableData.length) renderRows(); }, 60000);
+  // Auto-sync para ambiente com múltiplos usuários
+  setInterval(async ()=>{
+    try{
+      await tryLoadExisting();
+      syncTxt.textContent='ONLINE';
+      if(syncDot){ syncDot.style.background='#22c55e'; syncDot.style.animation='pulse 1.5s infinite'; }
+    }catch(e){
+      syncTxt.textContent='OFFLINE';
+      if(syncDot){ syncDot.style.background='#f59e0b'; }
+    }
+  }, 20000);
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -191,7 +225,7 @@ async function renderMateriaisAba(){
   try{
     // Ordem das DTs conforme grade
     const ordem=[...tableData]
-      .sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b))
+      .sort(compareAgendaRows)
       .map(r=>String(r.dt));
     const uniq=[]; ordem.forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
     // Adiciona DTs de remessaMap não presentes na tabela
@@ -239,11 +273,9 @@ async function renderMateriaisAba(){
       totalRemessas+=remessas.length;
       totalItens+=itens.length;
 
-      // Soma total de qtde de todos os itens da DT
-      const qtdeTotalDT = itens.reduce((sum, i) => {
-        const n = parseFloat(String(i.qtde||'0').replace(/\./g,'').replace(',','.')) || 0;
-        return sum + n;
-      }, 0);
+      // Soma total em paletes (a quantidade original vem em fardos)
+      const paletesTotalDT = itens.reduce((sum, i) => sum + formatPaletes(i.material,i.qtde).paletes, 0);
+      const sobrasTotalDT = itens.reduce((sum, i) => sum + formatPaletes(i.material,i.qtde).sobra, 0);
 
       html+=`<div class="mat-group" style="margin-bottom:14px;">`;
       html+=`<div class="mat-group-h" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:10px 14px;">`;
@@ -257,7 +289,7 @@ async function renderMateriaisAba(){
       html+=`</div>`;
       html+=`<div style="text-align:right;">`;
       html+=`<div style="color:#64748b;font-size:10px;">${remessas.length} remessa(s) · ${itens.length} item(ns)</div>`;
-      html+=`<div style="font-size:12px;font-weight:700;color:#a7f3d0;">Total: ${Math.round(qtdeTotalDT)} un.</div>`;
+      html+=`<div style="font-size:12px;font-weight:700;color:#a7f3d0;">Total: ${paletesTotalDT} palete(s)${sobrasTotalDT?` + ${sobrasTotalDT.toLocaleString('pt-BR',{maximumFractionDigits:2})} fardo(s) de sobra`:''}</div>`;
       html+=`</div>`;
       html+=`</div>`;
 
@@ -266,16 +298,18 @@ async function renderMateriaisAba(){
       remessas.forEach(remessa=>{
         const linhas=byRemessa[remessa];
         html+=`<div style="margin-bottom:6px;">`;
-        html+=`<div style="display:grid;grid-template-columns:1fr 120px 100px;gap:4px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:2px;">`;
+        html+=`<div style="display:grid;grid-template-columns:1fr 120px 160px;gap:4px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:2px;">`;
         html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#3b82f6;font-weight:700;">REMESSA ${remessa}</span>`;
         html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">MATERIAL</span>`;
-        html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;text-align:right;">QTDE</span>`;
+        html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;text-align:right;">PALETES</span>`;
         html+=`</div>`;
         linhas.forEach(({material,qtde},idx)=>{
-          html+=`<div style="display:grid;grid-template-columns:1fr 120px 100px;gap:4px;padding:2px 0;border-bottom:1px solid #1e293b;font-size:12px;">`;
+          const pal=formatPaletes(material,qtde);
+          const detalhe=pal.porPalete?`<div style="font-size:9px;color:#64748b;font-weight:500;">${parseQuantidadeFardos(qtde).toLocaleString('pt-BR',{maximumFractionDigits:2})} fardos · ${pal.porPalete}/palete</div>`:'';
+          html+=`<div style="display:grid;grid-template-columns:1fr 120px 160px;gap:4px;padding:2px 0;border-bottom:1px solid #1e293b;font-size:12px;">`;
           html+=`<span style="color:#475569;font-size:10px;">${idx===0?'':'—'}</span>`;
           html+=`<span style="color:#cbd5e1;">${material}</span>`;
-          html+=`<span style="text-align:right;color:#a7f3d0;font-weight:700;">${qtde||'—'}</span>`;
+          html+=`<span style="text-align:right;color:#a7f3d0;font-weight:700;">${pal.label}${detalhe}</span>`;
           html+=`</div>`;
         });
         html+=`</div>`;
@@ -320,11 +354,79 @@ function parseAgendaDateTime(row){
   if(agenda) return agenda;
   return new Date(9999,0,1);
 }
+function compareAgendaRows(a,b){
+  const iniA=parseAgendaDateTime(a);
+  const iniB=parseAgendaDateTime(b);
+  const diffIni=iniA-iniB;
+  if(diffIni) return diffIni;
+  const fimA=parseBR(a.fim_carregamento||'')||new Date(9999,0,1);
+  const fimB=parseBR(b.fim_carregamento||'')||new Date(9999,0,1);
+  const diffFim=fimA-fimB;
+  if(diffFim) return diffFim;
+  return String(a.dt||'').localeCompare(String(b.dt||''),'pt-BR',{numeric:true});
+}
+
+const FARDOS_POR_PALETE={
+  '20104414':36,'20104415':36,'20104416':36,'20104419':33,'20104418':28,
+  '20106704':36,'20106705':36,'20104405':48,'20104407':32,'20104410':36,
+  '20104412':28,'20104413':36,'20104409':36,'20104408':36,'20081464':36,
+  '20081466':36,'20081481':28,'20081961':36,'20089387':24,'20095269':36,
+  '20081984':28,'20081465':36,'20081467':36,'20081469':28,'20111061':36,
+  '20104309':45,'20104421':63,'20104422':56,'20109594':56,'20104430':15,
+  '20104429':27,'20104426':27,'20104313':36,'20104425':36,'20104312':36,
+  '20110078':36,'20091834':36,'20091835':42,'30227945':15,'30179006':18,
+  '30228198':15,'20109727':24,'20091836':36,'20104310':225
+};
+
+function parseQuantidadeFardos(qtde){
+  const n=parseFloat(String(qtde||'0').replace(/\./g,'').replace(',','.'));
+  return Number.isFinite(n)?n:0;
+}
+
+function formatPaletes(material,qtde){
+  const sku=String(material||'').trim().replace(/\D/g,'');
+  const fardos=parseQuantidadeFardos(qtde);
+  const porPalete=FARDOS_POR_PALETE[sku];
+  if(!porPalete){
+    return {paletes:0,sobra:fardos,porPalete:null,label:fardos?`${Math.round(fardos)} fardos`:'—'};
+  }
+  const paletes=Math.floor(fardos/porPalete);
+  const sobra=Math.round((fardos%porPalete)*100)/100;
+  const sobraLabel=sobra?` + sobra ${sobra.toLocaleString('pt-BR',{maximumFractionDigits:2})}`:'';
+  return {paletes,sobra,porPalete,label:`${paletes} palete${paletes===1?'':'s'}${sobraLabel}`};
+}
 function normalizeDT(raw){
   const v=String(raw||'').trim();
   if(!v) return '';
   if(/^\d+$/.test(v)) return v.replace(/^0+(?=\d)/,'');
   return v;
+}
+
+function normalizeHora(raw){
+  const s=String(raw||'').trim();
+  if(!s) return '';
+  const m=s.match(/(\d{1,2})[:hH](\d{2})/);
+  if(m){
+    const hh=Math.max(0,Math.min(23,parseInt(m[1],10)));
+    const mm=Math.max(0,Math.min(59,parseInt(m[2],10)));
+    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+  }
+  if(/^\d+(?:[,.]\d+)?$/.test(s)){
+    const n=Number(s.replace(',','.'));
+    if(n>0 && n<1){
+      const total=Math.round(n*24*60);
+      return String(Math.floor(total/60)%24).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+    }
+    if(s.length===3||s.length===4){
+      const pad=s.padStart(4,'0');
+      return pad.slice(0,2)+':'+pad.slice(2);
+    }
+  }
+  return '';
+}
+
+function normalizeSap(raw){
+  return String(raw||'').trim().replace(/\.0+$/,'').replace(/\D/g,'');
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -355,19 +457,21 @@ function processAgend(file){
       if(matCnt>0) showOk('✨ '+matCnt+' linhas de materiais importadas automaticamente do arquivo de agendamento!');
       const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
       const h=lines[0].split('\t').map(s=>s.trim());
-      const ci=n=>h.indexOf(n);
+      const ci=n=>h.findIndex(x=>String(x||'').trim().toUpperCase()===String(n||'').toUpperCase());
       const iDT=ci('DT'),iLoc=ci('LOCAL'),iTransp=ci('NOME TRANSPORTADORA');
       const iAg=ci('AGENDA TRANSPORTADOR'),iFim=ci('FIM AGENDA TRANSPORTADOR');
-      const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO');
+      const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO'),iDoca=ci('DOCA');
       if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
       agendRows=[];
       for(let i=1;i<lines.length;i++){
         const c=lines[i].split('\t');
         if(!c[iDT]?.trim())continue;
         const loc=(c[iLoc]||'').trim();
+        const doca=iDoca!==-1?(c[iDoca]||'').trim():'';
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
+        if(iDoca!==-1&&!doca)continue;
         agendRows.push({
-          DT:normalizeDT(c[iDT]),LOCAL:loc,
+          DT:normalizeDT(c[iDT]),LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
           AGENDA:parseBR((c[iAg]||'').trim()),
           FIM_AGENDA:parseBR((c[iFim]||'').trim()),
@@ -375,7 +479,7 @@ function processAgend(file){
           PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
         });
       }
-      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111 encontrada.');
+      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111'+(iDoca!==-1?' e DOCA preenchida':'')+' encontrada.');
       hideInf();
       renderStep2();
     }catch(e){hideInf();showErr(e.message);}
@@ -528,6 +632,11 @@ function processRelatorioCSV(file) {
         const matRaw  = iMat !== -1 ? strip(cols[iMat]).replace(/\.0+$/, '').replace(/\D/g,'') : '';
         const qtdeRaw = iQtde !== -1 ? strip(cols[iQtde]) : '';
         const qtde    = qtdeRaw.replace(/\./g,'').replace(',','.');
+        const horaCsv = iHora !== -1 ? normalizeHora(strip(cols[iHora])) : '';
+        const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
+
+        if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
+        if (sapCsv) sapNumMap[dt] = sapCsv;
 
         // descricao_documento e tipo operacao — centro 1111=ARUJA, 1110=MOGI
         if (!descDocMap[dt]) descDocMap[dt] = descDoc;
@@ -610,13 +719,15 @@ async function persistImportedMaterials(){
 
 async function saveUploadSnapshot(rows){
   try{
-    const logs=rows.map(r=>({
-      dt:String(r.dt||''),
-      data_ref:String(r.data_ref||''),
+    const refs=[...new Set(rows.map(r=>String(r.data_ref||'')).filter(Boolean))];
+    const uploadTs=new Date().toISOString();
+    const logs=refs.map(ref=>({
+      dt:'__AGENDA__',
+      data_ref:ref,
       status:'UPLOAD_AGENDA',
-      transportadora:String(r.transportadora||''),
-      created_at:new Date().toISOString(),
-    })).filter(r=>r.dt&&r.data_ref);
+      transportadora:'AGENDA_ATIVA',
+      created_at:uploadTs,
+    }));
     if(logs.length) await sbInsert('reporte_logs',logs);
   }catch(e){}
 }
@@ -719,11 +830,24 @@ async function getActiveRefs(){
   const T=today(),AM=tomorrow();
   const base=[dKey(T),dKey(AM)];
   try{
-    // Sempre prioriza hoje/amanhã se existir no banco
+    // Hoje/amanhã têm prioridade quando já existe agenda atual no banco.
     const todayRows=await sbGet('reporte_carga',`data_ref=eq.${base[0]}&select=dt&limit=1`);
     if(todayRows&&todayRows.length) return base;
 
-    // Regra principal: usar o último upload de agenda registrado em log
+    // Depois de cada upload salvamos marcadores __AGENDA__; eles evitam reabrir uma grade antiga (ex.: 05/05).
+    const markers=await sbGet('reporte_logs','dt=eq.__AGENDA__&status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=20');
+    const latestTs=markers&&markers.length?markers[0].created_at:null;
+    if(latestTs){
+      const active=[];
+      (markers||[]).forEach(r=>{
+        if(r.created_at!==latestTs) return;
+        const k=String(r.data_ref||'');
+        if(k&&!active.includes(k)) active.push(k);
+      });
+      if(active.length) return active.slice(0,2);
+    }
+
+    // Fallback legado: usa os data_ref mais recentes em logs de upload existentes.
     const lastUpload=await sbGet('reporte_logs',`status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=300`);
     const byUpload=[];
     (lastUpload||[]).forEach(r=>{
@@ -732,8 +856,7 @@ async function getActiveRefs(){
     });
     if(byUpload.length) return byUpload.slice(0,2);
 
-    // Fallback robusto: ordena por data_ref real (dd/mm/aaaa), não por texto
-    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=1000');
+    const rec=await sbGet('reporte_carga','select=data_ref&limit=1000');
     const uniq=[...new Set((rec||[]).map(r=>String(r.data_ref||'')).filter(Boolean))];
     const toDate=(k)=>{const m=String(k).match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?new Date(+m[3],+m[2]-1,+m[1]):new Date(0);};
     uniq.sort((a,b)=>toDate(b)-toDate(a));
@@ -749,7 +872,7 @@ async function reloadTable(){
       `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
     );
     tableData=(data||[]).sort((a,b)=>{
-      return parseAgendaDateTime(a)-parseAgendaDateTime(b);
+      return compareAgendaRows(a,b);
     });
     renderRows();
   }catch(e){showErr('Erro ao carregar tabela: '+e.message);}
@@ -762,15 +885,18 @@ async function reloadTable(){
 ═══════════════════════════════════════════════════════ */
 function clockEmoji(row){
   if(row.dia_ref!=='HOJE') return '';
+  if(row.n_portaria) return '';
   if(STATUS_FINAIS.includes(row.status)) return '';
   if(!row.grade_carregamento) return '';
   const grade=parseBR(row.grade_carregamento);
   if(!grade) return '';
   const agora=new Date();
-  const diffMin=(grade - agora)/60000; // positivo = grade ainda no futuro
-  // Carreta deve chegar 1h antes = diffMin entre 0 e 60 => alerta
-  if(diffMin>=0 && diffMin<=60) return '<span class="dt-clock" title="Carreta deve chegar até '+new Date(grade-3600000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">🕐</span>';
-  if(diffMin<0 && diffMin>-120) return '<span style="font-size:11px;opacity:.6" title="Grade iniciada">⏰</span>';
+  const chegadaLimite=new Date(grade.getTime()-3600000);
+  const diffGradeMin=(grade-agora)/60000;
+  if(diffGradeMin>=0 && diffGradeMin<=60){
+    return '<span class="dt-clock" title="Falta 1h ou menos para iniciar a grade; carreta deveria chegar até '+chegadaLimite.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">🕐</span>';
+  }
+  if(diffGradeMin<0 && diffGradeMin>-120) return '<span style="font-size:11px;opacity:.6" title="Grade iniciada sem portaria preenchida">⏰</span>';
   return '';
 }
 
@@ -798,15 +924,21 @@ async function renderMaterialsBoard(){
       const qtd=Number(String(m.quantidade||'0').replace(',','.'))||0;
       byDT[key][mat]=(byDT[key][mat]||0)+qtd;
     });
-    const ordem=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b)).map(r=>String(r.dt));
+    const ordem=[...tableData].sort(compareAgendaRows).map(r=>String(r.dt));
     const uniq=[]; ordem.forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
     let html='';
     uniq.forEach(dt=>{
       const itens=byDT[dt]; if(!itens) return;
       const pairs=Object.entries(itens);
-      const total=pairs.reduce((s,[,v])=>s+v,0);
-      html+='<div class="mat-group"><div class="mat-group-h"><span>DT '+dt+'</span><span>'+pairs.length+' materiais · Qtd total '+Math.round(total)+'</span></div><div class="mat-group-b">';
-      pairs.forEach(([mat,q])=>{html+='<div class="mat-item"><span>'+mat+'</span><span style="text-align:right;color:#a7f3d0;font-weight:700;">'+Math.round(q)+'</span></div>';});
+      const totalPaletes=pairs.reduce((s,[mat,q])=>s+formatPaletes(mat,q).paletes,0);
+      const totalSobra=pairs.reduce((s,[mat,q])=>s+formatPaletes(mat,q).sobra,0);
+      const totalLabel=totalPaletes+' palete(s)'+(totalSobra?' + '+Math.round(totalSobra)+' fardo(s) sobra':'');
+      html+='<div class="mat-group"><div class="mat-group-h"><span>DT '+dt+'</span><span>'+pairs.length+' materiais · '+totalLabel+'</span></div><div class="mat-group-b">';
+      pairs.forEach(([mat,q])=>{
+        const pal=formatPaletes(mat,q);
+        const detalhe=pal.porPalete?'<div style="font-size:9px;color:#64748b;font-weight:500;">'+Math.round(q)+' fardos · '+pal.porPalete+'/palete</div>':'';
+        html+='<div class="mat-item"><span>'+mat+detalhe+'</span><span style="text-align:right;color:#a7f3d0;font-weight:700;">'+pal.label+'</span></div>';
+      });
       html+='</div></div>';
     });
     board.innerHTML=html||'<div style="color:#334155;">Nenhum material encontrado para as DTs listadas.</div>';
@@ -839,7 +971,7 @@ function renderRows(){
     `<span style="color:#60a5fa">${cH} hoje</span> · <span style="color:#a78bfa">${cA} amanhã</span>`;
 
   // Filtro de aba
-  let rows=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b));
+  let rows=[...tableData].sort(compareAgendaRows);
   if(currentTableTab==='finalizadas'){
     rows=rows.filter(r=>STATUS_FINAIS.includes(r.status));
   }else{
@@ -872,7 +1004,7 @@ function renderRows(){
       : '';
     tr.innerHTML=
       `<td>${diaTag}</td>`+
-      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}` +
+      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${clock?` <span style="margin-left:4px;">${clock}</span>`:''}${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}` +
       `<td class="td-transp">${row.transportadora||'—'}</td>`+
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
       `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
@@ -1118,10 +1250,22 @@ function addMatRow(){
 }
 
 function updatePanelTotal(){
-  const qs=[...document.querySelectorAll('#mat-list [data-f=quantidade]')];
-  const total=qs.reduce((s,i)=>s+(parseFloat(String(i.value||'0').replace(/\./g,'').replace(',','.'))||0),0);
+  const rows=[...document.querySelectorAll('#mat-list .mat-row')];
+  let totalPaletes=0,totalSobra=0,totalFardos=0;
+  rows.forEach(r=>{
+    const mat=r.querySelector('[data-f=material]')?.value.trim()||'';
+    const qtdRaw=r.querySelector('[data-f=quantidade]')?.value||'0';
+    const fardos=parseQuantidadeFardos(qtdRaw);
+    totalFardos+=fardos;
+    const pal=formatPaletes(mat,qtdRaw);
+    totalPaletes+=pal.paletes;
+    totalSobra+=pal.sobra;
+  });
   const el=document.getElementById('mat-total');
-  if(el) el.textContent='Total: '+Math.round(total);
+  if(el){
+    const sobraLabel=totalSobra?' + '+Math.round(totalSobra)+' fardo(s) sobra':'';
+    el.textContent='Total: '+totalPaletes+' palete(s)'+sobraLabel+' ('+Math.round(totalFardos)+' fardos)';
+  }
 }
 
 function printPanelMapa(){
@@ -1153,8 +1297,8 @@ function printPanelMapa(){
     </div>
     <table class="print-mat-table">
       <thead><tr><th>#</th><th>MATERIAL</th><th>QUANTIDADE</th></tr></thead>
-      <tbody>${mats.map((m,i)=>`<tr><td>${i+1}</td><td>${m.mat}</td><td style="text-align:right;">${m.qtd}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding:6px 10px;">TOTAL</td><td style="text-align:right;font-weight:800;padding:6px 10px;">${Math.round(total)}</td></tr></tfoot>
+      <tbody>${mats.map((m,i)=>{const pal=formatPaletes(m.mat,m.qtd);return `<tr><td>${i+1}</td><td>${m.mat}</td><td style="text-align:right;">${pal.label} <span style="color:#888;font-size:10px;">(${m.qtd} fardos)</span></td></tr>`;}).join('')}</tbody>
+      <tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding:6px 10px;">TOTAL</td><td style="text-align:right;font-weight:800;padding:6px 10px;">${mats.reduce((s,m)=>s+formatPaletes(m.mat,m.qtd).paletes,0)} palete(s)</td></tr></tfoot>
     </table>
     ${document.getElementById('pobs').value ? `<div style="margin-top:14px;font-size:11px;color:#475569;">Obs: ${document.getElementById('pobs').value}</div>` : ''}
   `;
@@ -1232,10 +1376,32 @@ async function tryLoadExisting(){
 /* ═══════════════════════════════════════════════════════
    EXPORT CSV
 ═══════════════════════════════════════════════════════ */
+function csvGradeValue(v){
+  return String(v||'').replace(/,\s*/,' ');
+}
+
 function exportCSV(){
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO'];
-  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||'']);
-  const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
+  const colsDT=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO','MATERIAL','PALETES','SOBRA (FARDOS)','QTD TOTAL (FARDOS)'];
+  const rows=[];
+  tableData.forEach(r=>{
+    const dtKey=String(r.dt||'').trim();
+    const mats=exportMap[dtKey]||[];
+    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||''];
+    if(!mats.length){
+      rows.push([...base,'','','','']);
+    } else {
+      mats.forEach((m,i)=>{
+        const pal=formatPaletes(m.material,m.quantidade);
+        const qtdFardos=parseQuantidadeFardos(m.quantidade);
+        if(i===0){
+          rows.push([...base,m.material,pal.paletes,pal.sobra,Math.round(qtdFardos)]);
+        } else {
+          rows.push(['','','','','','','','','','','',m.material,pal.paletes,pal.sobra,Math.round(qtdFardos)]);
+        }
+      });
+    }
+  });
+  const csv=[colsDT,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
@@ -1245,9 +1411,9 @@ function exportCSV(){
 /* ═══════════════════════════════════════════════════════
    REPORTE DE STATUS
 ═══════════════════════════════════════════════════════ */
-const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','TRANSFERÊNCIA','PRÉ-FAT','GRADE'];
+const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','PRÉ-FATURA','TRANSFERÊNCIA','GRADE'];
 const RP_COLORS = {
-  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','TRANSFERÊNCIA':'#fb923c','PRÉ-FAT':'#a78bfa','GRADE':'#60a5fa'
+  'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','PRÉ-FATURA':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
@@ -1268,7 +1434,7 @@ function rpNormalizeTipo(row){
   if(op==='VENDA ARUJA')         return 'VENDA ARUJA';
   if(op==='VENDA MOGI')          return 'VENDA MOGI';
   if(op==='TRANSFERÊNCIA ARUJA'||op==='TRANSFERÊNCIA MOGI'||op==='TRANSFERÊNCIA') return 'TRANSFERÊNCIA';
-  if(op==='PRÉ-FAT'||op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FAT';
+  if(op==='PRÉ-FAT'||op==='PRÉ-FATURA'||op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FATURA';
   if(op==='GRADE'||op.includes('GRADE')) return 'GRADE';
   // Fallback por texto
   if(op.includes('TRANSFER')) return 'TRANSFERÊNCIA';
@@ -1293,6 +1459,32 @@ function rpSaveMeta(tipo,val){
   renderReporte();
 }
 
+
+function rpParseToneladas(row){
+  const raw = row.peso_liquido ?? row.toneladas ?? row.peso ?? '';
+  let s=String(raw).trim();
+  if(!s) return 0;
+  s=s.replace(/\s/g,'');
+  if(s.includes(',') && s.includes('.')){
+    if(s.lastIndexOf(',')>s.lastIndexOf('.')) s=s.replace(/\./g,'').replace(',','.');
+    else s=s.replace(/,/g,'');
+  }else if(s.includes(',')) s=s.replace(',', '.');
+  const n=parseFloat(s.replace(/[^\d.-]/g,''));
+  return Number.isFinite(n)?n:0;
+}
+
+function rpWithinWindow(dt,start,end){
+  return !!dt && dt>=start && dt<=end;
+}
+
+function rpTurnoFromDate(dt){
+  if(!dt) return null;
+  const h=dt.getHours();
+  if(h>=7 && h<=14) return 'T1';
+  if(h>=15 && h<=22) return 'T2';
+  return 'T3'; // 23-06
+}
+
 function renderReporte(){
   const rows=rpTurnoFiltro==='todos'?[...tableData]
     :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
@@ -1312,57 +1504,59 @@ function renderReporte(){
     `).join('');
   }
 
-  // Status que contam como "realizado" (em andamento + concluído)
-  // Status que contam como carreta realizada (contagem)
-  const STATUS_CARRETA=['CARREGANDO','EM FATURAMENTO','EXPEDIDO','PATIO'];
-  // Status que contam toneladas (ja saiu ou esta em processo final)
-  const STATUS_TON=['EM FATURAMENTO','EXPEDIDO'];
-  const agora=new Date();
+    const agora=new Date();
   const inicioDia=new Date(agora); inicioDia.setHours(0,0,0,0);
 
-  const realizado={}, realizadoTon={};
-  RP_TIPOS.forEach(t=>{realizado[t]=0; realizadoTon[t]=0;});
+  const realizadoTon={};
+  RP_TIPOS.forEach(t=>{realizadoTon[t]=0;});
+
+  const GRADE_STATUS_REALIZADO=['CARREGANDO','EM FATURAMENTO','EXPEDIDO'];
 
   rows.forEach(r=>{
     const tipo=rpNormalizeTipo(r);
-    if(!realizado.hasOwnProperty(tipo)) return;
+    const ton=rpParseToneladas(r);
 
-    const ton=parseFloat(String(r.peso_liquido||r.toneladas||'').replace(/\./g,'').replace(',','.'))||0;
+    // GRADE: realizado automático pelas DTs do dia com início de carregamento hoje
+    const inicioCarga=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'');
+    const fimDia=new Date(inicioDia); fimDia.setHours(23,59,59,999);
+    if(rpWithinWindow(inicioCarga,inicioDia,fimDia) && GRADE_STATUS_REALIZADO.includes(r.status)){
+      realizadoTon['GRADE']+=ton;
+    }
 
-    if(tipo==='GRADE'){
-      // GRADE: carreta e tonelada contam se fim_carregamento entre inicio do dia e agora, status em STATUS_CARRETA
-      const fimRaw=r.fim_carregamento||'';
-      if(!fimRaw) return;
-      const fim=parseBR(fimRaw);
-      if(!fim||fim<inicioDia||fim>agora) return;
-      if(STATUS_CARRETA.includes(r.status)){
-        realizado[tipo]++;
-        realizadoTon[tipo]+=ton;
-      }
-    } else {
-      // Demais tipos: carreta conta se status em STATUS_CARRETA
-      if(STATUS_CARRETA.includes(r.status)){
-        realizado[tipo]++;
-      }
-      // Toneladas contam so se inicio da grade <= agora E status em STATUS_TON
-      if(STATUS_TON.includes(r.status)){
-        const inicioRaw=r.grade_carregamento||'';
-        const inicio=inicioRaw?parseBR(inicioRaw):null;
-        const ref=inicio||parseBR(r.hora_chegada||'')||null;
-        if(!ref||ref<=agora){
-          realizadoTon[tipo]+=ton;
-        }
-      }
+    if(tipo==='VENDA ARUJA'){
+      const centro=String(r.centro||'').trim();
+      const desc=String(r.descricao_documento||'').toUpperCase();
+      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
+      if(centro==='1111' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA ARUJA']+=ton;
+      return;
+    }
+    if(tipo==='VENDA MOGI'){
+      const centro=String(r.centro||'').trim();
+      const desc=String(r.descricao_documento||'').toUpperCase();
+      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
+      if(centro==='1110' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA MOGI']+=ton;
+      return;
+    }
+    if(tipo==='TRANSFERÊNCIA'){
+      const desc=String(r.descricao_documento||'').toUpperCase();
+      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
+      if((desc.includes('TRANSFER')||desc.includes('TNF')) && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['TRANSFERÊNCIA']+=ton;
+      return;
     }
   });
 
-  // Gráfico de barras
+  // Planejado da grade é automático pelo início de carregamento dentro do dia atual
+  const fimDiaPlanejado=new Date(inicioDia); fimDiaPlanejado.setHours(23,59,59,999);
+  const planejadoGrade = rows
+    .filter(r=>rpWithinWindow(parseBR(r.grade_carregamento||'')||parseBR(r.agenda||''),inicioDia,fimDiaPlanejado))
+    .reduce((acc,r)=>acc+rpParseToneladas(r),0);
+// Gráfico de barras
   const chart=document.getElementById('rp-chart');
   if(chart){
-    const maxVal=Math.max(1,...RP_TIPOS.map(t=>Math.max(rpMetas[t]||0,realizado[t]||0)));
+    const maxVal=Math.max(1,...RP_TIPOS.map(t=>{ const p=t==='GRADE'?planejadoGrade:(rpMetas[t]||0); return Math.max(p,realizadoTon[t]||0);}));
     chart.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=rpMetas[tipo]||0;
-      const real=realizado[tipo]||0;
+      const plan=tipo==='GRADE'?planejadoGrade:(rpMetas[tipo]||0);
+      const real=realizadoTon[tipo]||0;
       const pend=Math.max(0,plan-real);
       const hPlan=plan?Math.round((plan/maxVal)*130):0;
       const hReal=real?Math.round((real/maxVal)*130):0;
@@ -1383,15 +1577,13 @@ function renderReporte(){
   const numEl=document.getElementById('rp-numeros');
   if(numEl){
     numEl.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=rpMetas[tipo]||0;
-      const real=realizado[tipo]||0;
-      const ton=(realizadoTon[tipo]||0);
-      const tonStr=ton>0?(ton/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'t':'—';
-      // Pendente = carretas planejadas - carretas realizadas
-      const pend=Math.max(0,plan-real);
-      const pct=plan>0?Math.min(100,Math.round(real/plan*100)):0;
+      const realTon=(realizadoTon[tipo]||0);
+      const plan = tipo==='GRADE' ? planejadoGrade : (rpMetas[tipo]||0);
+      const tonStr=realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+      const pend=Math.max(0,plan-realTon);
+      const pct=plan>0?Math.min(100,Math.round(realTon/plan*100)):0;
       const c=RP_COLORS[tipo]||'#3b82f6';
-      const barW=plan>0?Math.round(real/plan*100):0;
+      const barW=plan>0?Math.round(realTon/plan*100):0;
       return `<div class="rp-tipo-card" style="border-color:${c}44;">
         <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
@@ -1403,7 +1595,7 @@ function renderReporte(){
           <div style="height:100%;width:${barW}%;background:${c};border-radius:4px;transition:.4s;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
-          <span>${real} carretas realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
+          <span>${realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
         </div>
       </div>`;
     }).join('');
@@ -1432,16 +1624,52 @@ function renderReporte(){
   const turnosEl=document.getElementById('rp-turnos-resumo');
   if(turnosEl){
     const byTurno={T1:0,T2:0,T3:0};
-    tableData.forEach(r=>{const t=rpGetTurno(r);if(t)byTurno[t]++;});
+    let t3DiaProd=0;
+    let t3TurnoProd=0;
+    const hoje0=new Date(); hoje0.setHours(0,0,0,0);
+    const amanha0=new Date(hoje0); amanha0.setDate(amanha0.getDate()+1);
+    const t3DiaIni=new Date(hoje0); t3DiaIni.setHours(23,0,0,0);
+    const t3DiaFim=new Date(hoje0); t3DiaFim.setHours(23,59,59,999);
+    const t3TurnoIni=new Date(hoje0); t3TurnoIni.setHours(23,0,0,0);
+    const t3TurnoFim=new Date(amanha0); t3TurnoFim.setHours(6,59,59,999);
+
+    rows.forEach(r=>{
+      const grade=parseBR(r.grade_carregamento||'');
+      const turno=rpTurnoFromDate(grade);
+      if(!turno) return;
+      const ton=rpParseToneladas(r);
+      byTurno[turno]+=ton;
+
+      if(turno==='T3' && grade){
+        if(grade>=t3DiaIni && grade<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
+        if(grade>=t3TurnoIni && grade<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno
+      }
+    });
+    const totalTurnos=byTurno.T1+byTurno.T2+byTurno.T3;
     const labels={T1:'🌅 T1 · 07-14h',T2:'☀️ T2 · 15-22h',T3:'🌙 T3 · 23-06h'};
     const cores={T1:'#60a5fa',T2:'#f59e0b',T3:'#a78bfa'};
-    turnosEl.innerHTML=['T1','T2','T3'].map(t=>`
+    const cards=['T1','T2','T3'].map(t=>`
       <div class="rp-turno-card" style="border-color:${cores[t]}44;">
         <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
-        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t]}</div>
-        <div style="font-size:10px;color:#64748b;">DTs</div>
+        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t].toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
+        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
+        ${t==='T3'
+          ? `<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.6;">
+              Dia (23-00): <b style="color:#c4b5fd;">${t3DiaProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b><br/>
+              Turno (23-06): <b style="color:#c4b5fd;">${t3TurnoProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b>
+            </div>`
+          : ''
+        }
       </div>
     `).join('');
+    const totalCard=`
+      <div class="rp-turno-card" style="border-color:#22c55e44;">
+        <div class="rp-turno-label" style="color:#22c55e">📦 TOTAL DO DIA</div>
+        <div class="rp-turno-num" style="color:#22c55e">${totalTurnos.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
+        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
+      </div>
+    `;
+    turnosEl.innerHTML=cards+totalCard;
   }
 }
 
@@ -1456,22 +1684,29 @@ async function registrarSemGrade(){
   const motivo=document.getElementById('sg-motivo').value.trim();
   const obs=document.getElementById('sg-obs').value.trim();
   if(!dt){showErr('Informe o número da DT.');return;}
-  const reg={dt,transp,motivo,obs,ts:new Date().toLocaleString('pt-BR')};
+  const dtNorm=normalizeDT(dt);
+  const reg={dt:dtNorm,transp,motivo,obs,ts:new Date().toLocaleString('pt-BR')};
   sgRegistros.unshift(reg);
   try{localStorage.setItem('sg_registros',JSON.stringify(sgRegistros));}catch(e){}
-  // Salvar no Supabase também
+  const dataRef=dKey(today());
+  const row={dt:String(dtNorm),transportadora:transp,grade_carregamento:'',fim_carregamento:'',hora_chegada:'',n_portaria:'',status:'AG CHEGADA',descricao_documento:motivo||'SEM GRADE',toneladas:'',peso_liquido:'',agenda:'',local_cd:'',dia_ref:'HOJE',data_ref:dataRef,tipo_operacao:'',reagendada:false};
   try{
     await sbInsert('reporte_semgrade',[{
-      dt:String(dt),transportadora:transp,motivo,observacao:obs,
+      dt:String(dtNorm),transportadora:transp,motivo,observacao:obs,
       created_at:new Date().toISOString()
     }]);
+    const exists=await sbGet('reporte_carga',`dt=eq.${encodeURIComponent(dtNorm)}&data_ref=eq.${encodeURIComponent(dataRef)}&select=dt&limit=1`);
+    if(!exists||!exists.length) await sbInsert('reporte_carga',[row]);
   }catch(e){/* tabela pode não existir ainda */}
+  const idx=tableData.findIndex(r=>String(r.dt)===String(dtNorm)&&r.data_ref===dataRef);
+  if(idx===-1) tableData.push(row); else tableData[idx]={...tableData[idx],...row};
   document.getElementById('sg-dt').value='';
   document.getElementById('sg-transp').value='';
   document.getElementById('sg-motivo').value='';
   document.getElementById('sg-obs').value='';
-  showOk('DT '+dt+' registrada como sem grade.');
+  showOk('DT '+dtNorm+' registrada como sem grade e incluída na grade principal.');
   renderSemGrade();
+  renderRows();
 }
 
 function renderSemGrade(){
@@ -1734,10 +1969,13 @@ function handleImportFile(file){
 
       // Detect separator (semicolon or comma)
       const sep=lines[0].includes(';')?';':',';
-      const headers=lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,'').toUpperCase());
+      const parsed=parseCSVRelatorio(text,sep).filter(r=>r.some(c=>String(c||'').trim()));
+      const headers=parsed[0].map(h=>String(h||'').trim().replace(/^"|"$/g,'').toUpperCase());
 
       // Find column indices
-      const iDT=headers.findIndex(h=>h==='DT');
+      const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
+      const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
+      const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('Nº SAP')||h.includes('NR SAP'));
       const iStatus=headers.findIndex(h=>h==='STATUS'||h==='STATUS.1');
       // prefer last STATUS col (STATUS.1 in the sample)
       const iStatusFinal=headers.lastIndexOf('STATUS.1')!==-1
@@ -1748,13 +1986,15 @@ function handleImportFile(file){
 
       importCsvData=[];
       const seen=new Set();
-      for(let i=1;i<lines.length;i++){
-        const cols=lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
-        const dt=String(cols[iDT]||'').trim();
+      for(let i=1;i<parsed.length;i++){
+        const cols=parsed[i].map(c=>String(c||'').trim().replace(/^"|"$/g,''));
+        const dt=normalizeDT(String(cols[iDT]||'').replace(/\.0+$/,'').replace(/\D/g,''));
         if(!dt||seen.has(dt)) continue;
         seen.add(dt);
         const rawStatus=iStatusFinal!==-1?(cols[iStatusFinal]||''):'';
-        importCsvData.push({dt, rawStatus});
+        const hora=iHora!==-1?normalizeHora(cols[iHora]):'';
+        const sap=iSap!==-1?normalizeSap(cols[iSap]):'';
+        importCsvData.push({dt, rawStatus, hora, sap});
       }
 
       if(!importCsvData.length) throw new Error('Nenhuma DT encontrada no CSV.');
@@ -1762,18 +2002,20 @@ function handleImportFile(file){
       // Preview
       const previewHtml=importCsvData.slice(0,8).map(r=>{
         const mapped=normalizeStatus(r.rawStatus);
-        return `<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
+        return `<div style="display:grid;grid-template-columns:90px 70px 90px 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
           <span style="color:#93c5fd;font-weight:700;">${r.dt}</span>
-          <span style="color:#64748b;">${r.rawStatus||'—'}</span>
-          <span style="color:${mapped?'#22c55e':'#f59e0b'};">${mapped||'(não mapeado)'}</span>
+          <span style="color:#e2e8f0;">${r.hora||'—'}</span>
+          <span style="color:#e2e8f0;">${r.sap||'—'}</span>
+          <span style="color:${mapped?'#22c55e':'#f59e0b'};">${mapped||r.rawStatus||'(sem status)'}</span>
         </div>`;
       }).join('')+(importCsvData.length>8?`<div style="color:#64748b;font-size:10px;padding-top:4px;">…mais ${importCsvData.length-8} DTs</div>`:'');
 
       document.getElementById('import-preview-body').innerHTML=
-        `<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">
+        `<div style="display:grid;grid-template-columns:90px 70px 90px 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">
           <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">DT</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">STATUS CSV</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">→ DASH</span>
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">HORA</span>
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">SAP</span>
+          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">STATUS</span>
         </div>`+previewHtml;
       document.getElementById('import-preview').style.display='block';
       document.getElementById('import-drop-label').textContent=`✅ ${file.name} — ${importCsvData.length} DTs encontradas`;
@@ -1805,16 +2047,29 @@ async function runImport(){
     // Build a Set of DTs in the CSV
     const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
 
-    let updated=0, expedited=0, skipped=0;
+    let updated=0, fieldUpdated=0, expedited=0, skipped=0;
 
     // 1) Update DTs present in CSV (só as que estão no dash de hoje/amanhã)
     for(const csvRow of importCsvData){
       const dt=String(csvRow.dt);
       const mappedStatus=normalizeStatus(csvRow.rawStatus);
-      if(!mappedStatus){skipped++;continue;}
 
       const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
       if(!dashRow){skipped++;continue;}
+
+      const patch={};
+      if(csvRow.hora && dashRow.hora_chegada!==csvRow.hora) patch.hora_chegada=csvRow.hora;
+      if(csvRow.sap && dashRow.n_portaria!==csvRow.sap) patch.n_portaria=csvRow.sap;
+      if(Object.keys(patch).length){
+        await sbPatch('reporte_carga',{...patch,updated_at:new Date().toISOString()},{dt,data_ref:dashRow.data_ref});
+        Object.assign(dashRow,patch);
+        fieldUpdated++;
+      }
+
+      if(!mappedStatus){
+        if(!Object.keys(patch).length) skipped++;
+        continue;
+      }
       if(dashRow.status===mappedStatus){continue;} // já correto
 
       try{
@@ -1854,7 +2109,7 @@ async function runImport(){
     // Atualiza tabela
     renderRows();
 
-    const msg=`✅ Concluído! Atualizadas: ${updated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
+    const msg=`✅ Concluído! Status atualizados: ${updated} | Hora/SAP preenchidos: ${fieldUpdated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
     document.getElementById('import-result').textContent=msg;
     document.getElementById('import-result').style.display='block';
 
@@ -1866,4 +2121,3 @@ async function runImport(){
   document.getElementById('import-btn').disabled=false;
   document.getElementById('import-btn').textContent='⚡ Atualizar Dashboard';
 }
-
