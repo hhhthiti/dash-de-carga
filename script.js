@@ -133,7 +133,7 @@ function fmtDT(d,t){
 }
 function parseBR(s){
   if(!s||!s.trim())return null;
-  const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[T\s](\d{2}):(\d{2}))?/);
+  const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[,T\s]+(\d{2}):(\d{2}))?/);
   return m?new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)):null;
 }
 
