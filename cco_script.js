@@ -489,7 +489,7 @@ function processAgend(file){
   showInf('Lendo agendamento…');
   const isInlineUpload = document.getElementById('passo4').style.display !== 'none';
   if(document.getElementById('dz1l')) document.getElementById('dz1l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
-  file.arrayBuffer().then(buf=>{
+  file.arrayBuffer().then(async buf=>{
     try{
       // Tenta importar materiais automaticamente se o arquivo tiver as colunas certas (XLSX)
       exportMap={};remessaMap={};pesoLiquidoMap={};
@@ -645,9 +645,10 @@ function parseCSVRelatorio(text, sep) {
 function processRelatorioCSV(file) {
   if (!file) return;
   showInf('Lendo CSV do Relatório de Expedição…');
-  document.getElementById('dz2l').innerHTML = '<span class="dz-ok">✓ ' + file.name + '</span>';
+  const dz2Label=document.getElementById('dz2l');
+  if(dz2Label) dz2Label.innerHTML = '<span class="dz-ok">✓ ' + file.name + '</span>';
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = async function(e) {
     try {
       const text = e.target.result;
       const rows = parseCSVRelatorio(text, ';');
@@ -732,9 +733,19 @@ function processRelatorioCSV(file) {
       const totalDTs = Object.keys(exportMap).length;
       const status = document.getElementById('upload-status-p3');
       if (status) status.innerHTML = `<b style="color:#4ade80">✓ ${file.name}</b> — <b style="color:#60a5fa">${totalDTs} transportes</b> · ${linhasOk} linhas processadas`;
-      hideInf();
-      showOk(`Relatório OK — ${totalDTs} transportes · ${linhasOk} linhas`);
-      buildTable();
+      const isInlineUpload = document.getElementById('passo4').style.display !== 'none';
+      if(isInlineUpload){
+        const importedCount=await persistImportedMaterialsForCurrentTable();
+        await persistRelatorioFieldsForCurrentTable();
+        hideInf();
+        showOk(`Relatório OK — ${totalDTs} transportes · ${linhasOk} linhas · materiais salvos para ${importedCount} DT(s)`);
+        await reloadTable();
+        setStep(4);
+      }else{
+        hideInf();
+        showOk(`Relatório OK — ${totalDTs} transportes · ${linhasOk} linhas`);
+        await buildTable();
+      }
     } catch(err) {
       hideInf();
       showErr('Erro ao ler CSV: ' + err.message);
@@ -765,6 +776,57 @@ async function persistImportedMaterials(){
   }
   await sbInsert('reporte_materiais',inserts);
   return pares.length;
+}
+
+function getCurrentTableRefsByDT(){
+  const refsByDT=new Map();
+  tableData.forEach(r=>{
+    const dt=normalizeDT(r.dt);
+    const ref=String(r.data_ref||'');
+    if(!dt||!ref) return;
+    if(!refsByDT.has(dt)) refsByDT.set(dt,[]);
+    if(!refsByDT.get(dt).includes(ref)) refsByDT.get(dt).push(ref);
+  });
+  return refsByDT;
+}
+
+async function persistImportedMaterialsForCurrentTable(){
+  const refsByDT=getCurrentTableRefsByDT();
+  const inserts=[];
+  for(const [dt,mats] of Object.entries(exportMap)){
+    const refs=refsByDT.get(normalizeDT(dt))||[];
+    if(!refs.length||!Array.isArray(mats)) continue;
+    refs.forEach(dataRef=>{
+      mats.forEach((m,i)=>{
+        if(!m.material) return;
+        inserts.push({dt:String(dt),data_ref:String(dataRef),material:String(m.material),quantidade:String(m.quantidade||''),observacao:'',ordem:i});
+      });
+    });
+  }
+  const pares=[...new Set(inserts.map(m=>`${m.dt}__${m.data_ref}`))];
+  for(const p of pares){
+    const [dt,data_ref]=p.split('__');
+    await sbDelete('reporte_materiais',{dt,data_ref});
+  }
+  if(inserts.length) await sbInsert('reporte_materiais',inserts);
+  return pares.length;
+}
+
+async function persistRelatorioFieldsForCurrentTable(){
+  const refsByDT=getCurrentTableRefsByDT();
+  for(const [dtRaw,refs] of refsByDT.entries()){
+    const dt=normalizeDT(dtRaw);
+    const patch={updated_at:new Date().toISOString()};
+    if(descDocMap[dt]) patch.descricao_documento=String(descDocMap[dt]);
+    if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
+    if(pesoLiquidoMap[dt]) patch.peso_liquido=String(pesoLiquidoMap[dt].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}));
+    if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
+    if(sapNumMap[dt]) patch.n_portaria=String(sapNumMap[dt]);
+    if(Object.keys(patch).length===1) continue;
+    for(const dataRef of refs){
+      await sbPatch('reporte_carga',patch,{dt,data_ref:dataRef});
+    }
+  }
 }
 
 async function saveUploadSnapshot(rows){
