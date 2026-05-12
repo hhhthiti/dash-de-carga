@@ -144,6 +144,19 @@ function parseAgendaDateTime(row){
   if(agenda) return agenda;
   return new Date(9999,0,1);
 }
+function diaRefAtualPorDataRef(dataRef){
+  const d=parseBR(String(dataRef||''));
+  if(!d) return '';
+  if(sameDay(d,today())) return 'HOJE';
+  if(sameDay(d,tomorrow())) return 'AMANHÃ';
+  return '';
+}
+function normalizeDiaRefRows(rows){
+  return (rows||[]).map(row=>{
+    const diaAtual=diaRefAtualPorDataRef(row&&row.data_ref);
+    return diaAtual?{...row,dia_ref:diaAtual}:row;
+  });
+}
 
 /* ═══════════════════════════════════════════════════════
    DECODE BUFFER
@@ -633,7 +646,7 @@ async function reloadTable(){
     const data=await sbGet('reporte_carga',
       `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
     );
-    tableData=(data||[]).sort((a,b)=>{
+    tableData=normalizeDiaRefRows(data||[]).sort((a,b)=>{
       return parseAgendaDateTime(a)-parseAgendaDateTime(b);
     });
     renderRows();

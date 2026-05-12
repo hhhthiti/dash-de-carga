@@ -191,9 +191,12 @@ document.addEventListener('keydown', async e=>{
     try{
       for(const row of tableData){
         if(!row.dt||!row.data_ref) continue;
+        const diaAtual=diaRefAtualPorDataRef(row.data_ref)||row.dia_ref;
+        row.dia_ref=diaAtual;
         await sbPatch('reporte_carga',{
           grade_carregamento:String(row.grade_carregamento||''),
           fim_carregamento:String(row.fim_carregamento||''),
+          dia_ref:String(diaAtual||''),
           updated_at:new Date().toISOString(),
         },{dt:row.dt,data_ref:row.data_ref});
       }
@@ -462,6 +465,33 @@ function parseAgendaDateTime(row){
   const agenda=parseBR(row.agenda||'');
   if(agenda) return agenda;
   return new Date(9999,0,1);
+}
+function diaRefAtualPorDataRef(dataRef){
+  const d=parseBR(String(dataRef||''));
+  if(!d) return '';
+  if(sameDay(d,today())) return 'HOJE';
+  if(sameDay(d,tomorrow())) return 'AMANHÃ';
+  return '';
+}
+function normalizeDiaRefRow(row){
+  const diaAtual=diaRefAtualPorDataRef(row&&row.data_ref);
+  if(!diaAtual) return row;
+  return {...row,_stored_dia_ref:row.dia_ref,dia_ref:diaAtual};
+}
+function normalizeDiaRefRows(rows){
+  return (rows||[]).map(normalizeDiaRefRow);
+}
+async function persistNormalizedDiaRefs(rows){
+  for(const row of rows||[]){
+    if(!row||!row.dt||!row.data_ref||!row._stored_dia_ref) continue;
+    if(row._stored_dia_ref===row.dia_ref) continue;
+    try{
+      await sbPatch('reporte_carga',{dia_ref:row.dia_ref,updated_at:new Date().toISOString()},{dt:String(row.dt),data_ref:String(row.data_ref)});
+      row._stored_dia_ref=row.dia_ref;
+    }catch(e){
+      console.warn('Não foi possível corrigir dia_ref da DT '+row.dt,e);
+    }
+  }
 }
 function compareAgendaRows(a,b){
   const iniA=parseAgendaDateTime(a);
@@ -1066,9 +1096,10 @@ async function reloadTable(){
     const data=await sbGet('reporte_carga',
       `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
     );
-    tableData=(data||[]).sort((a,b)=>{
+    tableData=normalizeDiaRefRows(data||[]).sort((a,b)=>{
       return compareAgendaRows(a,b);
     });
+    await persistNormalizedDiaRefs(tableData);
     renderRows();
   }catch(e){showErr('Erro ao carregar tabela: '+e.message);}
 }
@@ -1552,11 +1583,12 @@ async function tryLoadExisting(){
       `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
     );
     if(data&&data.length){
-      tableData=data.sort((a,b)=>{
+      tableData=normalizeDiaRefRows(data).sort((a,b)=>{
         const ga=parseBR(a.grade_carregamento)||new Date(9999,0);
         const gb=parseBR(b.grade_carregamento)||new Date(9999,0);
         return ga-gb;
       });
+      await persistNormalizedDiaRefs(tableData);
       // Popula tipoOpMap a partir do banco para o painel funcionar sem ZLES002
       tableData.forEach(r=>{ if(r.dt&&r.tipo_operacao) tipoOpMap[r.dt]=r.tipo_operacao; });
       renderRows();
@@ -2115,7 +2147,7 @@ async function nfImprimir(){
 /* ═══════════════════════════════════════════════════════
    IMPORTAR PLANILHA — Ctrl+B
 ═══════════════════════════════════════════════════════ */
-let importCsvData = null; // parsed rows from CSV
+let importCsvData = null; // linhas parseadas da planilha do Ctrl+B
 
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='b') {
@@ -2127,7 +2159,7 @@ document.addEventListener('keydown', e => {
 function openImportModal(){
   importCsvData=null;
   document.getElementById('import-btn').disabled=true;
-  document.getElementById('import-drop-label').textContent='Clique ou arraste o CSV aqui';
+  document.getElementById('import-drop-label').textContent='Clique ou arraste a planilha aqui';
   document.getElementById('import-preview').style.display='none';
   document.getElementById('import-result').style.display='none';
   document.getElementById('import-err').style.display='none';
@@ -2139,7 +2171,7 @@ function closeImportModal(){
   document.getElementById('import-overlay').style.display='none';
 }
 
-// Mapa de status do CSV → status do dashboard
+// Mapa de status da planilha → status do dashboard
 const CSV_STATUS_MAP = {
   'CARREGANDO':    'CARREGANDO',
   'EXPEDIDO':      'EXPEDIDO',
@@ -2156,9 +2188,119 @@ const CSV_STATUS_MAP = {
   'BAIXA NOCUPAÇÃO':'AG CHEGADA',
 };
 
+// Motivos da nova coluna FATURAMENTO. Quando o STATUS vem vazio,
+// qualquer um deles indica que a DT está em faturamento.
+const CSV_FATURAMENTO_MAP = {
+  'CUSTO DE FRETE': 'EM FATURAMENTO',
+  'PROBLEMA DE DT': 'EM FATURAMENTO',
+  'PROBELMA DE DT': 'EM FATURAMENTO',
+  'PROBLEMA JSL':   'EM FATURAMENTO',
+  'PROBELMA JSL':   'EM FATURAMENTO',
+};
+
+function normalizeImportText(raw){
+  return String(raw||'')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/\s+/g,' ')
+    .toUpperCase();
+}
+
 function normalizeStatus(raw){
-  const s=(raw||'').trim().toUpperCase();
+  const s=normalizeImportText(raw);
   return CSV_STATUS_MAP[s] || null;
+}
+
+function normalizeFaturamentoStatus(raw){
+  const s=normalizeImportText(raw);
+  return CSV_FATURAMENTO_MAP[s] || null;
+}
+
+function detectImportSeparator(text){
+  const firstLine=(text.split(/\r?\n/).find(l=>l.trim())||'');
+  const candidates=['\t',';',','];
+  return candidates
+    .map(sep=>({sep,count:(firstLine.match(new RegExp(sep==='\t'?'\\t':sep,'g'))||[]).length}))
+    .sort((a,b)=>b.count-a.count)[0].sep;
+}
+
+function parseImportFileRows(file, data){
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+
+  if(['xlsx','xls'].includes(ext)){
+    if(typeof XLSX==='undefined') throw new Error('Biblioteca XLSX não carregada. Recarregue a página e tente novamente.');
+    const wb=XLSX.read(data,{type:'array'});
+    const sheetName=wb.SheetNames[0];
+    if(!sheetName) throw new Error('Planilha sem abas.');
+    return XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:'',raw:false});
+  }
+
+  const text=decodeBuf(data);
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length) throw new Error('Arquivo vazio');
+  return parseCSVRelatorio(text,detectImportSeparator(text));
+}
+
+function buildImportRows(parsed){
+  const rows=parsed.filter(r=>Array.isArray(r)&&r.some(c=>String(c||'').trim()));
+  if(!rows.length) throw new Error('Arquivo vazio');
+
+  const headers=rows[0].map(h=>normalizeImportText(String(h||'').replace(/^"|"$/g,'')));
+
+  // Find column indices. Este import aceita a planilha nova:
+  // DT, HORA, DATA, FATURAMENTO, SAP, TRANSPORTADORA, STATUS, Mapa, Grade, TIPO, PESO.
+  const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
+  const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
+  const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP'));
+  const iFaturamento=headers.findIndex(h=>h==='FATURAMENTO'||h.includes('FATURAMENTO'));
+  const statusIndexes=headers.map((h,i)=>({h,i})).filter(x=>x.h==='STATUS'||x.h.startsWith('STATUS.')).map(x=>x.i);
+  const iStatusFinal=statusIndexes.length?statusIndexes[statusIndexes.length-1]:-1;
+
+  if(iDT===-1) throw new Error('Coluna DT não encontrada na planilha. Verifique o formato.');
+
+  const data=[];
+  const seen=new Set();
+  for(let i=1;i<rows.length;i++){
+    const cols=rows[i].map(c=>String(c||'').trim().replace(/^"|"$/g,''));
+    const dt=normalizeDT(String(cols[iDT]||'').replace(/\.0+$/,'').replace(/\D/g,''));
+    if(!dt||seen.has(dt)) continue;
+    seen.add(dt);
+
+    const rawStatus=iStatusFinal!==-1?(cols[iStatusFinal]||''):'';
+    const faturamento=iFaturamento!==-1?(cols[iFaturamento]||''):'';
+    const mappedStatus=normalizeStatus(rawStatus) || normalizeFaturamentoStatus(faturamento);
+    const hora=iHora!==-1?normalizeHora(cols[iHora]):'';
+    const sap=iSap!==-1?normalizeSap(cols[iSap]):'';
+    data.push({dt, rawStatus, faturamento, mappedStatus, hora, sap});
+  }
+
+  if(!data.length) throw new Error('Nenhuma DT encontrada na planilha.');
+  return data;
+}
+
+function renderImportPreview(){
+  const previewHtml=importCsvData.slice(0,8).map(r=>{
+    const mapped=r.mappedStatus || normalizeStatus(r.rawStatus) || normalizeFaturamentoStatus(r.faturamento);
+    const statusLabel=mapped||r.rawStatus||'(sem status)';
+    return `<div style="display:grid;grid-template-columns:82px 58px 80px 105px 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
+      <span style="color:#93c5fd;font-weight:700;">${r.dt}</span>
+      <span style="color:#e2e8f0;">${r.hora||'—'}</span>
+      <span style="color:#e2e8f0;">${r.sap||'—'}</span>
+      <span style="color:#c4b5fd;">${r.faturamento||'—'}</span>
+      <span style="color:${mapped?'#22c55e':'#f59e0b'};">${statusLabel}</span>
+    </div>`;
+  }).join('')+(importCsvData.length>8?`<div style="color:#64748b;font-size:10px;padding-top:4px;">…mais ${importCsvData.length-8} DTs</div>`:'');
+
+  document.getElementById('import-preview-body').innerHTML=
+    `<div style="display:grid;grid-template-columns:82px 58px 80px 105px 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">
+      <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">DT</span>
+      <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">HORA</span>
+      <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">SAP</span>
+      <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">FATURAMENTO</span>
+      <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">STATUS</span>
+    </div>`+previewHtml;
+  document.getElementById('import-preview').style.display='block';
 }
 
 function handleImportFile(file){
@@ -2170,70 +2312,17 @@ function handleImportFile(file){
   const reader=new FileReader();
   reader.onload=e=>{
     try{
-      const text=e.target.result;
-      const lines=text.split(/\r?\n/).filter(l=>l.trim());
-      if(!lines.length) throw new Error('Arquivo vazio');
-
-      // Detect separator (semicolon or comma)
-      const sep=lines[0].includes(';')?';':',';
-      const parsed=parseCSVRelatorio(text,sep).filter(r=>r.some(c=>String(c||'').trim()));
-      const headers=parsed[0].map(h=>String(h||'').trim().replace(/^"|"$/g,'').toUpperCase());
-
-      // Find column indices
-      const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
-      const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
-      const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('Nº SAP')||h.includes('NR SAP'));
-      const iStatus=headers.findIndex(h=>h==='STATUS'||h==='STATUS.1');
-      // prefer last STATUS col (STATUS.1 in the sample)
-      const iStatusFinal=headers.lastIndexOf('STATUS.1')!==-1
-        ?headers.lastIndexOf('STATUS.1')
-        :(iStatus!==-1?iStatus:-1);
-
-      if(iDT===-1) throw new Error('Coluna DT não encontrada no CSV. Verifique o formato.');
-
-      importCsvData=[];
-      const seen=new Set();
-      for(let i=1;i<parsed.length;i++){
-        const cols=parsed[i].map(c=>String(c||'').trim().replace(/^"|"$/g,''));
-        const dt=normalizeDT(String(cols[iDT]||'').replace(/\.0+$/,'').replace(/\D/g,''));
-        if(!dt||seen.has(dt)) continue;
-        seen.add(dt);
-        const rawStatus=iStatusFinal!==-1?(cols[iStatusFinal]||''):'';
-        const hora=iHora!==-1?normalizeHora(cols[iHora]):'';
-        const sap=iSap!==-1?normalizeSap(cols[iSap]):'';
-        importCsvData.push({dt, rawStatus, hora, sap});
-      }
-
-      if(!importCsvData.length) throw new Error('Nenhuma DT encontrada no CSV.');
-
-      // Preview
-      const previewHtml=importCsvData.slice(0,8).map(r=>{
-        const mapped=normalizeStatus(r.rawStatus);
-        return `<div style="display:grid;grid-template-columns:90px 70px 90px 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
-          <span style="color:#93c5fd;font-weight:700;">${r.dt}</span>
-          <span style="color:#e2e8f0;">${r.hora||'—'}</span>
-          <span style="color:#e2e8f0;">${r.sap||'—'}</span>
-          <span style="color:${mapped?'#22c55e':'#f59e0b'};">${mapped||r.rawStatus||'(sem status)'}</span>
-        </div>`;
-      }).join('')+(importCsvData.length>8?`<div style="color:#64748b;font-size:10px;padding-top:4px;">…mais ${importCsvData.length-8} DTs</div>`:'');
-
-      document.getElementById('import-preview-body').innerHTML=
-        `<div style="display:grid;grid-template-columns:90px 70px 90px 1fr;gap:6px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">DT</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">HORA</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">SAP</span>
-          <span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">STATUS</span>
-        </div>`+previewHtml;
-      document.getElementById('import-preview').style.display='block';
+      importCsvData=buildImportRows(parseImportFileRows(file,e.target.result));
+      renderImportPreview();
       document.getElementById('import-drop-label').textContent=`✅ ${file.name} — ${importCsvData.length} DTs encontradas`;
       document.getElementById('import-btn').disabled=false;
     }catch(err){
       document.getElementById('import-err').textContent='❌ '+err.message;
       document.getElementById('import-err').style.display='block';
-      document.getElementById('import-drop-label').textContent='Clique ou arraste o CSV aqui';
+      document.getElementById('import-drop-label').textContent='Clique ou arraste a planilha aqui';
     }
   };
-  reader.readAsText(file,'latin1');
+  reader.readAsArrayBuffer(file);
 }
 
 async function runImport(){
@@ -2251,15 +2340,15 @@ async function runImport(){
     // Filtrar só DTs de HOJE e AMANHÃ do dashboard
     const dashHojeAmanha=tableData.filter(r=>r.dia_ref==='HOJE'||r.dia_ref==='AMANHÃ');
 
-    // Build a Set of DTs in the CSV
+    // Build a Set of DTs in the imported sheet
     const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
 
     let updated=0, fieldUpdated=0, expedited=0, skipped=0;
 
-    // 1) Update DTs present in CSV (só as que estão no dash de hoje/amanhã)
+    // 1) Update DTs present in imported sheet (só as que estão no dash de hoje/amanhã)
     for(const csvRow of importCsvData){
       const dt=String(csvRow.dt);
-      const mappedStatus=normalizeStatus(csvRow.rawStatus);
+      const mappedStatus=csvRow.mappedStatus || normalizeStatus(csvRow.rawStatus) || normalizeFaturamentoStatus(csvRow.faturamento);
 
       const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
       if(!dashRow){skipped++;continue;}
@@ -2286,12 +2375,12 @@ async function runImport(){
       }catch(e){skipped++;}
     }
 
-    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, grade ≤ agora, ausentes do CSV
+    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, grade ≤ agora, ausentes da planilha
     const finalSet=new Set(STATUS_FINAIS);
     for(const dashRow of dashHojeAmanha){
       if(dashRow.dia_ref!=='HOJE') continue;            // só HOJE
       const dt=String(dashRow.dt);
-      if(csvDtSet.has(dt)) continue;                    // está no CSV, pular
+      if(csvDtSet.has(dt)) continue;                    // está na planilha, pular
       if(finalSet.has(dashRow.status)) continue;         // já finalizada
 
       // Checa se a grade já passou
