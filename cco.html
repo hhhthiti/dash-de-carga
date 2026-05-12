@@ -298,7 +298,11 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <button class="bexp" onclick="exportCSV()">⬇ CSV</button>
         <button class="blog" onclick="openLogs()">📋 Logs</button>
         <button class="bg"   onclick="reloadTable()">↻ Atualizar</button>
-        <button class="bg"   onclick="setStep(1)">← Recarregar arquivo</button>
+        <button class="bg" style="color:#f59e0b;border-color:#f59e0b44;" onclick="document.getElementById('f1-inline').click()" title="Subir nova agenda (substitui a atual no banco)">↑ Agenda</button>
+        <button class="bg" style="color:#60a5fa;border-color:#60a5fa44;" onclick="document.getElementById('f2-inline').click()" title="Subir relatório de expedição (materiais)">↑ Materiais</button>
+        <input type="file" id="f1-inline" accept=".xls,.xlsx,.txt,.tsv,.csv" style="display:none" onchange="processAgend(this.files[0])"/>
+        <input type="file" id="f2-inline" accept=".csv" style="display:none" onchange="processRelatorioCSV(this.files[0])"/>
+        <span id="ctrl-s-hint" style="font-size:9px;color:#475569;letter-spacing:1px;">Ctrl+S salva grade</span>
       </div>
     </div>
 

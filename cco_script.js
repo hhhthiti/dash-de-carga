@@ -91,13 +91,36 @@ let activeRefsOverride=[];
    INIT
 ═══════════════════════════════════════════════════════ */
 // Ctrl+Ç — ativa/desativa modo Pré-Fat
-document.addEventListener('keydown', e=>{
+document.addEventListener('keydown', async e=>{
   if(e.ctrlKey && (e.key==='ç'||e.key==='Ç'||e.keyCode===231||e.keyCode===199)){
     e.preventDefault();
     preFatMode=!preFatMode;
     document.body.classList.toggle('prefat-mode', preFatMode);
     showOk(preFatMode?'✅ Modo PRÉ-FAT ativado — marque as DTs pré-faturadas':'❌ Modo PRÉ-FAT desativado');
     renderRows();
+  }
+  // Ctrl+S — salva a grade (grade_carregamento + fim_carregamento) de todas as DTs no banco
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){
+    e.preventDefault();
+    if(!tableData.length) return;
+    spin(true);
+    showInf('Salvando grade no banco…');
+    try{
+      for(const row of tableData){
+        if(!row.dt||!row.data_ref) continue;
+        await sbPatch('reporte_carga',{
+          grade_carregamento:String(row.grade_carregamento||''),
+          fim_carregamento:String(row.fim_carregamento||''),
+          updated_at:new Date().toISOString(),
+        },{dt:row.dt,data_ref:row.data_ref});
+      }
+      hideInf();
+      showOk('✅ Grade salva no banco para '+tableData.length+' DT(s)!');
+    }catch(err){
+      hideInf();
+      showErr('Erro ao salvar grade: '+err.message);
+    }
+    spin(false);
   }
 });
 
@@ -110,10 +133,13 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     await tryLoadExisting();
     syncTxt.textContent = 'ONLINE';
     if(syncDot){ syncDot.style.background='#22c55e'; }
+    // Se não carregou nada do banco, mostra o passo 1 para upload da agenda
+    if(!tableData.length) setStep(1);
   } catch(e) {
     syncTxt.textContent = 'ERRO';
     if(syncDot){ syncDot.style.background='#ef4444'; syncDot.style.animation='none'; }
     showErr('Falha ao conectar: ' + e.message);
+    setStep(1);
   }
   // Ticker para atualizar emojis de relógio a cada minuto
   setInterval(()=>{ if(tableData.length) renderRows(); }, 60000);
@@ -461,7 +487,8 @@ function decodeBuf(buf){
 function processAgend(file){
   if(!file)return;
   showInf('Lendo agendamento…');
-  document.getElementById('dz1l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
+  const isInlineUpload = document.getElementById('passo4').style.display !== 'none';
+  if(document.getElementById('dz1l')) document.getElementById('dz1l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
   file.arrayBuffer().then(buf=>{
     try{
       // Tenta importar materiais automaticamente se o arquivo tiver as colunas certas (XLSX)
@@ -494,7 +521,17 @@ function processAgend(file){
       }
       if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111'+(iDoca!==-1?' e DOCA preenchida':'')+' encontrada.');
       hideInf();
-      renderStep2();
+      if(isInlineUpload){
+        // Upload feito de dentro da tabela: pula passo 2/3 e vai direto para o banco
+        const T=today(),AM=tomorrow();
+        const dtsH=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,T));
+        const dtsA=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,AM));
+        dtsMescladas=[...dtsH,...dtsA];
+        showOk('Agenda atualizada ('+agendRows.length+' linhas). Sincronizando banco…');
+        await buildTable();
+      } else {
+        renderStep2();
+      }
     }catch(e){hideInf();showErr(e.message);}
   });
 }
@@ -1379,7 +1416,6 @@ async function tryLoadExisting(){
       tableData.forEach(r=>{ if(r.dt&&r.tipo_operacao) tipoOpMap[r.dt]=r.tipo_operacao; });
       renderRows();
       setStep(4);
-      showOk('Tabela carregada do banco com a agenda mais recente salva.');
     }
   }catch(e){ throw e; /* erro de conexão — propaga para o badge */ }
 }
