@@ -15,7 +15,8 @@ async function sbFetch(url, options={}){
       if(r.ok) return r;
       const msg=await r.text();
       const isRetryable=r.status>=500||r.status===429;
-      if(!isRetryable || i===SB_RETRY_MS.length) throw new Error(msg||`HTTP ${r.status}`);
+      r._bodyText=msg;
+      if(!isRetryable || i===SB_RETRY_MS.length) return r;
       await new Promise(res=>setTimeout(res,SB_RETRY_MS[i]));
     }catch(e){
       lastErr=e;
@@ -26,39 +27,121 @@ async function sbFetch(url, options={}){
   throw lastErr || new Error('Falha de rede ao acessar Supabase.');
 }
 
+async function sbErrorText(r){
+  return r._bodyText!==undefined ? r._bodyText : await r.text();
+}
+
+function sbMissingColumnFromError(msg){
+  const text=String(msg||'');
+  const parsed=(()=>{try{return JSON.parse(text);}catch(e){return null;}})();
+  const fullMsg=parsed&&parsed.message?parsed.message:text;
+  const m=fullMsg.match(/Could not find the '([^']+)' column/i);
+  return m?m[1]:'';
+}
+
+function rowsWithoutColumn(rows, col){
+  return rows.map(row=>{
+    const copy={...row};
+    delete copy[col];
+    return copy;
+  });
+}
+
+function queryWithoutSelectedColumn(qs, col){
+  const parts=String(qs||'').split('&');
+  let changed=false;
+  const next=parts.map(part=>{
+    if(!part.startsWith('select=')) return part;
+    const selected=part.slice(7).split(',').filter(c=>c!==col);
+    changed=true;
+    return 'select='+selected.join(',');
+  });
+  return changed?next.join('&'):qs;
+}
+
 async function sbGet(table, qs=''){
   if(!SB_KEY || SB_KEY.includes('COLE_SUA_ANON_KEY_AQUI')){
     throw new Error('Chave Supabase não configurada em cco_script.js (SB_KEY).');
   }
-  const r=await sbFetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
-  if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
-  return r.json();
+  let query=qs;
+  const ignoredCols=new Set();
+  while(true){
+    const r=await sbFetch(`${SB_URL}/${table}?${query}`,{headers:HDR});
+    if(r.ok) return r.json();
+    const msg=await sbErrorText(r);
+    const missing=sbMissingColumnFromError(msg);
+    if(missing&&!ignoredCols.has(missing)&&String(query||'').includes('select=')){
+      const next=queryWithoutSelectedColumn(query,missing);
+      if(next!==query){
+        ignoredCols.add(missing);
+        query=next;
+        continue;
+      }
+    }
+    throw new Error(`GET ${table}: `+msg);
+  }
 }
 async function sbUpsert(table, rows){
   for(let i=0;i<rows.length;i+=30){
-    const r=await sbFetch(`${SB_URL}/${table}`,{
-      method:'POST',
-      headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body:JSON.stringify(rows.slice(i,i+30))
-    });
-    if(!r.ok) throw new Error(`UPSERT ${table} lote ${i/30+1}: `+await r.text());
+    let lote=rows.slice(i,i+30);
+    const ignoredCols=new Set();
+    while(true){
+      const r=await sbFetch(`${SB_URL}/${table}`,{
+        method:'POST',
+        headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body:JSON.stringify(lote)
+      });
+      if(r.ok) break;
+      const msg=await sbErrorText(r);
+      const missing=sbMissingColumnFromError(msg);
+      if(missing&&!ignoredCols.has(missing)&&lote.some(row=>Object.prototype.hasOwnProperty.call(row,missing))){
+        ignoredCols.add(missing);
+        lote=rowsWithoutColumn(lote,missing);
+        continue;
+      }
+      throw new Error(`UPSERT ${table} lote ${i/30+1}: `+msg);
+    }
   }
 }
 async function sbPatch(table, data, filters){
   const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${v.includes('/')?'"'+v+'"':encodeURIComponent(v)}`).join('&');
-  const r=await sbFetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
-  if(!r.ok) throw new Error(`PATCH ${table}: `+await r.text());
+  let payload={...data};
+  const ignoredCols=new Set();
+  while(Object.keys(payload).length){
+    const r=await sbFetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(payload)});
+    if(r.ok) return;
+    const msg=await sbErrorText(r);
+    const missing=sbMissingColumnFromError(msg);
+    if(missing&&!ignoredCols.has(missing)&&Object.prototype.hasOwnProperty.call(payload,missing)){
+      ignoredCols.add(missing);
+      delete payload[missing];
+      continue;
+    }
+    throw new Error(`PATCH ${table}: `+msg);
+  }
 }
 async function sbDelete(table, filters){
   const q=Object.entries(filters).map(([k,v])=>{
     const vs=String(v); return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
   }).join('&');
   const r=await sbFetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
-  if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
+  if(!r.ok) throw new Error(`DELETE ${table}: `+await sbErrorText(r));
 }
 async function sbInsert(table, rows){
-  const r=await sbFetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
-  if(!r.ok) throw new Error(`INSERT ${table}: `+await r.text());
+  let payload=rows;
+  const ignoredCols=new Set();
+  while(true){
+    const r=await sbFetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(payload)});
+    if(r.ok) return;
+    const msg=await sbErrorText(r);
+    const missing=sbMissingColumnFromError(msg);
+    if(missing&&!ignoredCols.has(missing)&&payload.some(row=>Object.prototype.hasOwnProperty.call(row,missing))){
+      ignoredCols.add(missing);
+      payload=rowsWithoutColumn(payload,missing);
+      continue;
+    }
+    throw new Error(`INSERT ${table}: `+msg);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -369,7 +452,7 @@ function fmtDT(d,t){
 }
 function parseBR(s){
   if(!s||!s.trim())return null;
-  const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[T\s](\d{2}):(\d{2}))?/);
+  const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[,T\s]+(\d{2}):(\d{2}))?/);
   return m?new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)):null;
 }
 
@@ -1116,7 +1199,7 @@ function renderRows(){
       : '';
     tr.innerHTML=
       `<td>${diaTag}</td>`+
-      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${clock?` <span style="margin-left:4px;">${clock}</span>`:''}${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}` +
+      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${clock?` <span style="margin-left:4px;vertical-align:middle;">${clock}</span>`:''}${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}</td>` +
       `<td class="td-transp">${row.transportadora||'—'}</td>`+
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
       `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
