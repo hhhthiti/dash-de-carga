@@ -533,7 +533,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <span style="font-size:22px;">📋</span>
       <div>
         <div style="font-weight:900;font-size:15px;color:#f1f5f9;letter-spacing:.5px;">Importar Relatório de Expedição</div>
-        <div style="font-size:11px;color:#64748b;margin-top:2px;">Atualiza status, hora de chegada e SAP/portaria com base no CSV</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Atualiza status, hora de chegada e SAP/portaria com base na planilha</div>
       </div>
       <button onclick="closeImportModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button>
     </div>
@@ -544,10 +544,10 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       ondragleave="this.style.borderColor='#334155';this.style.background='#0f172a';"
       ondrop="event.preventDefault();this.style.borderColor='#334155';this.style.background='#0f172a';handleImportFile(event.dataTransfer.files[0])">
       <div style="font-size:30px;margin-bottom:6px;">📄</div>
-      <div id="import-drop-label" style="color:#64748b;font-size:13px;">Clique ou arraste o CSV aqui</div>
-      <div style="font-size:11px;color:#334155;margin-top:4px;">Formato: CSV com colunas DT, HORA, SAP e STATUS</div>
+      <div id="import-drop-label" style="color:#64748b;font-size:13px;">Clique ou arraste a planilha aqui</div>
+      <div style="font-size:11px;color:#334155;margin-top:4px;">Formato: CSV/XLSX com colunas DT, HORA, FATURAMENTO, SAP e STATUS</div>
     </div>
-    <input type="file" id="import-file-input" accept=".csv" style="display:none" onchange="handleImportFile(this.files[0])"/>
+    <input type="file" id="import-file-input" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handleImportFile(this.files[0])"/>
 
     <div id="import-preview" style="display:none;margin-bottom:14px;">
       <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:8px;">PRÉ-VISUALIZAÇÃO</div>
@@ -563,8 +563,9 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     </div>
     <div style="margin-top:12px;padding:8px 12px;background:#1a2540;border-radius:7px;font-size:10px;color:#64748b;line-height:1.7;">
       💡 <b style="color:#94a3b8;">Regras aplicadas:</b><br>
-      • DT presente no CSV → status, hora e SAP/portaria atualizados<br>
-      • DT no dash com horário ≤ agora e ausente do CSV → marcada como <b style="color:#22c55e">EXPEDIDO</b>
+      • DT presente na planilha → status, hora e SAP/portaria atualizados<br>
+      • DT no dash com horário ≤ agora e ausente da planilha → marcada como <b style="color:#22c55e">EXPEDIDO</b><br>
+      • FATURAMENTO com custo de frete/problema de DT/problema JSL → tratado como <b style="color:#06b6d4">EM FATURAMENTO</b> quando STATUS estiver vazio
     </div>
   </div>
 </div>
