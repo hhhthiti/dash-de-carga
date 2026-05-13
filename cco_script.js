@@ -653,6 +653,7 @@ function processAgend(file){
         const doca=iDoca!==-1?(c[iDoca]||'').trim():'';
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         if(iDoca!==-1&&!doca)continue;
+        if(shouldSkipDocaMogi(doca)) continue;
         agendRows.push({
           DT:normalizeDT(c[iDT]),LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
@@ -2216,6 +2217,8 @@ function closeImportModal(){
 // Mapa de status da planilha → status do dashboard
 const CSV_STATUS_MAP = {
   'CARREGANDO':    'CARREGANDO',
+  'CARREGADO':     'CARREGANDO',
+  'CARREGADOS':    'CARREGANDO',
   'EXPEDIDO':      'EXPEDIDO',
   'PATIO':         'PATIO',
   'EM PATIO':      'PATIO',
@@ -2259,6 +2262,12 @@ function normalizeFaturamentoStatus(raw){
   return CSV_FATURAMENTO_MAP[s] || null;
 }
 
+function shouldSkipDocaMogi(docaRaw){
+  const doca=normalizeImportText(docaRaw||'').replace(/\s+/g,'');
+  // Exclui DOCA_X_FAB_MOGI (sem sufixo), mantém DOCA_X_FAB_MOGI_IFNT.
+  return /^DOCA_\d+_FAB_MOGI$/.test(doca);
+}
+
 function detectImportSeparator(text){
   const firstLine=(text.split(/\r?\n/).find(l=>l.trim())||'');
   const candidates=['\t',';',','];
@@ -2294,7 +2303,10 @@ function buildImportRows(parsed){
   // DT, HORA, DATA, FATURAMENTO, SAP, TRANSPORTADORA, STATUS, Mapa, Grade, TIPO, PESO.
   const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
   const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
-  const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP'));
+  const iSap=headers.findIndex(h=>
+    h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP')||
+    h==='PLACA'||h.includes('PLACA')
+  );
   const iFaturamento=headers.findIndex(h=>h==='FATURAMENTO'||h.includes('FATURAMENTO'));
   const statusIndexes=headers.map((h,i)=>({h,i})).filter(x=>x.h==='STATUS'||x.h.startsWith('STATUS.')).map(x=>x.i);
   const iStatusFinal=statusIndexes.length?statusIndexes[statusIndexes.length-1]:-1;
