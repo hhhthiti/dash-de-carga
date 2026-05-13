@@ -169,6 +169,31 @@ let currentTableTab='todas';
 let reagendDT=null;
 let dtSearchTerm='';
 let activeRefsOverride=[];
+let autoSyncPausedUntil=0;
+let fileWorkflowInProgress=false;
+
+
+function pauseAutoSync(ms=120000){
+  autoSyncPausedUntil=Math.max(autoSyncPausedUntil,Date.now()+ms);
+}
+
+function releaseAutoSyncAfterSave(ms=45000){
+  fileWorkflowInProgress=false;
+  pauseAutoSync(ms);
+}
+
+function isVisible(id){
+  const el=document.getElementById(id);
+  return !!el && el.style.display!=='none';
+}
+
+function shouldSkipAutoSync(){
+  const importModal=document.getElementById('import-overlay');
+  return fileWorkflowInProgress ||
+    Date.now()<autoSyncPausedUntil ||
+    !isVisible('passo4') ||
+    (importModal && importModal.style.display!=='none');
+}
 
 /* ═══════════════════════════════════════════════════════
    INIT
@@ -231,6 +256,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   setInterval(()=>{ if(tableData.length) renderRows(); }, 60000);
   // Auto-sync para ambiente com múltiplos usuários
   setInterval(async ()=>{
+    if(shouldSkipAutoSync()) return;
     try{
       await tryLoadExisting();
       syncTxt.textContent='ONLINE';
@@ -261,6 +287,8 @@ function setStep(n){
     d.textContent=i<n?'✓':i;
   });
   document.getElementById('aerr').style.display='none';
+  // Pausa o auto-sync enquanto o usuário estiver no assistente de upload.
+  if(n!==4) pauseAutoSync();
   // Quando entrar no passo 3, mostra dica de materiais já importados
   if(n===1) activeRefsOverride=[];
   if(n===3){
@@ -599,6 +627,8 @@ function decodeBuf(buf){
 ═══════════════════════════════════════════════════════ */
 function processAgend(file){
   if(!file)return;
+  fileWorkflowInProgress=true;
+  pauseAutoSync(180000);
   showInf('Lendo agendamento…');
   const isInlineUpload = document.getElementById('passo4').style.display !== 'none';
   if(document.getElementById('dz1l')) document.getElementById('dz1l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
@@ -642,11 +672,12 @@ function processAgend(file){
         dtsMescladas=[...dtsH,...dtsA];
         showOk('Agenda atualizada ('+agendRows.length+' linhas). Sincronizando banco…');
         await buildTable();
+        releaseAutoSyncAfterSave();
       } else {
         renderStep2();
       }
-    }catch(e){hideInf();showErr(e.message);}
-  });
+    }catch(e){hideInf();showErr(e.message);releaseAutoSyncAfterSave(60000);}
+  }).catch(e=>{hideInf();showErr('Erro ao abrir o arquivo: '+e.message);releaseAutoSyncAfterSave(60000);});
 }
 
 function renderStep2(){
@@ -757,6 +788,8 @@ function parseCSVRelatorio(text, sep) {
 
 function processRelatorioCSV(file) {
   if (!file) return;
+  fileWorkflowInProgress=true;
+  pauseAutoSync(180000);
   showInf('Lendo CSV do Relatório de Expedição…');
   const dz2Label=document.getElementById('dz2l');
   if(dz2Label) dz2Label.innerHTML = '<span class="dz-ok">✓ ' + file.name + '</span>';
@@ -854,18 +887,21 @@ function processRelatorioCSV(file) {
         showOk(`Relatório OK — ${totalDTs} transportes · ${linhasOk} linhas · materiais salvos para ${importedCount} DT(s)`);
         await reloadTable();
         setStep(4);
+        releaseAutoSyncAfterSave();
       }else{
         hideInf();
         showOk(`Relatório OK — ${totalDTs} transportes · ${linhasOk} linhas`);
         await buildTable();
+        releaseAutoSyncAfterSave();
       }
     } catch(err) {
       hideInf();
       showErr('Erro ao ler CSV: ' + err.message);
       console.error(err);
+      releaseAutoSyncAfterSave(60000);
     }
   };
-  reader.onerror = () => { hideInf(); showErr('Erro ao abrir o arquivo.'); };
+  reader.onerror = () => { hideInf(); showErr('Erro ao abrir o arquivo.'); releaseAutoSyncAfterSave(60000); };
   reader.readAsText(file, 'ISO-8859-1');
 }
 
@@ -961,6 +997,8 @@ async function saveUploadSnapshot(rows){
    BUILD TABLE — Upsert preservando status/hora_chegada
 ═══════════════════════════════════════════════════════ */
 async function buildTable(){
+  fileWorkflowInProgress=true;
+  pauseAutoSync(180000);
   showInf('Sincronizando com o banco…');
   const T=today(),AM=tomorrow();
   const kT=dKey(T), kAM=dKey(AM);
@@ -1029,6 +1067,7 @@ async function buildTable(){
     if(importedCount>0) showOk('Materiais sincronizados automaticamente para '+importedCount+' DT(s).');
     await reloadTable();
     setStep(4);
+    releaseAutoSyncAfterSave();
   }catch(e){
     hideInf();
     showErr('Erro banco (tabela ainda aparece): '+e.message);
@@ -1046,6 +1085,7 @@ async function buildTable(){
     }));
     renderRows();
     setStep(4);
+    releaseAutoSyncAfterSave();
   }
 }
 
@@ -2157,6 +2197,7 @@ document.addEventListener('keydown', e => {
 });
 
 function openImportModal(){
+  pauseAutoSync(180000);
   importCsvData=null;
   document.getElementById('import-btn').disabled=true;
   document.getElementById('import-drop-label').textContent='Clique ou arraste a planilha aqui';
@@ -2169,6 +2210,7 @@ function openImportModal(){
 
 function closeImportModal(){
   document.getElementById('import-overlay').style.display='none';
+  releaseAutoSyncAfterSave();
 }
 
 // Mapa de status da planilha → status do dashboard
@@ -2305,6 +2347,8 @@ function renderImportPreview(){
 
 function handleImportFile(file){
   if(!file) return;
+  fileWorkflowInProgress=true;
+  pauseAutoSync(180000);
   document.getElementById('import-err').style.display='none';
   document.getElementById('import-result').style.display='none';
   document.getElementById('import-drop-label').textContent='⏳ Lendo arquivo…';
@@ -2316,10 +2360,12 @@ function handleImportFile(file){
       renderImportPreview();
       document.getElementById('import-drop-label').textContent=`✅ ${file.name} — ${importCsvData.length} DTs encontradas`;
       document.getElementById('import-btn').disabled=false;
+      pauseAutoSync(180000);
     }catch(err){
       document.getElementById('import-err').textContent='❌ '+err.message;
       document.getElementById('import-err').style.display='block';
       document.getElementById('import-drop-label').textContent='Clique ou arraste a planilha aqui';
+      releaseAutoSyncAfterSave(60000);
     }
   };
   reader.readAsArrayBuffer(file);
@@ -2327,6 +2373,8 @@ function handleImportFile(file){
 
 async function runImport(){
   if(!importCsvData||!importCsvData.length) return;
+  fileWorkflowInProgress=true;
+  pauseAutoSync(180000);
 
   document.getElementById('import-btn').disabled=true;
   document.getElementById('import-btn').textContent='⏳ Processando…';
@@ -2416,4 +2464,5 @@ async function runImport(){
 
   document.getElementById('import-btn').disabled=false;
   document.getElementById('import-btn').textContent='⚡ Atualizar Dashboard';
+  releaseAutoSyncAfterSave();
 }
