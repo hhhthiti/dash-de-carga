@@ -2236,11 +2236,25 @@ const CSV_STATUS_MAP = {
 // Motivos da nova coluna FATURAMENTO. Quando o STATUS vem vazio,
 // qualquer um deles indica que a DT está em faturamento.
 const CSV_FATURAMENTO_MAP = {
+  'N/A':            null,
+  'CADASTRO OTM':   'EM FATURAMENTO',
+  'CADASTROOTM':    'EM FATURAMENTO',
   'CUSTO DE FRETE': 'EM FATURAMENTO',
+  'CUSTODE FRETE':  'EM FATURAMENTO',
+  'CUSTODEFRETE':   'EM FATURAMENTO',
   'PROBLEMA DE DT': 'EM FATURAMENTO',
+  'TROCA DE DT':    'EM FATURAMENTO',
+  'TROCADEDT':      'EM FATURAMENTO',
   'PROBELMA DE DT': 'EM FATURAMENTO',
+  'PROBLEMAS JSL':  'EM FATURAMENTO',
+  'PROBLEMASJSL':   'EM FATURAMENTO',
   'PROBLEMA JSL':   'EM FATURAMENTO',
   'PROBELMA JSL':   'EM FATURAMENTO',
+  'TNF':            'EM FATURAMENTO',
+  'AJUSTE FISCAL':  'EM FATURAMENTO',
+  'AJUSTEFISCAL':   'EM FATURAMENTO',
+  'ERRO DE REMESSA':'EM FATURAMENTO',
+  'ERRODEREMESSA':  'EM FATURAMENTO',
 };
 
 function normalizeImportText(raw){
@@ -2259,6 +2273,7 @@ function normalizeStatus(raw){
 
 function normalizeFaturamentoStatus(raw){
   const s=normalizeImportText(raw);
+  if(!s || s==='N/A') return null;
   return CSV_FATURAMENTO_MAP[s] || null;
 }
 
