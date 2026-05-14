@@ -2409,9 +2409,6 @@ async function runImport(){
   document.getElementById('import-err').style.display='none';
 
   try{
-    const now=new Date();
-    const nowMinutes=now.getHours()*60+now.getMinutes();
-
     // Filtrar só DTs de HOJE e AMANHÃ do dashboard
     const dashHojeAmanha=tableData.filter(r=>r.dia_ref==='HOJE'||r.dia_ref==='AMANHÃ');
 
@@ -2433,12 +2430,13 @@ async function runImport(){
 
       const dashRow=dashByDtNorm.get(dtNorm);
       if(!dashRow){skipped++;continue;}
+      const dashDt=String(dashRow.dt||dt);
 
       const patch={};
       if(csvRow.hora && dashRow.hora_chegada!==csvRow.hora) patch.hora_chegada=csvRow.hora;
       if(csvRow.sap && dashRow.n_portaria!==csvRow.sap) patch.n_portaria=csvRow.sap;
       if(Object.keys(patch).length){
-        await sbPatch('reporte_carga',{...patch,updated_at:new Date().toISOString()},{dt,data_ref:dashRow.data_ref});
+        await sbPatch('reporte_carga',{...patch,updated_at:new Date().toISOString()},{dt:dashDt,data_ref:dashRow.data_ref});
         Object.assign(dashRow,patch);
         fieldUpdated++;
       }
@@ -2450,13 +2448,13 @@ async function runImport(){
       if(dashRow.status===mappedStatus){continue;} // já correto
 
       try{
-        await saveStatus(dt,dashRow.data_ref,mappedStatus);
+        await saveStatus(dashDt,dashRow.data_ref,mappedStatus);
         dashRow.status=mappedStatus;
         updated++;
       }catch(e){skipped++;}
     }
 
-    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, grade ≤ agora, ausentes da planilha
+    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, ausentes da planilha
     const finalSet=new Set(STATUS_FINAIS);
     for(const dashRow of dashHojeAmanha){
       if(dashRow.dia_ref!=='HOJE') continue;            // só HOJE
@@ -2464,18 +2462,6 @@ async function runImport(){
       const dtNorm=normalizeDT(dt);
       if(csvDtSet.has(dtNorm)) continue;                // está na planilha, pular
       if(finalSet.has(dashRow.status)) continue;         // já finalizada
-
-      // Checa se a grade já passou
-      const gradeStr=dashRow.grade_carregamento||'';
-      const gradeMatch=gradeStr.match(/(\d{1,2}):(\d{2})/);
-      if(gradeMatch){
-        const gradeMinutes=parseInt(gradeMatch[1])*60+parseInt(gradeMatch[2]);
-        if(gradeMinutes>nowMinutes) continue; // grade ainda no futuro
-      } else {
-        if(!dashRow.hora_chegada) continue;
-        const [hh,mm]=(dashRow.hora_chegada||'').split(':').map(Number);
-        if(isNaN(hh)||hh*60+mm>nowMinutes) continue;
-      }
 
       try{
         await saveStatus(dt,dashRow.data_ref,'EXPEDIDO');
