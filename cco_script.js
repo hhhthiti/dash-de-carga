@@ -2416,16 +2416,22 @@ async function runImport(){
     const dashHojeAmanha=tableData.filter(r=>r.dia_ref==='HOJE'||r.dia_ref==='AMANHÃ');
 
     // Build a Set of DTs in the imported sheet
-    const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
+    const csvDtSet=new Set(importCsvData.map(r=>normalizeDT(r.dt)).filter(Boolean));
+    const dashByDtNorm=new Map();
+    for(const row of dashHojeAmanha){
+      const key=normalizeDT(row.dt);
+      if(key&&!dashByDtNorm.has(key)) dashByDtNorm.set(key,row);
+    }
 
     let updated=0, fieldUpdated=0, expedited=0, skipped=0;
 
     // 1) Update DTs present in imported sheet (só as que estão no dash de hoje/amanhã)
     for(const csvRow of importCsvData){
       const dt=String(csvRow.dt);
+      const dtNorm=normalizeDT(dt);
       const mappedStatus=csvRow.mappedStatus || normalizeStatus(csvRow.rawStatus) || normalizeFaturamentoStatus(csvRow.faturamento);
 
-      const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
+      const dashRow=dashByDtNorm.get(dtNorm);
       if(!dashRow){skipped++;continue;}
 
       const patch={};
@@ -2455,7 +2461,8 @@ async function runImport(){
     for(const dashRow of dashHojeAmanha){
       if(dashRow.dia_ref!=='HOJE') continue;            // só HOJE
       const dt=String(dashRow.dt);
-      if(csvDtSet.has(dt)) continue;                    // está na planilha, pular
+      const dtNorm=normalizeDT(dt);
+      if(csvDtSet.has(dtNorm)) continue;                // está na planilha, pular
       if(finalSet.has(dashRow.status)) continue;         // já finalizada
 
       // Checa se a grade já passou
