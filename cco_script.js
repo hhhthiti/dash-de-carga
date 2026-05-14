@@ -653,6 +653,7 @@ function processAgend(file){
         const doca=iDoca!==-1?(c[iDoca]||'').trim():'';
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         if(iDoca!==-1&&!doca)continue;
+        if(shouldSkipDocaMogi(doca)) continue;
         agendRows.push({
           DT:normalizeDT(c[iDT]),LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
@@ -2216,6 +2217,8 @@ function closeImportModal(){
 // Mapa de status da planilha → status do dashboard
 const CSV_STATUS_MAP = {
   'CARREGANDO':    'CARREGANDO',
+  'CARREGADO':     'CARREGANDO',
+  'CARREGADOS':    'CARREGANDO',
   'EXPEDIDO':      'EXPEDIDO',
   'PATIO':         'PATIO',
   'EM PATIO':      'PATIO',
@@ -2233,11 +2236,25 @@ const CSV_STATUS_MAP = {
 // Motivos da nova coluna FATURAMENTO. Quando o STATUS vem vazio,
 // qualquer um deles indica que a DT está em faturamento.
 const CSV_FATURAMENTO_MAP = {
+  'N/A':            null,
+  'CADASTRO OTM':   'EM FATURAMENTO',
+  'CADASTROOTM':    'EM FATURAMENTO',
   'CUSTO DE FRETE': 'EM FATURAMENTO',
+  'CUSTODE FRETE':  'EM FATURAMENTO',
+  'CUSTODEFRETE':   'EM FATURAMENTO',
   'PROBLEMA DE DT': 'EM FATURAMENTO',
+  'TROCA DE DT':    'EM FATURAMENTO',
+  'TROCADEDT':      'EM FATURAMENTO',
   'PROBELMA DE DT': 'EM FATURAMENTO',
+  'PROBLEMAS JSL':  'EM FATURAMENTO',
+  'PROBLEMASJSL':   'EM FATURAMENTO',
   'PROBLEMA JSL':   'EM FATURAMENTO',
   'PROBELMA JSL':   'EM FATURAMENTO',
+  'TNF':            'EM FATURAMENTO',
+  'AJUSTE FISCAL':  'EM FATURAMENTO',
+  'AJUSTEFISCAL':   'EM FATURAMENTO',
+  'ERRO DE REMESSA':'EM FATURAMENTO',
+  'ERRODEREMESSA':  'EM FATURAMENTO',
 };
 
 function normalizeImportText(raw){
@@ -2256,7 +2273,14 @@ function normalizeStatus(raw){
 
 function normalizeFaturamentoStatus(raw){
   const s=normalizeImportText(raw);
+  if(!s || s==='N/A') return null;
   return CSV_FATURAMENTO_MAP[s] || null;
+}
+
+function shouldSkipDocaMogi(docaRaw){
+  const doca=normalizeImportText(docaRaw||'').replace(/\s+/g,'');
+  // Exclui DOCA_X_FAB_MOGI (sem sufixo), mantém DOCA_X_FAB_MOGI_IFNT.
+  return /^DOCA_\d+_FAB_MOGI$/.test(doca);
 }
 
 function detectImportSeparator(text){
@@ -2294,7 +2318,10 @@ function buildImportRows(parsed){
   // DT, HORA, DATA, FATURAMENTO, SAP, TRANSPORTADORA, STATUS, Mapa, Grade, TIPO, PESO.
   const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
   const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
-  const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP'));
+  const iSap=headers.findIndex(h=>
+    h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP')||
+    h==='PLACA'||h.includes('PLACA')
+  );
   const iFaturamento=headers.findIndex(h=>h==='FATURAMENTO'||h.includes('FATURAMENTO'));
   const statusIndexes=headers.map((h,i)=>({h,i})).filter(x=>x.h==='STATUS'||x.h.startsWith('STATUS.')).map(x=>x.i);
   const iStatusFinal=statusIndexes.length?statusIndexes[statusIndexes.length-1]:-1;
@@ -2382,30 +2409,34 @@ async function runImport(){
   document.getElementById('import-err').style.display='none';
 
   try{
-    const now=new Date();
-    const nowMinutes=now.getHours()*60+now.getMinutes();
-
     // Filtrar só DTs de HOJE e AMANHÃ do dashboard
     const dashHojeAmanha=tableData.filter(r=>r.dia_ref==='HOJE'||r.dia_ref==='AMANHÃ');
 
     // Build a Set of DTs in the imported sheet
-    const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
+    const csvDtSet=new Set(importCsvData.map(r=>normalizeDT(r.dt)).filter(Boolean));
+    const dashByDtNorm=new Map();
+    for(const row of dashHojeAmanha){
+      const key=normalizeDT(row.dt);
+      if(key&&!dashByDtNorm.has(key)) dashByDtNorm.set(key,row);
+    }
 
     let updated=0, fieldUpdated=0, expedited=0, skipped=0;
 
     // 1) Update DTs present in imported sheet (só as que estão no dash de hoje/amanhã)
     for(const csvRow of importCsvData){
       const dt=String(csvRow.dt);
+      const dtNorm=normalizeDT(dt);
       const mappedStatus=csvRow.mappedStatus || normalizeStatus(csvRow.rawStatus) || normalizeFaturamentoStatus(csvRow.faturamento);
 
-      const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
+      const dashRow=dashByDtNorm.get(dtNorm);
       if(!dashRow){skipped++;continue;}
+      const dashDt=String(dashRow.dt||dt);
 
       const patch={};
       if(csvRow.hora && dashRow.hora_chegada!==csvRow.hora) patch.hora_chegada=csvRow.hora;
       if(csvRow.sap && dashRow.n_portaria!==csvRow.sap) patch.n_portaria=csvRow.sap;
       if(Object.keys(patch).length){
-        await sbPatch('reporte_carga',{...patch,updated_at:new Date().toISOString()},{dt,data_ref:dashRow.data_ref});
+        await sbPatch('reporte_carga',{...patch,updated_at:new Date().toISOString()},{dt:dashDt,data_ref:dashRow.data_ref});
         Object.assign(dashRow,patch);
         fieldUpdated++;
       }
@@ -2417,31 +2448,20 @@ async function runImport(){
       if(dashRow.status===mappedStatus){continue;} // já correto
 
       try{
-        await saveStatus(dt,dashRow.data_ref,mappedStatus);
+        await saveStatus(dashDt,dashRow.data_ref,mappedStatus);
         dashRow.status=mappedStatus;
         updated++;
       }catch(e){skipped++;}
     }
 
-    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, grade ≤ agora, ausentes da planilha
+    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, ausentes da planilha
     const finalSet=new Set(STATUS_FINAIS);
     for(const dashRow of dashHojeAmanha){
       if(dashRow.dia_ref!=='HOJE') continue;            // só HOJE
       const dt=String(dashRow.dt);
-      if(csvDtSet.has(dt)) continue;                    // está na planilha, pular
+      const dtNorm=normalizeDT(dt);
+      if(csvDtSet.has(dtNorm)) continue;                // está na planilha, pular
       if(finalSet.has(dashRow.status)) continue;         // já finalizada
-
-      // Checa se a grade já passou
-      const gradeStr=dashRow.grade_carregamento||'';
-      const gradeMatch=gradeStr.match(/(\d{1,2}):(\d{2})/);
-      if(gradeMatch){
-        const gradeMinutes=parseInt(gradeMatch[1])*60+parseInt(gradeMatch[2]);
-        if(gradeMinutes>nowMinutes) continue; // grade ainda no futuro
-      } else {
-        if(!dashRow.hora_chegada) continue;
-        const [hh,mm]=(dashRow.hora_chegada||'').split(':').map(Number);
-        if(isNaN(hh)||hh*60+mm>nowMinutes) continue;
-      }
 
       try{
         await saveStatus(dt,dashRow.data_ref,'EXPEDIDO');
