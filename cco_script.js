@@ -2012,10 +2012,6 @@ async function registrarSemGrade(){
   const dataRef=dKey(today());
   const row={dt:String(dtNorm),transportadora:transp,grade_carregamento:gradeIni,fim_carregamento:gradeFim,hora_chegada:'',n_portaria:'',status:'AG CHEGADA',descricao_documento:motivo||'ADICIONADA MANUAL',toneladas:'',peso_liquido:'',agenda:gradeIni||'',local_cd:'',dia_ref:'HOJE',data_ref:dataRef,tipo_operacao:'',reagendada:false};
   try{
-    await sbInsert('reporte_semgrade',[{
-      dt:String(dtNorm),transportadora:transp,motivo,observacao:obs,
-      created_at:new Date().toISOString()
-    }]);
     const exists=await sbGet('reporte_carga',`dt=eq.${encodeURIComponent(dtNorm)}&data_ref=eq.${encodeURIComponent(dataRef)}&select=dt&limit=1`);
     if(!exists||!exists.length) await sbInsert('reporte_carga',[row]);
   }catch(e){/* tabela pode não existir ainda */}
