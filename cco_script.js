@@ -1057,8 +1057,8 @@ async function buildTable(){
         n_portaria:sapNumMap[dt.DT] || ex.n_portaria || '',
         status:statusAtual,
         descricao_documento:String(descDocMap[dt.DT]||ex.descricao_documento||''),
-        toneladas:String(dt.PESO||''),
-        peso_liquido: pesoLiquidoMap[dt.DT] ? String(pesoLiquidoMap[dt.DT].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : String(dt.PESO||''),
+        toneladas:String(toTonInt(dt.PESO)),
+        peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] ?? dt.PESO)),
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
         dia_ref:diaRef,
@@ -1089,8 +1089,8 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',toneladas:dt.PESO,
-      peso_liquido: pesoLiquidoMap[dt.DT] ? String(pesoLiquidoMap[dt.DT].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})) : String(dt.PESO||''),
+      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',toneladas:String(toTonInt(dt.PESO)),
+      peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] ?? dt.PESO)),
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(dt.AGENDA||T),
@@ -1799,7 +1799,13 @@ function rpParseToneladas(row){
     else s=s.replace(/,/g,'');
   }else if(s.includes(',')) s=s.replace(',', '.');
   const n=parseFloat(s.replace(/[^\d.-]/g,''));
-  return Number.isFinite(n)?n:0;
+  if(!Number.isFinite(n)) return 0;
+  return Math.floor(n);
+}
+
+function toTonInt(raw){
+  const n=parseFloat(String(raw||'0').replace(/\./g,'').replace(',','.').replace(/[^\d.-]/g,''));
+  return Number.isFinite(n)?Math.floor(n):0;
 }
 
 function rpWithinWindow(dt,start,end){
