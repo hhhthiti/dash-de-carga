@@ -1001,7 +1001,9 @@ async function saveUploadSnapshot(rows){
       transportadora:'AGENDA_ATIVA',
       created_at:uploadTs,
     }));
-    if(logs.length) await sbInsert('reporte_logs',logs);
+    if(logs.length){
+      for(const log of logs) await tryInsertLog(log);
+    }
   }catch(e){}
 }
 
@@ -1346,24 +1348,34 @@ async function saveField(dt,dataRef,field,value){
   spin(false);
 }
 
+async function tryInsertLog(row){
+  try{
+    await sbInsert('reporte_logs',[row]);
+  }catch(e){
+    const msg=String(e&&e.message||'');
+    if(msg.includes("Could not find the table 'public.reporte_logs'")) return;
+    console.warn('Falha ao gravar log:',msg);
+  }
+}
+
 /* SALVAR STATUS + gravar no log */
 async function saveStatus(dt,dataRef,value){
   spin(true);
   try{
     await sbPatch('reporte_carga',{status:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
+    if(row){row.status=value;renderRows();}
     // Grava log só para status relevantes (evita poluição)
     const STATUS_LOG=['EXPEDIDO','NO SHOW','EM FATURAMENTO','VEICULO RECUSADO','FOI EMBORA'];
     if(STATUS_LOG.includes(value)){
-      await sbInsert('reporte_logs',[{
+      await tryInsertLog({
         dt:String(dt),
         data_ref:String(dataRef),
         status:String(value),
         transportadora:row?String(row.transportadora||''):'',
         created_at:new Date().toISOString(),
-      }]);
+      });
     }
-    if(row){row.status=value;renderRows();}
   }catch(e){showErr('Erro ao salvar status: '+e.message);}
   spin(false);
 }
@@ -1455,13 +1467,13 @@ async function confirmarReagendamento(){
       updated_at:new Date().toISOString(),
     },{dt,data_ref:dataRef});
     // Log do reagendamento
-    await sbInsert('reporte_logs',[{
+    await tryInsertLog({
       dt:String(dt),
       data_ref:String(dataRef),
       status:'REAGENDADA',
       transportadora:obs||'Reagendamento via sistema',
       created_at:new Date().toISOString(),
-    }]);
+    });
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
     if(row){
       row.grade_carregamento=fmtLocal(gradeVal);
@@ -2117,7 +2129,7 @@ async function confirmarSubstituicao(){
     await sbDelete('reporte_carga',{dt:dtFrom,data_ref:row.data_ref});
     await sbDelete('reporte_materiais',{dt:dtFrom,data_ref:row.data_ref});
     // Log
-    await sbInsert('reporte_logs',[{dt:dtTo,data_ref:row.data_ref,status:'SUBSTITUIÇÃO DE DT FAKE',transportadora:'DT fake: '+dtFrom,created_at:new Date().toISOString()}]);
+    await tryInsertLog({dt:dtTo,data_ref:row.data_ref,status:'SUBSTITUIÇÃO DE DT FAKE',transportadora:'DT fake: '+dtFrom,created_at:new Date().toISOString()});
     showOk('DT '+dtFrom+' substituída por '+dtTo+' com sucesso!');
     document.getElementById('fake-preview').style.display='none';
     document.getElementById('fake-dt-from').value='';
