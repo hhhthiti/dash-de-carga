@@ -2,7 +2,7 @@
    SUPABASE REST
 ═══════════════════════════════════════════════════════ */
 const SB_URL_DEFAULT = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
-const SB_KEY_DEFAULT = '';
+const SB_KEY_DEFAULT = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
 const SB_URL = localStorage.getItem('sb_url') || SB_URL_DEFAULT;
 const SB_KEY = localStorage.getItem('sb_key') || SB_KEY_DEFAULT;
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
@@ -166,7 +166,7 @@ function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
 }
 
 let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
-let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={};
+let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={}, paletizacaoMap={};
 let preFatMode=false; // Ctrl+Ç ativa checkboxes de Pré-Fat nas DTs
 let panelDT=null;
 let currentTableTab='todas';
@@ -818,7 +818,7 @@ function processRelatorioCSV(file) {
       if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
 
       exportMap = {}; tipoOpMap = {}; descDocMap = {};
-      remessaMap = {}; pesoLiquidoMap = {}; horaChegadaCSVMap = {}; sapNumMap = {};
+      remessaMap = {}; pesoLiquidoMap = {}; horaChegadaCSVMap = {}; sapNumMap = {}; paletizacaoMap = {};
       let linhasOk = 0;
 
       const records = rows.slice(1).filter(r => r.some(c => c.trim() !== ''));
@@ -835,6 +835,8 @@ function processRelatorioCSV(file) {
         const qtde    = qtdeRaw.replace(/\./g,'').replace(',','.');
         const horaCsv = iHora !== -1 ? normalizeHora(strip(cols[iHora])) : '';
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
+        const infoAgenda = String((cols[ci('Inf. Agenda Entrega')]||'')).toUpperCase();
+        if(!paletizacaoMap[dt]) paletizacaoMap[dt]=infoAgenda.includes('PLT')?'PALETIZADA':'ESTIVADA';
 
         if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
         if (sapCsv) sapNumMap[dt] = sapCsv;
@@ -842,7 +844,7 @@ function processRelatorioCSV(file) {
         // descricao_documento e tipo operacao — centro 1111=ARUJA, 1110=MOGI
         if (!descDocMap[dt]) descDocMap[dt] = descDoc;
         if (!tipoOpMap[dt]) {
-          const raw = descDoc.toUpperCase();
+          const raw = String(descDoc || '').toUpperCase();
           const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
           const isMogi  = centroRaw === '1110';
           const isAruja = centroRaw === '1111' || centroRaw === '';
@@ -918,7 +920,7 @@ async function persistImportedMaterials(){
     if(!dataRef||!Array.isArray(mats)) continue;
     mats.forEach((m,i)=>{
       if(!m.material) return;
-      inserts.push({dt:String(dt),data_ref:String(dataRef),material:String(m.material),quantidade:String(m.quantidade||''),observacao:'',ordem:i});
+          inserts.push({dt:String(dt),data_ref:String(dataRef),material:String(m.material),quantidade:String(m.quantidade||''),observacao:'',ordem:i,paletizacao:paletizacaoMap[String(dt)]||'ESTIVADA'});
     });
   }
   if(!inserts.length) return 0;
@@ -952,7 +954,7 @@ async function persistImportedMaterialsForCurrentTable(){
     refs.forEach(dataRef=>{
       mats.forEach((m,i)=>{
         if(!m.material) return;
-        inserts.push({dt:String(dt),data_ref:String(dataRef),material:String(m.material),quantidade:String(m.quantidade||''),observacao:'',ordem:i});
+        inserts.push({dt:String(dt),data_ref:String(dataRef),material:String(m.material),quantidade:String(m.quantidade||''),observacao:'',ordem:i,paletizacao:paletizacaoMap[String(dt)]||'ESTIVADA'});
       });
     });
   }
