@@ -7,7 +7,11 @@ const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'
 
 async function sbGet(table, qs=''){
   const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
-  if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
+  if(!r.ok){
+    const msg=await r.text();
+    if(table==='reporte_materiais' && msg.includes('PGRST205')) return [];
+    throw new Error(`GET ${table}: `+msg);
+  }
   return r.json();
 }
 async function sbUpsert(table, rows){
@@ -30,11 +34,19 @@ async function sbDelete(table, filters){
     const vs=String(v); return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
   }).join('&');
   const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
-  if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
+  if(!r.ok){
+    const msg=await r.text();
+    if(table==='reporte_materiais' && msg.includes('PGRST205')) return;
+    throw new Error(`DELETE ${table}: `+msg);
+  }
 }
 async function sbInsert(table, rows){
   const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
-  if(!r.ok) throw new Error(`INSERT ${table}: `+await r.text());
+  if(!r.ok){
+    const msg=await r.text();
+    if(table==='reporte_materiais' && msg.includes('PGRST205')) return;
+    throw new Error(`INSERT ${table}: `+msg);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
