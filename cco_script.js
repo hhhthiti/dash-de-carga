@@ -655,12 +655,20 @@ function processAgend(file){
         if(!c[iDT]?.trim())continue;
         const loc=(c[iLoc]||'').trim();
         const doca=iDoca!==-1?(c[iDoca]||'').trim():'';
-        const docaNorm=doca.toLowerCase();
+        const docaNorm=doca
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g,'')
+          .replace(/[\s\-]+/g,'_')
+          .replace(/_+/g,'_');
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         if(iDoca!==-1&&!doca)continue;
         // Exclui docas fab_mogi (doca_1_fab_mogi, doca_2_fab_mogi, etc.),
         // mas mantém variantes com sufixo _ifnt.
-        if(docaNorm.includes('fab_mogi') && !docaNorm.includes('fab_mogi_ifnt')) continue;
+        const docaCompact=docaNorm.replace(/_/g,'');
+        const isFabMogi = docaNorm.includes('fab_mogi') || docaCompact.includes('fabmogi');
+        const isFabMogiIfnt = docaNorm.includes('fab_mogi_ifnt') || docaCompact.includes('fabmogiifnt');
+        if(isFabMogi && !isFabMogiIfnt) continue;
         agendRows.push({
           DT:normalizeDT(c[iDT]),LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
