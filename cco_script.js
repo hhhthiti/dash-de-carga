@@ -2,7 +2,7 @@
    SUPABASE REST
 ═══════════════════════════════════════════════════════ */
 const SB_URL_DEFAULT = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
-const SB_KEY_DEFAULT = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
+const SB_KEY_DEFAULT = '';
 const SB_URL = localStorage.getItem('sb_url') || SB_URL_DEFAULT;
 const SB_KEY = localStorage.getItem('sb_key') || SB_KEY_DEFAULT;
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
@@ -62,8 +62,9 @@ function queryWithoutSelectedColumn(qs, col){
 
 async function sbGet(table, qs=''){
   if(!SB_KEY || SB_KEY.includes('COLE_SUA_ANON_KEY_AQUI')){
-    throw new Error('Chave Supabase não configurada. Defina localStorage sb_key com a ANON KEY (JWT) do projeto.');
+    throw new Error('Chave Supabase não configurada. Defina localStorage sb_key com a ANON KEY JWT (Settings → API → anon public).');
   }
+  if(SB_KEY.startsWith('sb_publishable_')) throw new Error('Chave inválida para REST: use a ANON KEY JWT (começa com eyJ...), não sb_publishable_.');
   if(!SB_URL || !SB_URL.includes('/rest/v1')){
     throw new Error('URL Supabase inválida. Defina localStorage sb_url com https://SEU-PROJETO.supabase.co/rest/v1');
   }
