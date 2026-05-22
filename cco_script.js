@@ -1766,190 +1766,111 @@ function rpTurnoFromDate(dt){
 }
 
 function renderReporte(){
-  const rows=rpTurnoFiltro==='todos'?[...tableData]
-    :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
+  const CATS = ['VENDA ARUJA','VENDA MOGI','PRÉ FATURA SISTÊMICA','TRANSFERÊNCIA'];
+  const COLORS = {
+    'VENDA ARUJA'        : '#22c55e',
+    'VENDA MOGI'         : '#06b6d4',
+    'PRÉ FATURA SISTÊMICA': '#a78bfa',
+    'TRANSFERÊNCIA'      : '#fb923c',
+    'GRADE'              : '#60a5fa'
+  };
 
-  const infoEl=document.getElementById('rp-turno-info');
-  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual';
+  // Pega o horário escolhido pela pessoa (ex: "08:30")
+  const horarioEl = document.getElementById('rp-horario');
+  const horarioFiltro = horarioEl ? horarioEl.value : ''; // "HH:MM" ou vazio
 
-  // Inputs de meta
-  const metasEl=document.getElementById('rp-metas-inputs');
-  if(metasEl){
-    metasEl.innerHTML=RP_TIPOS.map(tipo=>`
-      <div>
-        <label style="font-size:9px;letter-spacing:1.5px;color:${RP_COLORS[tipo]||'#64748b'};font-weight:700;display:block;margin-bottom:4px;">${tipo}</label>
-        <input class="rp-meta-input" type="number" min="0" value="${rpMetas[tipo]||0}"
-          oninput="rpSaveMeta('${tipo}',this.value)" title="Meta do dia para ${tipo}"/>
-      </div>
-    `).join('');
-  }
+  const tons = {};
+  CATS.forEach(c => { tons[c] = 0; });
+  let gradeTotal = 0;
+  let dtCount = 0;
+  let dtFiltradas = 0;
 
-    const agora=new Date();
-  const inicioDia=new Date(agora); inicioDia.setHours(0,0,0,0);
+  tableData.forEach(r => {
+    // Pega a hora da grade (grade_carregamento) ou da agenda como fallback
+    const grade = parseBR(r.grade_carregamento || '') || parseBR(r.agenda || '');
 
-  const realizadoTon={};
-  RP_TIPOS.forEach(t=>{realizadoTon[t]=0;});
+    // Conta total de DTs com grade
+    if (grade) dtCount++;
 
-  const GRADE_STATUS_REALIZADO=['CARREGANDO','EM FATURAMENTO','EXPEDIDO'];
-
-  rows.forEach(r=>{
-    const tipo=rpNormalizeTipo(r);
-    const ton=rpParseToneladas(r);
-
-    // GRADE: realizado automático pelas DTs do dia com início de carregamento hoje
-    const inicioCarga=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'');
-    const fimDia=new Date(inicioDia); fimDia.setHours(23,59,59,999);
-    if(rpWithinWindow(inicioCarga,inicioDia,fimDia) && GRADE_STATUS_REALIZADO.includes(r.status)){
-      realizadoTon['GRADE']+=ton;
+    // Se há filtro de horário, só considera DTs cuja grade <= horário escolhido
+    if (grade && horarioFiltro) {
+      const hh = String(grade.getHours()).padStart(2,'0');
+      const mm = String(grade.getMinutes()).padStart(2,'0');
+      const gradeTime = hh + ':' + mm;
+      if (gradeTime > horarioFiltro) return; // pula esta DT
+    } else if (!grade && horarioFiltro) {
+      return; // sem grade e há filtro → pula
     }
 
-    if(tipo==='VENDA ARUJA'){
-      const centro=String(r.centro||'').trim();
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if(centro==='1111' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA ARUJA']+=ton;
-      return;
-    }
-    if(tipo==='VENDA MOGI'){
-      const centro=String(r.centro||'').trim();
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if(centro==='1110' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA MOGI']+=ton;
-      return;
-    }
-    if(tipo==='TRANSFERÊNCIA'){
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if((desc.includes('TRANSFER')||desc.includes('TNF')) && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['TRANSFERÊNCIA']+=ton;
-      return;
-    }
+    if (grade) dtFiltradas++;
+
+    const ton = rpParseToneladas(r);
+    gradeTotal += ton;
+
+    // Classifica o tipo da DT
+    const tipoRaw = rpNormalizeTipo(r);
+    if (tipoRaw === 'VENDA ARUJA')                      tons['VENDA ARUJA'] += ton;
+    else if (tipoRaw === 'VENDA MOGI')                  tons['VENDA MOGI'] += ton;
+    else if (tipoRaw === 'PRÉ-FATURA')                  tons['PRÉ FATURA SISTÊMICA'] += ton;
+    else if (tipoRaw === 'TRANSFERÊNCIA')               tons['TRANSFERÊNCIA'] += ton;
+    else                                                tons['VENDA ARUJA'] += ton;
   });
 
-  // Planejado da grade é automático pelo início de carregamento dentro do dia atual
-  const fimDiaPlanejado=new Date(inicioDia); fimDiaPlanejado.setHours(23,59,59,999);
-  const planejadoGrade = rows
-    .filter(r=>rpWithinWindow(parseBR(r.grade_carregamento||'')||parseBR(r.agenda||''),inicioDia,fimDiaPlanejado))
-    .reduce((acc,r)=>acc+rpParseToneladas(r),0);
-// Gráfico de barras
-  const chart=document.getElementById('rp-chart');
-  if(chart){
-    const maxVal=Math.max(1,...RP_TIPOS.map(t=>{ const p=t==='GRADE'?planejadoGrade:(rpMetas[t]||0); return Math.max(p,realizadoTon[t]||0);}));
-    chart.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=tipo==='GRADE'?planejadoGrade:(rpMetas[tipo]||0);
-      const real=realizadoTon[tipo]||0;
-      const pend=Math.max(0,plan-real);
-      const hPlan=plan?Math.round((plan/maxVal)*130):0;
-      const hReal=real?Math.round((real/maxVal)*130):0;
-      const hPend=pend?Math.round((pend/maxVal)*130):0;
-      const c=RP_COLORS[tipo]||'#3b82f6';
-      return `<div class="rp-bar-group">
-        <div class="rp-bar-wrap">
-          <div class="rp-bar" style="height:${hPlan}px;background:#3b82f6;width:16px;" title="Planejado: ${plan}"></div>
-          <div class="rp-bar" style="height:${hReal}px;background:#22c55e;width:16px;" title="Realizado: ${real}"></div>
-          <div class="rp-bar" style="height:${hPend}px;background:#f59e0b;width:16px;" title="Pendente: ${pend}"></div>
+  // Texto informativo no topo
+  const infoEl = document.getElementById('rp-turno-info');
+  if (infoEl) {
+    if (horarioFiltro) {
+      infoEl.textContent = dtFiltradas + ' DTs com grade até ' + horarioFiltro + ' · total ' + dtCount + ' DTs carregadas';
+    } else {
+      infoEl.textContent = 'Mostrando todas as ' + dtCount + ' DTs carregadas';
+    }
+  }
+
+  // ── Gráfico de barras ───────────────────────────────────────────────────────
+  const chart = document.getElementById('rp-chart');
+  if (chart) {
+    const allCats = [...CATS, 'GRADE'];
+    const allVals = Object.assign({}, tons, { 'GRADE': gradeTotal });
+    const maxVal  = Math.max(1, ...allCats.map(c => allVals[c] || 0));
+
+    chart.innerHTML = allCats.map(cat => {
+      const val = allVals[cat] || 0;
+      const c   = COLORS[cat];
+      const barH = val ? Math.max(4, Math.round((val / maxVal) * 150)) : 4;
+      const shortLabel = cat === 'PRÉ FATURA SISTÊMICA' ? 'PRÉ-FAT' : cat;
+      const valFmt = val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+      return `<div class="rp-bar-group" style="flex:1;min-width:60px;max-width:120px;">
+        <div style="font-size:12px;font-weight:800;color:${c};margin-bottom:6px;text-align:center;">
+          ${valFmt}t
         </div>
-        <div class="rp-bar-label" style="color:${c}">${tipo}</div>
+        <div class="rp-bar-wrap" style="justify-content:center;">
+          <div class="rp-bar" style="height:${barH}px;background:${c};width:36px;border-radius:4px 4px 0 0;"
+               title="${cat}: ${valFmt} toneladas"></div>
+        </div>
+        <div class="rp-bar-label" style="color:${c};font-size:9px;text-align:center;max-width:80px;word-break:break-word;white-space:normal;line-height:1.3;">${shortLabel}</div>
       </div>`;
     }).join('');
   }
 
-  // Números consolidados
-  const numEl=document.getElementById('rp-numeros');
-  if(numEl){
-    numEl.innerHTML=RP_TIPOS.map(tipo=>{
-      const realTon=(realizadoTon[tipo]||0);
-      const plan = tipo==='GRADE' ? planejadoGrade : (rpMetas[tipo]||0);
-      const tonStr=realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
-      const pend=Math.max(0,plan-realTon);
-      const pct=plan>0?Math.min(100,Math.round(realTon/plan*100)):0;
-      const c=RP_COLORS[tipo]||'#3b82f6';
-      const barW=plan>0?Math.round(realTon/plan*100):0;
-      return `<div class="rp-tipo-card" style="border-color:${c}44;">
-        <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
-          <div><div class="rp-num-plan">${plan}</div><div class="rp-num-label">Planej.</div></div>
-          <div><div class="rp-num-real">${tonStr}</div><div class="rp-num-label">⚖️ Tons</div></div>
-          <div><div class="rp-num-pend">${pend}</div><div class="rp-num-label">Pendente</div></div>
-        </div>
-        <div style="background:#0f172a;border-radius:4px;height:4px;margin-bottom:6px;overflow:hidden;">
-          <div style="height:100%;width:${barW}%;background:${c};border-radius:4px;transition:.4s;"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
-          <span>${realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
-        </div>
+  // ── Cards de números ────────────────────────────────────────────────────────
+  const numEl = document.getElementById('rp-numeros');
+  if (numEl) {
+    const allCats = [...CATS, 'GRADE'];
+    const allVals = Object.assign({}, tons, { 'GRADE': gradeTotal });
+
+    numEl.innerHTML = allCats.map(cat => {
+      const val  = allVals[cat] || 0;
+      const c    = COLORS[cat];
+      const valFmt = val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      const isGrade = cat === 'GRADE';
+
+      return `<div class="rp-tipo-card" style="border-color:${c}44;${isGrade ? 'grid-column:1/-1;' : ''}">
+        <div class="rp-tipo-title" style="color:${c};">${cat}</div>
+        <div style="font-size:32px;font-weight:800;color:${c};margin:10px 0 4px;">${valFmt}</div>
+        <div class="rp-num-label">toneladas${horarioFiltro ? ' até ' + horarioFiltro : ' (total)'}</div>
       </div>`;
     }).join('');
-  }
-
-  // Contagem por Status atual
-  const statusCountEl=document.getElementById('rp-status-counts');
-  if(statusCountEl){
-    const statusList=['AG CHEGADA','PATIO','CARREGANDO','EM FATURAMENTO','SEPARANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','FOI EMBORA'];
-    const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
-    const sCounts={};
-    tableData.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
-    statusCountEl.innerHTML=statusList
-      .filter(s=>sCounts[s]>0)
-      .map(s=>{
-        const c=statusColors[s]||'#334155';
-        return `<div class="rp-turno-card" style="border-color:${c}44;">
-          <div class="rp-turno-label" style="color:${c};font-size:9px;">${s}</div>
-          <div class="rp-turno-num" style="color:${c}">${sCounts[s]}</div>
-          <div style="font-size:10px;color:#64748b;">DTs</div>
-        </div>`;
-      }).join('');
-  }
-
-  // Separações por turno
-  const turnosEl=document.getElementById('rp-turnos-resumo');
-  if(turnosEl){
-    const byTurno={T1:0,T2:0,T3:0};
-    let t3DiaProd=0;
-    let t3TurnoProd=0;
-    const hoje0=new Date(); hoje0.setHours(0,0,0,0);
-    const amanha0=new Date(hoje0); amanha0.setDate(amanha0.getDate()+1);
-    const t3DiaIni=new Date(hoje0); t3DiaIni.setHours(23,0,0,0);
-    const t3DiaFim=new Date(hoje0); t3DiaFim.setHours(23,59,59,999);
-    const t3TurnoIni=new Date(hoje0); t3TurnoIni.setHours(23,0,0,0);
-    const t3TurnoFim=new Date(amanha0); t3TurnoFim.setHours(6,59,59,999);
-
-    rows.forEach(r=>{
-      const grade=parseBR(r.grade_carregamento||'');
-      const turno=rpTurnoFromDate(grade);
-      if(!turno) return;
-      const ton=rpParseToneladas(r);
-      byTurno[turno]+=ton;
-
-      if(turno==='T3' && grade){
-        if(grade>=t3DiaIni && grade<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
-        if(grade>=t3TurnoIni && grade<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno
-      }
-    });
-    const totalTurnos=byTurno.T1+byTurno.T2+byTurno.T3;
-    const labels={T1:'🌅 T1 · 07-14h',T2:'☀️ T2 · 15-22h',T3:'🌙 T3 · 23-06h'};
-    const cores={T1:'#60a5fa',T2:'#f59e0b',T3:'#a78bfa'};
-    const cards=['T1','T2','T3'].map(t=>`
-      <div class="rp-turno-card" style="border-color:${cores[t]}44;">
-        <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
-        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t].toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
-        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
-        ${t==='T3'
-          ? `<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.6;">
-              Dia (23-00): <b style="color:#c4b5fd;">${t3DiaProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b><br/>
-              Turno (23-06): <b style="color:#c4b5fd;">${t3TurnoProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b>
-            </div>`
-          : ''
-        }
-      </div>
-    `).join('');
-    const totalCard=`
-      <div class="rp-turno-card" style="border-color:#22c55e44;">
-        <div class="rp-turno-label" style="color:#22c55e">📦 TOTAL DO DIA</div>
-        <div class="rp-turno-num" style="color:#22c55e">${totalTurnos.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
-        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
-      </div>
-    `;
-    turnosEl.innerHTML=cards+totalCard;
   }
 }
 
