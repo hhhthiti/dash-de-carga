@@ -1383,6 +1383,11 @@ async function loadLogs(searchDT=""){
       list.appendChild(div);
     });
   }catch(e){
+    const msg=String(e&&e.message||'');
+    if(msg.includes("Could not find the table 'public.reporte_logs'")){
+      list.innerHTML='<div style="color:#94a3b8;padding:12px;">ℹ️ Log desativado: tabela <b>reporte_logs</b> não existe neste projeto Supabase. O painel de carga continua funcionando normalmente.</div>';
+      return;
+    }
     list.innerHTML='<div style="color:#ef4444;padding:12px;">Erro ao carregar logs: '+e.message+'<br/><small style="color:#64748b">Verifique se a tabela reporte_logs existe no Supabase.</small></div>';
   }
 }
@@ -1696,6 +1701,7 @@ const RP_COLORS = {
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
+let rpHoraCorte = localStorage.getItem('rp_hora_corte') || '';
 
 function rpGetTurno(row){
   // Classifica pelo horário do FIM da agenda
@@ -1738,6 +1744,21 @@ function rpSaveMeta(tipo,val){
   renderReporte();
 }
 
+function rpSetHoraCorte(v){
+  rpHoraCorte=String(v||'').trim();
+  try{localStorage.setItem('rp_hora_corte',rpHoraCorte);}catch(e){}
+  renderReporte();
+}
+
+function rpGetAgoraCorte(){
+  const now=new Date();
+  if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)) return now;
+  const [hh,mm]=rpHoraCorte.split(':').map(n=>parseInt(n,10));
+  const corte=new Date(now);
+  corte.setHours(hh||0,mm||0,59,999);
+  return corte;
+}
+
 
 function rpParseToneladas(row){
   const raw = row.peso_liquido ?? row.toneladas ?? row.peso ?? '';
@@ -1765,6 +1786,9 @@ function rpTurnoFromDate(dt){
 }
 
 function renderReporte(){
+  const horaInput=document.getElementById('rp-hora-corte');
+  if(horaInput && horaInput.value!==rpHoraCorte) horaInput.value=rpHoraCorte;
+
   const rows=rpTurnoFiltro==='todos'?[...tableData]
     :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
 
@@ -1783,7 +1807,7 @@ function renderReporte(){
     `).join('');
   }
 
-    const agora=new Date();
+  const agora=rpGetAgoraCorte();
   const inicioDia=new Date(agora); inicioDia.setHours(0,0,0,0);
 
   const realizadoTon={};

@@ -351,6 +351,9 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <button class="bg rp-turno" id="rp-t1" onclick="rpSetTurno('T1')" style="font-size:10px;padding:4px 12px;">🌅 T1 · 07-14h</button>
         <button class="bg rp-turno" id="rp-t2" onclick="rpSetTurno('T2')" style="font-size:10px;padding:4px 12px;">☀️ T2 · 15-22h</button>
         <button class="bg rp-turno" id="rp-t3" onclick="rpSetTurno('T3')" style="font-size:10px;padding:4px 12px;">🌙 T3 · 23-06h</button>
+        <label for="rp-hora-corte" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">⏱️ CORTE ATÉ:</label>
+        <input id="rp-hora-corte" type="time" step="60" onchange="rpSetHoraCorte(this.value)"
+          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"/>
         <span id="rp-turno-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
       </div>
       <!-- Metas configuráveis -->
