@@ -169,7 +169,6 @@ const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'
 
 function sbValidateConfig(){
   if(!SB_KEY) throw new Error('Supabase sem chave: defina localStorage sb_key com ANON KEY JWT (eyJ...).');
-  if(SB_KEY.startsWith('sb_publishable_')) throw new Error('Chave inválida para REST: use ANON KEY JWT (eyJ...), não sb_publishable_.');
   if(!SB_URL.includes('/rest/v1')) throw new Error('Supabase URL inválida: use ...supabase.co/rest/v1');
 }
 

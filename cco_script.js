@@ -64,7 +64,6 @@ async function sbGet(table, qs=''){
   if(!SB_KEY || SB_KEY.includes('COLE_SUA_ANON_KEY_AQUI')){
     throw new Error('Chave Supabase não configurada. Defina localStorage sb_key com a ANON KEY JWT (Settings → API → anon public).');
   }
-  if(SB_KEY.startsWith('sb_publishable_')) throw new Error('Chave inválida para REST: use a ANON KEY JWT (começa com eyJ...), não sb_publishable_.');
   if(!SB_URL || !SB_URL.includes('/rest/v1')){
     throw new Error('URL Supabase inválida. Defina localStorage sb_url com https://SEU-PROJETO.supabase.co/rest/v1');
   }
@@ -1996,13 +1995,22 @@ async function registrarSemGrade(){
   const transp=document.getElementById('sg-transp').value.trim();
   const motivo=document.getElementById('sg-motivo').value.trim();
   const obs=document.getElementById('sg-obs').value.trim();
+  const gradeIniRaw=document.getElementById('sg-grade').value.trim();
+  const gradeFimRaw=document.getElementById('sg-fim').value.trim();
   if(!dt){showErr('Informe o número da DT.');return;}
   const dtNorm=normalizeDT(dt);
-  const reg={dt:dtNorm,transp,motivo,obs,ts:new Date().toLocaleString('pt-BR')};
+  const fmtLocal=(v)=>{
+    if(!v) return '';
+    const d=new Date(v);
+    return Number.isNaN(d.getTime())?'':d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  };
+  const gradeIni=fmtLocal(gradeIniRaw);
+  const gradeFim=fmtLocal(gradeFimRaw);
+  const reg={dt:dtNorm,transp,motivo,obs,gradeIni,gradeFim,ts:new Date().toLocaleString('pt-BR')};
   sgRegistros.unshift(reg);
   try{localStorage.setItem('sg_registros',JSON.stringify(sgRegistros));}catch(e){}
   const dataRef=dKey(today());
-  const row={dt:String(dtNorm),transportadora:transp,grade_carregamento:'',fim_carregamento:'',hora_chegada:'',n_portaria:'',status:'AG CHEGADA',descricao_documento:motivo||'SEM GRADE',toneladas:'',peso_liquido:'',agenda:'',local_cd:'',dia_ref:'HOJE',data_ref:dataRef,tipo_operacao:'',reagendada:false};
+  const row={dt:String(dtNorm),transportadora:transp,grade_carregamento:gradeIni,fim_carregamento:gradeFim,hora_chegada:'',n_portaria:'',status:'AG CHEGADA',descricao_documento:motivo||'ADICIONADA MANUAL',toneladas:'',peso_liquido:'',agenda:gradeIni||'',local_cd:'',dia_ref:'HOJE',data_ref:dataRef,tipo_operacao:'',reagendada:false};
   try{
     await sbInsert('reporte_semgrade',[{
       dt:String(dtNorm),transportadora:transp,motivo,observacao:obs,
@@ -2017,7 +2025,9 @@ async function registrarSemGrade(){
   document.getElementById('sg-transp').value='';
   document.getElementById('sg-motivo').value='';
   document.getElementById('sg-obs').value='';
-  showOk('DT '+dtNorm+' registrada como sem grade e incluída na grade principal.');
+  document.getElementById('sg-grade').value='';
+  document.getElementById('sg-fim').value='';
+  showOk('DT '+dtNorm+' adicionada e incluída na grade principal.');
   renderSemGrade();
   renderRows();
 }
@@ -2033,7 +2043,7 @@ function renderSemGrade(){
     <div class="sg-item">
       <div><div style="font-weight:800;color:#f59e0b;">${r.dt}</div><div style="font-size:10px;color:#64748b;">${r.ts}</div></div>
       <div style="font-size:11px;color:#cbd5e1;">${r.transp||'—'}</div>
-      <div style="font-size:11px;color:#94a3b8;">${r.motivo||'—'}${r.obs?' · '+r.obs:''}</div>
+      <div style="font-size:11px;color:#94a3b8;">${r.motivo||'—'}${r.obs?' · '+r.obs:''}${r.gradeIni?` · 🕒 ${r.gradeIni}${r.gradeFim?` → ${r.gradeFim}`:''}`:''}</div>
       <button class="bg" onclick="sgRemover(${i})" style="font-size:10px;padding:3px 8px;">✕</button>
     </div>
   `).join('');

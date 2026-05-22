@@ -311,7 +311,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
       <button class="tab-btn" id="tab-reporte" onclick="switchTableTab('reporte')" style="color:#a78bfa;">📊 REPORTE DE STATUS</button>
-      <button class="tab-btn" id="tab-semgrade" onclick="switchTableTab('semgrade')" style="color:#f59e0b;">⚠️ SEM GRADE</button>
+      <button class="tab-btn" id="tab-semgrade" onclick="switchTableTab('semgrade')" style="color:#f59e0b;">➕ ADICIONAR DT</button>
       <button class="tab-btn" id="tab-dtfake" onclick="switchTableTab('dtfake')" style="color:#fb923c;">🔄 DT FAKE</button>
       <button class="tab-btn" id="tab-nf" onclick="switchTableTab('nf')" style="color:#34d399;">📎 JUNTAR NFs</button>
     </div>
@@ -385,17 +385,19 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       </div>
     </div>
 
-    <!-- ══════ ABA: SEM GRADE ══════ -->
+    <!-- ══════ ABA: ADICIONAR DT ══════ -->
     <div id="semgrade-wrap" style="display:none;padding:16px 18px;">
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
-        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">REGISTRAR DT SEM GRADE</span>
+        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">ADICIONAR DT (COM OU SEM GRADE)</span>
       </div>
       <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
-        <div style="display:grid;grid-template-columns:120px 1fr 1fr auto;gap:10px;align-items:end;" class="sg-form-grid">
+        <div style="display:grid;grid-template-columns:120px 1fr 1fr 150px 150px auto;gap:10px;align-items:end;" class="sg-form-grid">
           <div><label class="sl">Nº DT</label><input id="sg-dt" class="mat-input" placeholder="Ex: 23166206" style="width:100%;"/></div>
           <div><label class="sl">TRANSPORTADORA</label><input id="sg-transp" class="mat-input" placeholder="Nome" style="width:100%;"/></div>
           <div><label class="sl">MOTIVO</label><input id="sg-motivo" class="mat-input" placeholder="Ex: Aguardando nota, erro sistema..." style="width:100%;"/></div>
-          <button class="bp" onclick="registrarSemGrade()" style="height:34px;white-space:nowrap;">+ Registrar</button>
+          <div><label class="sl">GRADE INÍCIO (opcional)</label><input id="sg-grade" type="datetime-local" class="mat-input" style="width:100%;"/></div>
+          <div><label class="sl">GRADE FIM (opcional)</label><input id="sg-fim" type="datetime-local" class="mat-input" style="width:100%;"/></div>
+          <button class="bp" onclick="registrarSemGrade()" style="height:34px;white-space:nowrap;">+ Adicionar DT</button>
         </div>
         <div style="margin-top:10px;"><label class="sl">OBSERVAÇÕES</label><textarea id="sg-obs" class="obs-area" placeholder="Detalhes adicionais..." style="min-height:48px;width:100%;"></textarea></div>
       </div>
