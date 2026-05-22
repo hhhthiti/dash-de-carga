@@ -7,6 +7,8 @@ const SB_URL = localStorage.getItem('sb_url') || SB_URL_DEFAULT;
 const SB_KEY = localStorage.getItem('sb_key') || SB_KEY_DEFAULT;
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 const SB_RETRY_MS = [300, 900, 1800];
+const sbEq = (v)=>`eq.${encodeURIComponent(String(v??''))}`;
+const sbIn = (vals)=>`in.(${(vals||[]).map(v=>`"${encodeURIComponent(String(v??''))}"`).join(',')})`;
 
 async function sbFetch(url, options={}){
   let lastErr;
@@ -108,7 +110,7 @@ async function sbUpsert(table, rows){
   }
 }
 async function sbPatch(table, data, filters){
-  const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${v.includes('/')?'"'+v+'"':encodeURIComponent(v)}`).join('&');
+  const q=Object.entries(filters).map(([k,v])=>`${k}=${sbEq(v)}`).join('&');
   let payload={...data};
   const ignoredCols=new Set();
   while(Object.keys(payload).length){
@@ -125,9 +127,7 @@ async function sbPatch(table, data, filters){
   }
 }
 async function sbDelete(table, filters){
-  const q=Object.entries(filters).map(([k,v])=>{
-    const vs=String(v); return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
-  }).join('&');
+  const q=Object.entries(filters).map(([k,v])=>`${k}=${sbEq(v)}`).join('&');
   const r=await sbFetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
   if(!r.ok) throw new Error(`DELETE ${table}: `+await sbErrorText(r));
 }
@@ -846,13 +846,19 @@ function processRelatorioCSV(file) {
         if (!tipoOpMap[dt]) {
           const raw = String(descDoc || '').toUpperCase();
           const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
+          const localRaw = String((cols[ci('Local')]||'')).trim().toUpperCase();
           const isMogi  = centroRaw === '1110';
           const isAruja = centroRaw === '1111' || centroRaw === '';
           const isTransf = raw.includes('TRANSFER') || raw.includes('FILIAL') || raw.includes('ABAST') || raw.includes('TNF');
+          const isPrefat = raw.includes('PREFAT') || raw.includes('PRÉ-FAT') || raw.includes('PRE FAT');
           if (isTransf) {
             tipoOpMap[dt] = 'TRANSFERÊNCIA';
+          } else if (isPrefat) {
+            tipoOpMap[dt] = 'PREFATURA';
           } else {
-            tipoOpMap[dt] = isMogi ? 'VENDA MOGI' : 'VENDA ARUJA';
+            const mogiByLocal = localRaw.includes('MOGI');
+            const arujaByLocal = localRaw.includes('ARUJA');
+            tipoOpMap[dt] = (isMogi||mogiByLocal) ? 'VENDA MOGI' : ((isAruja||arujaByLocal) ? 'VENDA ARUJA' : 'VENDA NORMAL');
           }
         }
 
@@ -1012,7 +1018,7 @@ async function buildTable(){
     // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(r.AGENDA||T)))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=in.("${refsUpload.join('\",\"')}")&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,reagendada`
+      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,reagendada`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
@@ -1140,7 +1146,7 @@ async function reloadTable(){
     const refs=await getActiveRefs();
     if(!refs.length){tableData=[];renderRows();return;}
     const data=await sbGet('reporte_carga',
-      `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
+      `data_ref=${sbIn(refs)}&order=dia_ref.asc,agenda.asc`
     );
     tableData=normalizeDiaRefRows(data||[]).sort((a,b)=>{
       return compareAgendaRows(a,b);
@@ -1188,7 +1194,7 @@ async function renderMaterialsBoard(){
   try{
     const refs=[...new Set(tableData.map(r=>r.data_ref).filter(Boolean))];
     if(!refs.length){board.innerHTML='<div style="color:#334155;">Sem DTs carregadas.</div>';return;}
-    const q='data_ref=in.("'+refs.join('","')+'")&order=dt.asc,ordem.asc';
+    const q='data_ref='+sbIn(refs)+'&order=dt.asc,ordem.asc';
     const mats=await sbGet('reporte_materiais',q);
     if(!mats||!mats.length){board.innerHTML='<div style="color:#334155;">Nenhum material salvo para as DTs atuais.</div>';return;}
     const byDT={};
@@ -1636,7 +1642,7 @@ async function tryLoadExisting(){
     const refs=await getActiveRefs();
     if(!refs.length){tableData=[];renderRows();return;}
     const data=await sbGet('reporte_carga',
-      `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
+      `data_ref=${sbIn(refs)}&order=dia_ref.asc,agenda.asc`
     );
     if(data&&data.length){
       tableData=normalizeDiaRefRows(data).sort((a,b)=>{
