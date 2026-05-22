@@ -655,8 +655,12 @@ function processAgend(file){
         if(!c[iDT]?.trim())continue;
         const loc=(c[iLoc]||'').trim();
         const doca=iDoca!==-1?(c[iDoca]||'').trim():'';
+        const docaNorm=doca.toLowerCase();
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         if(iDoca!==-1&&!doca)continue;
+        // Exclui docas fab_mogi (doca_1_fab_mogi, doca_2_fab_mogi, etc.),
+        // mas mantém variantes com sufixo _ifnt.
+        if(docaNorm.includes('fab_mogi') && !docaNorm.includes('fab_mogi_ifnt')) continue;
         agendRows.push({
           DT:normalizeDT(c[iDT]),LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
