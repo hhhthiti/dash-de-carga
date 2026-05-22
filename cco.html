@@ -302,7 +302,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <button class="bg" style="color:#60a5fa;border-color:#60a5fa44;" onclick="document.getElementById('f2-inline').click()" title="Subir relatório de expedição (materiais)">↑ Materiais</button>
         <input type="file" id="f1-inline" accept=".xls,.xlsx,.txt,.tsv,.csv" style="display:none" onchange="processAgend(this.files[0])"/>
         <input type="file" id="f2-inline" accept=".csv" style="display:none" onchange="processRelatorioCSV(this.files[0])"/>
-        <span id="ctrl-s-hint" style="font-size:9px;color:#475569;letter-spacing:1px;">Ctrl+S salva grade</span>
+        <span id="ctrl-s-hint" style="font-size:9px;color:#475569;letter-spacing:1px;">Ctrl+S salva grade · Ctrl+P importa portaria (PDF)</span>
       </div>
     </div>
 
@@ -351,6 +351,9 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <button class="bg rp-turno" id="rp-t1" onclick="rpSetTurno('T1')" style="font-size:10px;padding:4px 12px;">🌅 T1 · 07-14h</button>
         <button class="bg rp-turno" id="rp-t2" onclick="rpSetTurno('T2')" style="font-size:10px;padding:4px 12px;">☀️ T2 · 15-22h</button>
         <button class="bg rp-turno" id="rp-t3" onclick="rpSetTurno('T3')" style="font-size:10px;padding:4px 12px;">🌙 T3 · 23-06h</button>
+        <label for="rp-hora-corte" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">⏱️ CORTE ATÉ:</label>
+        <input id="rp-hora-corte" type="time" step="60" onchange="rpSetHoraCorte(this.value)"
+          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"/>
         <span id="rp-turno-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
       </div>
       <!-- Metas configuráveis -->
@@ -566,6 +569,27 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       • DT presente na planilha → status, hora e SAP/portaria atualizados<br>
       • DT no dash com horário ≤ agora e ausente da planilha → marcada como <b style="color:#22c55e">EXPEDIDO</b><br>
       • FATURAMENTO com custo de frete/problema de DT/problema JSL → tratado como <b style="color:#06b6d4">EM FATURAMENTO</b> quando STATUS estiver vazio
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL PORTARIA PDF (Ctrl+P) ═══ -->
+<div id="portaria-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:420;display:none;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:2px solid #f9731655;border-radius:16px;width:94%;max-width:520px;padding:24px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:22px;">🚛</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;">Importar Portaria PDF</div>
+        <div style="font-size:11px;color:#64748b;">Lê DTs do PDF e muda AG CHEGADA → PATIO</div>
+      </div>
+      <button onclick="closePortariaPdfModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+    <input type="file" id="portaria-file" accept="application/pdf" style="margin-bottom:12px;color:#cbd5e1;"/>
+    <div id="portaria-result" style="display:none;margin-bottom:10px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:10px;font-size:12px;color:#86efac;"></div>
+    <div id="portaria-err" style="display:none;margin-bottom:10px;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:10px;font-size:12px;color:#fca5a5;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="bp" style="flex:1;background:#ea580c;" onclick="runPortariaPdfImport(document.getElementById('portaria-file').files[0])">⚡ Processar PDF</button>
+      <button class="bg" onclick="closePortariaPdfModal()">Cancelar</button>
     </div>
   </div>
 </div>

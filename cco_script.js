@@ -1,9 +1,10 @@
 /* ═══════════════════════════════════════════════════════
    SUPABASE REST
 ═══════════════════════════════════════════════════════ */
-const SB_URL = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
-// ⚠️ TROQUE PELA anon key do Supabase: Dashboard → Settings → API → anon public (começa com eyJ...)
-const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
+const SB_URL_DEFAULT = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
+const SB_KEY_DEFAULT = '';
+const SB_URL = localStorage.getItem('sb_url') || SB_URL_DEFAULT;
+const SB_KEY = localStorage.getItem('sb_key') || SB_KEY_DEFAULT;
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 const SB_RETRY_MS = [300, 900, 1800];
 
@@ -61,7 +62,11 @@ function queryWithoutSelectedColumn(qs, col){
 
 async function sbGet(table, qs=''){
   if(!SB_KEY || SB_KEY.includes('COLE_SUA_ANON_KEY_AQUI')){
-    throw new Error('Chave Supabase não configurada em cco_script.js (SB_KEY).');
+    throw new Error('Chave Supabase não configurada. Defina localStorage sb_key com a ANON KEY JWT (Settings → API → anon public).');
+  }
+  if(SB_KEY.startsWith('sb_publishable_')) throw new Error('Chave inválida para REST: use a ANON KEY JWT (começa com eyJ...), não sb_publishable_.');
+  if(!SB_URL || !SB_URL.includes('/rest/v1')){
+    throw new Error('URL Supabase inválida. Defina localStorage sb_url com https://SEU-PROJETO.supabase.co/rest/v1');
   }
   let query=qs;
   const ignoredCols=new Set();
@@ -1153,6 +1158,7 @@ function clockEmoji(row){
   if(row.dia_ref!=='HOJE') return '';
   if(row.n_portaria) return '';
   if(STATUS_FINAIS.includes(row.status)) return '';
+  if(row.status==='CARREGANDO') return '<span class="dt-clock" title="DT em carregamento sem SAP/Portaria. Preencher SAP agora.">🚨</span>';
   if(!row.grade_carregamento) return '';
   const grade=parseBR(row.grade_carregamento);
   if(!grade) return '';
@@ -1164,6 +1170,10 @@ function clockEmoji(row){
   }
   if(diffGradeMin<0 && diffGradeMin>-120) return '<span style="font-size:11px;opacity:.6" title="Grade iniciada sem portaria preenchida">⏰</span>';
   return '';
+}
+
+function shouldSapNow(row){
+  return !row.n_portaria && row.status==='CARREGANDO';
 }
 
 
@@ -1278,7 +1288,7 @@ function renderRows(){
       `<td style="text-align:center;" data-dt="${row.dt}" data-ref="${row.data_ref}" data-sap="${row.n_portaria||''}" onclick="promptPortaria(this.dataset.dt,this.dataset.ref,this.dataset.sap)" style="cursor:pointer;text-align:center;">${
   row.n_portaria
     ? '<span title="SAP: '+row.n_portaria+'" style="color:#4ade80;font-size:15px;">✅</span><div style="font-size:9px;color:#4ade80;letter-spacing:.5px;">'+row.n_portaria+'</div>'
-    : (clockEmoji(row)||'<span style="color:#334155;font-size:11px;">—</span>')+'<div style="font-size:9px;color:#475569;margin-top:1px;">SAP</div>'
+    : (shouldSapNow(row)?'<span title="Status CARREGANDO sem SAP" style="color:#f97316;font-size:15px;">⚠️</span>':(clockEmoji(row)||'<span style="color:#334155;font-size:11px;">—</span>'))+'<div style="font-size:9px;color:'+(shouldSapNow(row)?'#f97316':'#475569')+';margin-top:1px;">SAP</div>'
 }</td>`+
       `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
@@ -1383,6 +1393,11 @@ async function loadLogs(searchDT=""){
       list.appendChild(div);
     });
   }catch(e){
+    const msg=String(e&&e.message||'');
+    if(msg.includes("Could not find the table 'public.reporte_logs'")){
+      list.innerHTML='<div style="color:#94a3b8;padding:12px;">ℹ️ Log desativado: tabela <b>reporte_logs</b> não existe neste projeto Supabase. O painel de carga continua funcionando normalmente.</div>';
+      return;
+    }
     list.innerHTML='<div style="color:#ef4444;padding:12px;">Erro ao carregar logs: '+e.message+'<br/><small style="color:#64748b">Verifique se a tabela reporte_logs existe no Supabase.</small></div>';
   }
 }
@@ -1696,6 +1711,7 @@ const RP_COLORS = {
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
+let rpHoraCorte = localStorage.getItem('rp_hora_corte') || '';
 
 function rpGetTurno(row){
   // Classifica pelo horário do FIM da agenda
@@ -1738,6 +1754,21 @@ function rpSaveMeta(tipo,val){
   renderReporte();
 }
 
+function rpSetHoraCorte(v){
+  rpHoraCorte=String(v||'').trim();
+  try{localStorage.setItem('rp_hora_corte',rpHoraCorte);}catch(e){}
+  renderReporte();
+}
+
+function rpGetAgoraCorte(){
+  const now=new Date();
+  if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)) return now;
+  const [hh,mm]=rpHoraCorte.split(':').map(n=>parseInt(n,10));
+  const corte=new Date(now);
+  corte.setHours(hh||0,mm||0,59,999);
+  return corte;
+}
+
 
 function rpParseToneladas(row){
   const raw = row.peso_liquido ?? row.toneladas ?? row.peso ?? '';
@@ -1765,6 +1796,9 @@ function rpTurnoFromDate(dt){
 }
 
 function renderReporte(){
+  const horaInput=document.getElementById('rp-hora-corte');
+  if(horaInput && horaInput.value!==rpHoraCorte) horaInput.value=rpHoraCorte;
+
   const rows=rpTurnoFiltro==='todos'?[...tableData]
     :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
 
@@ -1783,7 +1817,7 @@ function renderReporte(){
     `).join('');
   }
 
-    const agora=new Date();
+  const agora=rpGetAgoraCorte();
   const inicioDia=new Date(agora); inicioDia.setHours(0,0,0,0);
 
   const realizadoTon={};
@@ -2194,7 +2228,71 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     openImportModal();
   }
+  if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='p') {
+    e.preventDefault();
+    openPortariaPdfModal();
+  }
 });
+
+function openPortariaPdfModal(){
+  const ov=document.getElementById('portaria-overlay');
+  if(!ov) return;
+  document.getElementById('portaria-result').style.display='none';
+  document.getElementById('portaria-err').style.display='none';
+  document.getElementById('portaria-file').value='';
+  ov.style.display='flex';
+}
+function closePortariaPdfModal(){ document.getElementById('portaria-overlay').style.display='none'; }
+
+async function runPortariaPdfImport(file){
+  if(!file){ showErr('Selecione um PDF da portaria.'); return; }
+  spin(true); showInf('Lendo PDF da portaria…');
+  try{
+    if(typeof pdfjsLib==='undefined'){
+      await new Promise((res,rej)=>{
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        s.onload=res; s.onerror=rej; document.head.appendChild(s);
+      });
+      pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let txt='';
+    for(let i=1;i<=pdf.numPages;i++){
+      const p=await pdf.getPage(i);
+      const c=await p.getTextContent();
+      txt+=c.items.map(x=>x.str).join(' ')+'\n';
+    }
+    const dts=[...new Set((txt.match(/\b\d{8}\b/g)||[]).map(n=>String(n).trim()))];
+    if(!dts.length) throw new Error('Nenhuma DT (8 dígitos) encontrada no PDF.');
+    let atualizadas=0;
+    for(const dt of dts){
+      const rows=tableData.filter(r=>String(r.dt)===dt);
+      for(const row of rows){
+        if(row.status!=='AG CHEGADA') continue;
+        const patch={status:'PATIO',updated_at:new Date().toISOString()};
+        if(!row.hora_chegada) patch.hora_chegada=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+        await sbPatch('reporte_carga',patch,{dt:row.dt,data_ref:row.data_ref});
+        await sbInsert('reporte_logs',[{dt:row.dt,data_ref:row.data_ref,status:'PATIO',transportadora:row.transportadora||'',created_at:new Date().toISOString()}]).catch(()=>{});
+        row.status='PATIO';
+        if(!row.hora_chegada) row.hora_chegada=patch.hora_chegada;
+        atualizadas++;
+      }
+    }
+    renderRows();
+    hideInf();
+    const rs=document.getElementById('portaria-result');
+    rs.style.display='block';
+    rs.textContent=`✅ PDF processado. DTs lidas: ${dts.length}. Status alterado para PATIO: ${atualizadas}.`;
+    closePortariaPdfModal();
+  }catch(e){
+    hideInf();
+    const er=document.getElementById('portaria-err');
+    er.style.display='block'; er.textContent='Erro ao importar PDF: '+e.message;
+  }
+  spin(false);
+}
 
 function openImportModal(){
   pauseAutoSync(180000);
