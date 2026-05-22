@@ -1303,7 +1303,7 @@ function renderRows(){
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
       `</select></div></td>`+
       `<td class="td-sm"><div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">${opTag?opTag+' ':''}<span>${row.descricao_documento||'—'}</span></div></td>`+
-      `<td class="td-sm">${row.peso_liquido||row.toneladas||'—'}</td>`;
+      `<td class="td-sm">${fmtTon(row.peso_liquido||row.toneladas||0)}</td>`;
     tbody.appendChild(tr);
   });
 
@@ -1699,7 +1699,7 @@ function exportCSV(){
   tableData.forEach(r=>{
     const dtKey=String(r.dt||'').trim();
     const mats=exportMap[dtKey]||[];
-    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.peso_liquido||r.toneladas||'',r.tipo_operacao||''];
+    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',fmtTon(r.peso_liquido||r.toneladas||0),r.tipo_operacao||''];
     if(!mats.length){
       rows.push([...base,'','','','']);
     } else {
@@ -1804,14 +1804,22 @@ function rpParseToneladas(row){
 }
 
 function toTonInt(raw){
-  const n=parseInt(
-    String(raw||'0')
-      .split(',')[0]
-      .replace(/\./g,'')
-      .replace(/[^\d-]/g,''),
-    10
-  );
+  const s=String(raw??'0').trim();
+  if(!s) return 0;
+  if(s.includes(',')){
+    const n=parseInt(s.split(',')[0].replace(/\./g,'').replace(/[^\d-]/g,''),10);
+    return Number.isFinite(n)?n:0;
+  }
+  if(/^\d+\.\d+$/.test(s)){
+    const n=Math.round(parseFloat(s));
+    return Number.isFinite(n)?n:0;
+  }
+  const n=parseInt(s.replace(/\./g,'').replace(/[^\d-]/g,''),10);
   return Number.isFinite(n)?n:0;
+}
+
+function fmtTon(raw){
+  return toTonInt(raw).toLocaleString('pt-BR');
 }
 
 function rpWithinWindow(dt,start,end){
