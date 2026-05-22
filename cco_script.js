@@ -1804,8 +1804,14 @@ function rpParseToneladas(row){
 }
 
 function toTonInt(raw){
-  const n=parseFloat(String(raw||'0').replace(/\./g,'').replace(',','.').replace(/[^\d.-]/g,''));
-  return Number.isFinite(n)?Math.floor(n):0;
+  const n=parseInt(
+    String(raw||'0')
+      .split(',')[0]
+      .replace(/\./g,'')
+      .replace(/[^\d-]/g,''),
+    10
+  );
+  return Number.isFinite(n)?n:0;
 }
 
 function rpWithinWindow(dt,start,end){
