@@ -1149,7 +1149,10 @@ async function getActiveRefs(){
     const toDate=(k)=>{const m=String(k).match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?new Date(+m[3],+m[2]-1,+m[1]):new Date(0);};
     uniq.sort((a,b)=>toDate(b)-toDate(a));
     return uniq.slice(0,2);
-  }catch(e){return base;}
+  }catch(e){
+    if(isMissingReporteLogsError(e)) return base;
+    return base;
+  }
 }
 
 async function reloadTable(){
@@ -1365,7 +1368,7 @@ async function tryInsertLog(row){
     await sbInsert('reporte_logs',[row]);
   }catch(e){
     const msg=String(e&&e.message||'');
-    if(msg.includes("Could not find the table 'public.reporte_logs'")) return;
+    if(isMissingReporteLogsError(e)) return;
     console.warn('Falha ao gravar log:',msg);
   }
 }
@@ -1405,6 +1408,14 @@ function openLogs(){
 function closeLogs(){
   document.getElementById('log-overlay').classList.remove('open');
 }
+function isMissingReporteLogsError(err){
+  const msg=String(err&&err.message||err||'').toLowerCase();
+  return msg.includes("public.reporte_logs")
+    || msg.includes('relation "reporte_logs" does not exist')
+    || msg.includes('404')
+    || msg.includes('pgrst');
+}
+
 async function loadLogs(searchDT=""){
   const list=document.getElementById('log-list');
   list.innerHTML='<div style="color:#64748b;padding:12px;">Carregando…</div>';
@@ -1428,7 +1439,7 @@ async function loadLogs(searchDT=""){
     });
   }catch(e){
     const msg=String(e&&e.message||'');
-    if(msg.includes("Could not find the table 'public.reporte_logs'")){
+    if(isMissingReporteLogsError(e)){
       list.innerHTML='<div style="color:#94a3b8;padding:12px;">ℹ️ Log desativado: tabela <b>reporte_logs</b> não existe neste projeto Supabase. O painel de carga continua funcionando normalmente.</div>';
       return;
     }
