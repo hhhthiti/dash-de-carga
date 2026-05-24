@@ -526,14 +526,10 @@ async function persistNormalizedDiaRefs(rows){
   }
 }
 function compareAgendaRows(a,b){
-  const iniA=parseAgendaDateTime(a);
-  const iniB=parseAgendaDateTime(b);
+  const iniA=parseBR(a.grade_carregamento||'')||new Date(9999,0,1);
+  const iniB=parseBR(b.grade_carregamento||'')||new Date(9999,0,1);
   const diffIni=iniA-iniB;
   if(diffIni) return diffIni;
-  const fimA=parseBR(a.fim_carregamento||'')||new Date(9999,0,1);
-  const fimB=parseBR(b.fim_carregamento||'')||new Date(9999,0,1);
-  const diffFim=fimA-fimB;
-  if(diffFim) return diffFim;
   return String(a.dt||'').localeCompare(String(b.dt||''),'pt-BR',{numeric:true});
 }
 
@@ -1356,7 +1352,10 @@ async function saveField(dt,dataRef,field,value){
   try{
     await sbPatch('reporte_carga',{[field]:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    if(row){row[field]=value;renderRows();}
+    if(row){row[field]=value;}
+    await loadData();
+    renderRows();
+    renderReporte();
   }catch(e){showErr('Erro ao salvar: '+e.message);}
   spin(false);
 }
@@ -1377,7 +1376,10 @@ async function saveStatus(dt,dataRef,value){
   try{
     await sbPatch('reporte_carga',{status:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    if(row){row.status=value;renderRows();}
+    if(row){row.status=value;}
+    await loadData();
+    renderRows();
+    renderReporte();
     // Grava log só para status relevantes (evita poluição)
     const STATUS_LOG=['EXPEDIDO','NO SHOW','EM FATURAMENTO','VEICULO RECUSADO','FOI EMBORA'];
     if(STATUS_LOG.includes(value)){
@@ -1745,9 +1747,28 @@ let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
 let rpHoraCorte = localStorage.getItem('rp_hora_corte') || '';
 
+const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO','NO SHOW'];
+
+function rpRefDate(row){
+  return parseBR(row.fim_agenda||'');
+}
+
+function isTransferencia(row){
+  const d=String(row.descricao_documento||'').toUpperCase();
+  return d.includes('TRANSFER') || d.includes('TNF') || d.includes('FILIAL') || d.includes('INTERCOMP') || d.includes('REMESSA');
+}
+
+function isVendaAruja(row){
+  return String(row.centro||'').trim()==='1111' && !isTransferencia(row);
+}
+
+function isVendaMogi(row){
+  return String(row.centro||'').trim()==='1110' && !isTransferencia(row);
+}
+
 function rpGetTurno(row){
   // Classifica pelo horário do FIM da agenda
-  const grade = parseBR(row.grade_carregamento||'') || parseBR(row.agenda||'');
+  const grade = rpRefDate(row);
   if(!grade) return null;
   const h = grade.getHours();
   if(h>=7 && h<=14) return 'T1';
@@ -1875,45 +1896,33 @@ function renderReporte(){
   const realizadoTon={};
   RP_TIPOS.forEach(t=>{realizadoTon[t]=0;});
 
-  const GRADE_STATUS_REALIZADO=['CARREGANDO','EM FATURAMENTO','EXPEDIDO'];
-
   rows.forEach(r=>{
     const tipo=rpNormalizeTipo(r);
     const ton=rpParseToneladas(r);
+    const ref=rpRefDate(r);
+    if(!ref || !sameDay(ref,agora) || ref>agora) return;
 
-    // GRADE: realizado automático pelas DTs do dia com início de carregamento hoje
-    const inicioCarga=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'');
-    const fimDia=new Date(inicioDia); fimDia.setHours(23,59,59,999);
-    if(rpWithinWindow(inicioCarga,inicioDia,fimDia) && GRADE_STATUS_REALIZADO.includes(r.status)){
-      realizadoTon['GRADE']+=ton;
-    }
+    if(STATUS_REALIZADO.includes(r.status)) realizadoTon['GRADE']+=ton;
 
-    if(tipo==='VENDA ARUJA'){
-      const centro=String(r.centro||'').trim();
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if(centro==='1111' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA ARUJA']+=ton;
+    if(tipo==='VENDA ARUJA' && isVendaAruja(r) && STATUS_REALIZADO.includes(r.status)){
+      realizadoTon['VENDA ARUJA']+=ton;
       return;
     }
-    if(tipo==='VENDA MOGI'){
-      const centro=String(r.centro||'').trim();
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if(centro==='1110' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA MOGI']+=ton;
+    if(tipo==='VENDA MOGI' && isVendaMogi(r) && STATUS_REALIZADO.includes(r.status)){
+      realizadoTon['VENDA MOGI']+=ton;
       return;
     }
-    if(tipo==='TRANSFERÊNCIA'){
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if((desc.includes('TRANSFER')||desc.includes('TNF')) && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['TRANSFERÊNCIA']+=ton;
+    if(tipo==='TRANSFERÊNCIA' && isTransferencia(r) && STATUS_REALIZADO.includes(r.status)){
+      realizadoTon['TRANSFERÊNCIA']+=ton;
       return;
     }
   });
 
-  // Planejado da grade é automático pelo início de carregamento dentro do dia atual
-  const fimDiaPlanejado=new Date(inicioDia); fimDiaPlanejado.setHours(23,59,59,999);
   const planejadoGrade = rows
-    .filter(r=>rpWithinWindow(parseBR(r.grade_carregamento||'')||parseBR(r.agenda||''),inicioDia,fimDiaPlanejado))
+    .filter(r=>{
+      const ref=rpRefDate(r);
+      return ref && sameDay(ref,agora) && ref<=agora;
+    })
     .reduce((acc,r)=>acc+rpParseToneladas(r),0);
 // Gráfico de barras
   const chart=document.getElementById('rp-chart');
@@ -2607,8 +2616,9 @@ async function runImport(){
       }catch(e){}
     }
 
-    // Atualiza tabela
+    // Atualiza tela
     renderRows();
+    renderReporte();
 
     const msg=`✅ Concluído! Status atualizados: ${updated} | Hora/SAP preenchidos: ${fieldUpdated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
     document.getElementById('import-result').textContent=msg;
