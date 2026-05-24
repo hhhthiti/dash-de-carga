@@ -271,8 +271,18 @@ function processAgend(file){
       if(matCnt>0) showOk('✨ '+matCnt+' linhas de materiais importadas automaticamente do arquivo de agendamento!');
       const text=decodeBuf(buf);
       const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      // ── Auto-detecta linha de cabeçalho (pula linhas de lixo no início) ──
+      // Alguns exports colocam um número solto (ex: '23270380') antes do cabeçalho real.
+      // Procuramos nas primeiras 5 linhas qual contém SHIPMENT, DT e LOCAL.
+      let headerIdx=0;
+      for(let hi=0;hi<Math.min(lines.length,5);hi++){
+        const up=lines[hi].toUpperCase();
+        if(up.includes('SHIPMENT')&&up.includes('LOCAL')){
+          headerIdx=hi; break;
+        }
+      }
       // Detecta o separador e as colunas do cabeçalho
-      const firstLine=lines[0];
+      const firstLine=lines[headerIdx];
       const sep=firstLine.indexOf(';')>(firstLine.match(/\t/g)||[]).length?';':'\t';
       const h=firstLine.split(sep).map(s=>s.trim().replace(/^"|"$/g,''));
 
@@ -300,20 +310,34 @@ function processAgend(file){
       const iTransp=ci('NOME TRANSPORTADORA');
       const iAg=ci('AGENDA TRANSPORTADOR');
       const iFim=ci('FIM AGENDA TRANSPORTADOR');
-      if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
+
+      // ── Validação das colunas obrigatórias (antes era só DT e AGENDA) ──
+      // Agora também valida LOCAL e DOCA para dar erro claro ao usuário
+      // em vez de silenciosamente filtrar tudo e mostrar "nenhuma linha válida".
+      const colsObrigatorias=[];
+      if(iDT===-1) colsObrigatorias.push('DT');
+      if(iAg===-1) colsObrigatorias.push('AGENDA TRANSPORTADOR');
+      if(iLoc===-1) colsObrigatorias.push('LOCAL');
+      if(iDoca===-1) colsObrigatorias.push('DOCA');
+      if(colsObrigatorias.length>0)
+        throw new Error('Coluna(s) não encontrada(s) no arquivo: '+colsObrigatorias.join(', ')+'.\nColunas detectadas: '+h.join(' | '));
+
       const T=today(),AM=tomorrow();
       const byDT={};
-      for(let i=1;i<lines.length;i++){
+      // Helper para remover aspas de células (ex: "DOCA_1_FAB_MOG_IFNT" → DOCA_1_FAB_MOG_IFNT)
+      const stripQ=v=>(v||'').trim().replace(/^"|"$/g,'').trim();
+      for(let i=headerIdx+1;i<lines.length;i++){
         const c=lines[i].split(sep);
-        const dtRaw=(c[iDT]||'').trim();
+        const dtRaw=stripQ(c[iDT]);
         if(!dtRaw)continue;
-        const loc=(c[iLoc]||'').trim();
+        const loc=stripQ(c[iLoc]);
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
-        const docaRaw=(c[iDoca]||'').trim();
-        // Exclui DOCA_X_FAB_MOG (variações numéricas) e também DOCA nula/vazia.
+        const docaRaw=stripQ(c[iDoca]);
+        // BLACKLIST: exclui DOCA_N_FAB_MOG (sem _IFNT) e valores nulos/vazios.
+        // Mantém: DOCA_N_FAB_MOG_IFNT, DOCA_N_FAB_MOG_IFNT_EXTRA, ARUJA_DOC_*, etc.
         if(!docaRaw || /^NULL$/i.test(docaRaw)) continue;
         if(/^DOCA_\d+_FAB_MOG$/i.test(docaRaw)) continue;
-        const agenda=parseBR((c[iAg]||'').trim());
+        const agenda=parseBR(stripQ(c[iAg]));
         // Mantém somente agenda para hoje ou amanhã.
         if(!agenda || (!sameDay(agenda,T) && !sameDay(agenda,AM))) continue;
         const dt=dtRaw.replace(/\.0+$/,'');
@@ -321,9 +345,9 @@ function processAgend(file){
           byDT[dt]={
           DT:dt,LOCAL:loc,
           DOCA:docaRaw,
-          TRANSPORTADORA:(c[iTransp]||'').trim(),
+          TRANSPORTADORA:iTransp!==-1?stripQ(c[iTransp]):'',
           AGENDA:agenda,
-          FIM_AGENDA:parseBR((c[iFim]||'').trim()),
+          FIM_AGENDA:iFim!==-1?parseBR(stripQ(c[iFim])):null,
           };
         }
       }
