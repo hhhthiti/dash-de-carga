@@ -1869,8 +1869,7 @@ function rpGetAgoraCorte(){
   const selectedDate=parseBR(rpDataRef||'') || today();
   const corte=new Date(selectedDate);
   if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)){
-    const sameSelectedDay=sameDay(selectedDate,now);
-    corte.setHours(sameSelectedDay?now.getHours():23,sameSelectedDay?now.getMinutes():59,59,999);
+    corte.setHours(now.getHours(),now.getMinutes(),59,999);
     return corte;
   }
   const [hh,mm]=rpHoraCorte.split(':').map(n=>parseInt(n,10));
@@ -1945,7 +1944,6 @@ function renderReporte(){
     :dayRows.filter(r=>rpGetTurno(r)===rpTurnoFiltro)).sort(compareFimAgendaRows);
 
   const infoEl=document.getElementById('rp-turno-info');
-  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual · dia '+rpDataRef;
 
   // Inputs de meta
   const metasEl=document.getElementById('rp-metas-inputs');
@@ -1954,6 +1952,8 @@ function renderReporte(){
   }
 
   const agora=rpGetAgoraCorte();
+  const corteLabel=agora.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual · corte '+corteLabel;
 
   const planejadoTon={};
   const realizadoTon={};
