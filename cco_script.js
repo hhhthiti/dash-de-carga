@@ -662,23 +662,24 @@ function processAgend(file){
           .replace(/[\s\-]+/g,'_')
           .replace(/_+/g,'_');
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
-        if(iDoca!==-1&&!doca)continue;
-        // Exclui docas fab_mogi (doca_1_fab_mogi, doca_2_fab_mogi, etc.),
-        // mas mantém variantes com sufixo _ifnt.
-        const docaCompact=docaNorm.replace(/_/g,'');
-        const isFabMogi = docaNorm.includes('fab_mogi') || docaCompact.includes('fabmogi');
-        const isFabMogiIfnt = docaNorm.includes('fab_mogi_ifnt') || docaCompact.includes('fabmogiifnt');
-        if(isFabMogi && !isFabMogiIfnt) continue;
+        // Exclui docas fab_mog sem _ifnt (DOCA_1_FAB_MOG, DOCA_2_FAB_MOG etc.),
+        // mas mantém variantes com sufixo _ifnt (DOCA_9_FAB_MOG_IFNT, DOCA_12_FAB_MOG_IFNT_EXTRA etc.).
+        const isFabMog = docaNorm.includes('fab_mog');
+        const isIfnt = docaNorm.includes('_ifnt');
+        if(isFabMog && !isIfnt) continue;
+        // Usa AGENDA TRANSPORTADOR como data de referência
+        const agendaRaw=parseBR((c[iAg]||'').trim());
+        if(!agendaRaw) continue; // sem agenda, ignora
         agendRows.push({
           DT:normalizeDT(c[iDT]),LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
-          AGENDA:parseBR((c[iAg]||'').trim()),
+          AGENDA:agendaRaw,
           FIM_AGENDA:parseBR((c[iFim]||'').trim()),
           TIPO:iTipo!==-1?(c[iTipo]||'').trim():'',
           PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
         });
       }
-      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111'+(iDoca!==-1?' e DOCA preenchida':'')+' encontrada.');
+      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111 e DOCA _IFNT ou ARUJA encontrada.');
       hideInf();
       if(isInlineUpload){
         // Upload feito de dentro da tabela: pula passo 2/3 e vai direto para o banco
