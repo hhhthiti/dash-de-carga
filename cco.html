@@ -295,6 +295,10 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div id="tstatus"></div>
       <div id="tactions">
         <input id="dt-search" type="text" placeholder="🔎 Buscar DT" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:11px;min-width:130px;" oninput="onSearchDT(this.value)"/>
+        <select id="table-sort-mode" onchange="setTableSortMode(this.value)" title="Ordenar tabela pela grade" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:11px;">
+          <option value="inicio">Início da grade</option>
+          <option value="fim">Fim da agenda</option>
+        </select>
         <button class="bexp" onclick="exportCSV()">⬇ CSV</button>
         <button class="blog" onclick="openLogs()">📋 Logs</button>
         <button class="bg"   onclick="reloadTable()">↻ Atualizar</button>
@@ -346,6 +350,9 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div id="reporte-wrap" style="display:none;padding:16px 18px;">
       <!-- Turnos -->
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <label for="rp-data-ref" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">DIA:</label>
+        <select id="rp-data-ref" onchange="rpSetDataRef(this.value)"
+          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"></select>
         <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">TURNO:</span>
         <button class="bg rp-turno active-turno" id="rp-t0" onclick="rpSetTurno('todos')" style="font-size:10px;padding:4px 12px;">📅 TODOS</button>
         <button class="bg rp-turno" id="rp-t1" onclick="rpSetTurno('T1')" style="font-size:10px;padding:4px 12px;">🌅 T1 · 07-14h</button>
@@ -358,7 +365,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       </div>
       <!-- Metas configuráveis -->
       <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
-        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📋 PLANEJADO DO DIA (meta)</div>
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📋 PLANEJADO AUTOMÁTICO DO DIA</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;" id="rp-metas-inputs"></div>
       </div>
       <!-- Gráfico -->

@@ -172,6 +172,7 @@ let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
 let dtSearchTerm='';
+let tableSortMode=localStorage.getItem('table_sort_mode')||'inicio';
 let activeRefsOverride=[];
 let autoSyncPausedUntil=0;
 let fileWorkflowInProgress=false;
@@ -474,6 +475,12 @@ function onSearchDT(v){
   renderRows();
 }
 
+function setTableSortMode(v){
+  tableSortMode=v==='fim'?'fim':'inicio';
+  try{localStorage.setItem('table_sort_mode',tableSortMode);}catch(e){}
+  renderRows();
+}
+
 /* ═══════════════════════════════════════════════════════
    DATAS
 ═══════════════════════════════════════════════════════ */
@@ -531,6 +538,18 @@ function compareAgendaRows(a,b){
   const diffIni=iniA-iniB;
   if(diffIni) return diffIni;
   return String(a.dt||'').localeCompare(String(b.dt||''),'pt-BR',{numeric:true});
+}
+
+function compareFimAgendaRows(a,b){
+  const fimA=parseBR(a.fim_carregamento||'')||parseBR(a.grade_carregamento||'')||new Date(9999,0,1);
+  const fimB=parseBR(b.fim_carregamento||'')||parseBR(b.grade_carregamento||'')||new Date(9999,0,1);
+  const diffFim=fimA-fimB;
+  if(diffFim) return diffFim;
+  return compareAgendaRows(a,b);
+}
+
+function compareTableRows(a,b){
+  return tableSortMode==='fim'?compareFimAgendaRows(a,b):compareAgendaRows(a,b);
 }
 
 const FARDOS_POR_PALETE={
@@ -1273,7 +1292,10 @@ function renderRows(){
     `<span style="color:#60a5fa">${cH} hoje</span> · <span style="color:#a78bfa">${cA} amanhã</span>`;
 
   // Filtro de aba
-  let rows=[...tableData].sort(compareAgendaRows);
+  const sortSelect=document.getElementById('table-sort-mode');
+  if(sortSelect && sortSelect.value!==tableSortMode) sortSelect.value=tableSortMode;
+
+  let rows=[...tableData].sort(compareTableRows);
   if(currentTableTab==='finalizadas'){
     rows=rows.filter(r=>STATUS_FINAIS.includes(r.status));
   }else{
@@ -1755,18 +1777,19 @@ function exportCSV(){
 /* ═══════════════════════════════════════════════════════
    REPORTE DE STATUS
 ═══════════════════════════════════════════════════════ */
-const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','PRÉ-FATURA','TRANSFERÊNCIA','GRADE'];
+const RP_TIPOS = ['GRADE','TRANSFERÊNCIA','VENDA ARUJA','VENDA MOGI','PRÉ-FATURA'];
 const RP_COLORS = {
   'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','PRÉ-FATURA':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
 let rpHoraCorte = localStorage.getItem('rp_hora_corte') || '';
+let rpDataRef = localStorage.getItem('rp_data_ref') || '';
 
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO','NO SHOW'];
 
 function rpRefDate(row){
-  return parseBR(row.fim_agenda||'');
+  return parseBR(row.fim_carregamento||'') || parseBR(row.fim_agenda||'') || parseBR(row.agenda||'') || parseBR(row.grade_carregamento||'');
 }
 
 function isTransferencia(row){
@@ -1775,11 +1798,17 @@ function isTransferencia(row){
 }
 
 function isVendaAruja(row){
-  return String(row.centro||'').trim()==='1111' && !isTransferencia(row);
+  const centro=String(row.centro||'').trim();
+  const op=String(row.tipo_operacao||'').toUpperCase();
+  if(isTransferencia(row) || op.includes('TRANSFER')) return false;
+  return centro==='1111' || op.includes('ARUJA') || (op.includes('VENDA') && !op.includes('MOGI'));
 }
 
 function isVendaMogi(row){
-  return String(row.centro||'').trim()==='1110' && !isTransferencia(row);
+  const centro=String(row.centro||'').trim();
+  const op=String(row.tipo_operacao||'').toUpperCase();
+  if(isTransferencia(row) || op.includes('TRANSFER')) return false;
+  return centro==='1110' || op.includes('MOGI');
 }
 
 function rpGetTurno(row){
@@ -1823,6 +1852,12 @@ function rpSaveMeta(tipo,val){
   renderReporte();
 }
 
+function rpSetDataRef(v){
+  rpDataRef=String(v||'').trim();
+  try{localStorage.setItem('rp_data_ref',rpDataRef);}catch(e){}
+  renderReporte();
+}
+
 function rpSetHoraCorte(v){
   rpHoraCorte=String(v||'').trim();
   try{localStorage.setItem('rp_hora_corte',rpHoraCorte);}catch(e){}
@@ -1831,9 +1866,14 @@ function rpSetHoraCorte(v){
 
 function rpGetAgoraCorte(){
   const now=new Date();
-  if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)) return now;
+  const selectedDate=parseBR(rpDataRef||'') || today();
+  const corte=new Date(selectedDate);
+  if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)){
+    const sameSelectedDay=sameDay(selectedDate,now);
+    corte.setHours(sameSelectedDay?now.getHours():23,sameSelectedDay?now.getMinutes():59,59,999);
+    return corte;
+  }
   const [hh,mm]=rpHoraCorte.split(':').map(n=>parseInt(n,10));
-  const corte=new Date(now);
   corte.setHours(hh||0,mm||0,59,999);
   return corte;
 }
@@ -1888,64 +1928,75 @@ function renderReporte(){
   const horaInput=document.getElementById('rp-hora-corte');
   if(horaInput && horaInput.value!==rpHoraCorte) horaInput.value=rpHoraCorte;
 
-  const rows=rpTurnoFiltro==='todos'?[...tableData]
-    :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
+  const refs=[...new Set(tableData.map(r=>String(r.data_ref||'')).filter(Boolean))].sort((a,b)=>{
+    const da=parseBR(a), db=parseBR(b);
+    return (da?da.getTime():0)-(db?db.getTime():0);
+  });
+  if(!rpDataRef || (refs.length && !refs.includes(rpDataRef))) rpDataRef=refs[0]||dKey(today());
+
+  const diaSelect=document.getElementById('rp-data-ref');
+  if(diaSelect){
+    diaSelect.innerHTML=refs.map(ref=>`<option value="${ref}">${ref}</option>`).join('');
+    diaSelect.value=rpDataRef;
+  }
+
+  const dayRows=tableData.filter(r=>String(r.data_ref||'')===rpDataRef);
+  const rows=(rpTurnoFiltro==='todos'?[...dayRows]
+    :dayRows.filter(r=>rpGetTurno(r)===rpTurnoFiltro)).sort(compareFimAgendaRows);
 
   const infoEl=document.getElementById('rp-turno-info');
-  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual';
+  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual · dia '+rpDataRef;
 
   // Inputs de meta
   const metasEl=document.getElementById('rp-metas-inputs');
   if(metasEl){
-    metasEl.innerHTML=RP_TIPOS.map(tipo=>`
-      <div>
-        <label style="font-size:9px;letter-spacing:1.5px;color:${RP_COLORS[tipo]||'#64748b'};font-weight:700;display:block;margin-bottom:4px;">${tipo}</label>
-        <input class="rp-meta-input" type="number" min="0" value="${rpMetas[tipo]||0}"
-          oninput="rpSaveMeta('${tipo}',this.value)" title="Meta do dia para ${tipo}"/>
-      </div>
-    `).join('');
+    metasEl.innerHTML='<div style="font-size:12px;color:#94a3b8;line-height:1.6;">Planejado automático: soma as toneladas das DTs do dia selecionado, em ordem de fim da agenda, do começo do dia até o horário de corte. Realizado: soma somente status EM FATURAMENTO, EXPEDIDO e NO SHOW.</div>';
   }
 
   const agora=rpGetAgoraCorte();
-  const inicioDia=new Date(agora); inicioDia.setHours(0,0,0,0);
 
+  const planejadoTon={};
   const realizadoTon={};
-  RP_TIPOS.forEach(t=>{realizadoTon[t]=0;});
+  RP_TIPOS.forEach(t=>{planejadoTon[t]=0;realizadoTon[t]=0;});
 
   rows.forEach(r=>{
     const tipo=rpNormalizeTipo(r);
     const ton=rpParseToneladas(r);
     const ref=rpRefDate(r);
     if(!ref || !sameDay(ref,agora) || ref>agora) return;
+    const realizado=STATUS_REALIZADO.includes(r.status);
 
-    if(STATUS_REALIZADO.includes(r.status)) realizadoTon['GRADE']+=ton;
+    planejadoTon['GRADE']+=ton;
+    if(realizado) realizadoTon['GRADE']+=ton;
 
-    if(tipo==='VENDA ARUJA' && isVendaAruja(r) && STATUS_REALIZADO.includes(r.status)){
-      realizadoTon['VENDA ARUJA']+=ton;
+    if(tipo==='PRÉ-FATURA'){
+      planejadoTon['PRÉ-FATURA']+=ton;
+      if(realizado) realizadoTon['PRÉ-FATURA']+=ton;
       return;
     }
-    if(tipo==='VENDA MOGI' && isVendaMogi(r) && STATUS_REALIZADO.includes(r.status)){
-      realizadoTon['VENDA MOGI']+=ton;
+    if(isTransferencia(r) || tipo==='TRANSFERÊNCIA'){
+      planejadoTon['TRANSFERÊNCIA']+=ton;
+      if(realizado) realizadoTon['TRANSFERÊNCIA']+=ton;
       return;
     }
-    if(tipo==='TRANSFERÊNCIA' && isTransferencia(r) && STATUS_REALIZADO.includes(r.status)){
-      realizadoTon['TRANSFERÊNCIA']+=ton;
+    if(isVendaMogi(r) || tipo==='VENDA MOGI'){
+      planejadoTon['VENDA MOGI']+=ton;
+      if(realizado) realizadoTon['VENDA MOGI']+=ton;
+      return;
+    }
+    if(isVendaAruja(r) || tipo==='VENDA ARUJA'){
+      planejadoTon['VENDA ARUJA']+=ton;
+      if(realizado) realizadoTon['VENDA ARUJA']+=ton;
       return;
     }
   });
 
-  const planejadoGrade = rows
-    .filter(r=>{
-      const ref=rpRefDate(r);
-      return ref && sameDay(ref,agora) && ref<=agora;
-    })
-    .reduce((acc,r)=>acc+rpParseToneladas(r),0);
 // Gráfico de barras
   const chart=document.getElementById('rp-chart');
   if(chart){
-    const maxVal=Math.max(1,...RP_TIPOS.map(t=>{ const p=t==='GRADE'?planejadoGrade:(rpMetas[t]||0); return Math.max(p,realizadoTon[t]||0);}));
+    const maxVal=Math.max(1,...RP_TIPOS.map(t=>Math.max(planejadoTon[t]||0,realizadoTon[t]||0)));
     chart.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=tipo==='GRADE'?planejadoGrade:(rpMetas[tipo]||0);
+      const plan=planejadoTon[tipo]||0;
       const real=realizadoTon[tipo]||0;
       const pend=Math.max(0,plan-real);
       const hPlan=plan?Math.round((plan/maxVal)*130):0;
@@ -1968,7 +2019,7 @@ function renderReporte(){
   if(numEl){
     numEl.innerHTML=RP_TIPOS.map(tipo=>{
       const realTon=(realizadoTon[tipo]||0);
-      const plan = tipo==='GRADE' ? planejadoGrade : (rpMetas[tipo]||0);
+      const plan = planejadoTon[tipo]||0;
       const tonStr=realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
       const pend=Math.max(0,plan-realTon);
       const pct=plan>0?Math.min(100,Math.round(realTon/plan*100)):0;
@@ -1997,7 +2048,7 @@ function renderReporte(){
     const statusList=['AG CHEGADA','PATIO','CARREGANDO','EM FATURAMENTO','SEPARANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','FOI EMBORA'];
     const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
     const sCounts={};
-    tableData.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
+    rows.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
     statusCountEl.innerHTML=statusList
       .filter(s=>sCounts[s]>0)
       .map(s=>{
@@ -2016,7 +2067,7 @@ function renderReporte(){
     const byTurno={T1:0,T2:0,T3:0};
     let t3DiaProd=0;
     let t3TurnoProd=0;
-    const hoje0=new Date(); hoje0.setHours(0,0,0,0);
+    const hoje0=parseBR(rpDataRef||'')||today(); hoje0.setHours(0,0,0,0);
     const amanha0=new Date(hoje0); amanha0.setDate(amanha0.getDate()+1);
     const t3DiaIni=new Date(hoje0); t3DiaIni.setHours(23,0,0,0);
     const t3DiaFim=new Date(hoje0); t3DiaFim.setHours(23,59,59,999);
@@ -2025,6 +2076,7 @@ function renderReporte(){
 
     rows.forEach(r=>{
       const grade=parseBR(r.grade_carregamento||'');
+      if(!grade || !sameDay(grade,hoje0)) return;
       const turno=rpTurnoFromDate(grade);
       if(!turno) return;
       const ton=rpParseToneladas(r);
