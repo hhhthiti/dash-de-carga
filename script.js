@@ -286,24 +286,36 @@ function processAgend(file){
       }
 
       // ── Formato original: arquivo de agendamento TSV ──
-      const ci=n=>h.indexOf(n);
-      const iDT=ci('DT'),iLoc=ci('LOCAL'),iTransp=ci('NOME TRANSPORTADORA');
-      const iAg=ci('AGENDA TRANSPORTADOR'),iFim=ci('FIM AGENDA TRANSPORTADOR');
-      const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO');
+      const ci=(...names)=>{
+        const upper=h.map(c=>(c||'').toUpperCase().trim());
+        for(const n of names){
+          const i=upper.indexOf((n||'').toUpperCase().trim());
+          if(i!==-1) return i;
+        }
+        return -1;
+      };
+      const iDT=ci('DT');
+      const iLoc=ci('LOCAL');
+      const iDoca=ci('DOCA');
+      const iTransp=ci('NOME TRANSPORTADORA');
+      const iAg=ci('AGENDA TRANSPORTADOR');
+      const iFim=ci('FIM AGENDA TRANSPORTADOR');
       if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
       agendRows=[];
       for(let i=1;i<lines.length;i++){
-        const c=lines[i].split('\t');
+        const c=lines[i].split(sep);
         if(!c[iDT]?.trim())continue;
         const loc=(c[iLoc]||'').trim();
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
+        const docaRaw=(c[iDoca]||'').trim();
+        // Remove DOCA_X_FAB_MOG (e variações no número), mantém DOCA_X_FAB_MOG_IFNT e nulos.
+        if(docaRaw && /^DOCA_\d+_FAB_MOG$/i.test(docaRaw)) continue;
         agendRows.push({
           DT:(c[iDT]||'').trim(),LOCAL:loc,
+          DOCA:docaRaw,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
           AGENDA:parseBR((c[iAg]||'').trim()),
           FIM_AGENDA:parseBR((c[iFim]||'').trim()),
-          TIPO:iTipo!==-1?(c[iTipo]||'').trim():'',
-          PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
         });
       }
       if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111 encontrada.');
