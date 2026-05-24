@@ -301,24 +301,34 @@ function processAgend(file){
       const iAg=ci('AGENDA TRANSPORTADOR');
       const iFim=ci('FIM AGENDA TRANSPORTADOR');
       if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
-      agendRows=[];
+      const T=today(),AM=tomorrow();
+      const byDT={};
       for(let i=1;i<lines.length;i++){
         const c=lines[i].split(sep);
-        if(!c[iDT]?.trim())continue;
+        const dtRaw=(c[iDT]||'').trim();
+        if(!dtRaw)continue;
         const loc=(c[iLoc]||'').trim();
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         const docaRaw=(c[iDoca]||'').trim();
-        // Remove DOCA_X_FAB_MOG (e variações no número), mantém DOCA_X_FAB_MOG_IFNT e nulos.
-        if(docaRaw && /^DOCA_\d+_FAB_MOG$/i.test(docaRaw)) continue;
-        agendRows.push({
-          DT:(c[iDT]||'').trim(),LOCAL:loc,
+        // Exclui DOCA_X_FAB_MOG (variações numéricas) e também DOCA nula/vazia.
+        if(!docaRaw || /^NULL$/i.test(docaRaw)) continue;
+        if(/^DOCA_\d+_FAB_MOG$/i.test(docaRaw)) continue;
+        const agenda=parseBR((c[iAg]||'').trim());
+        // Mantém somente agenda para hoje ou amanhã.
+        if(!agenda || (!sameDay(agenda,T) && !sameDay(agenda,AM))) continue;
+        const dt=dtRaw.replace(/\.0+$/,'');
+        if(!byDT[dt]){
+          byDT[dt]={
+          DT:dt,LOCAL:loc,
           DOCA:docaRaw,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
-          AGENDA:parseBR((c[iAg]||'').trim()),
+          AGENDA:agenda,
           FIM_AGENDA:parseBR((c[iFim]||'').trim()),
-        });
+          };
+        }
       }
-      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111 encontrada.');
+      agendRows=Object.values(byDT);
+      if(!agendRows.length)throw new Error('Nenhuma linha válida encontrada para LOCAL 1110/1111 com agenda para hoje/amanhã e DOCA permitida.');
       hideInf();
       renderStep2();
     }catch(e){hideInf();showErr(e.message);}
