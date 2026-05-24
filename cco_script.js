@@ -1036,9 +1036,14 @@ async function buildTable(){
     const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
     const logsStatusMap={};
     if(dtsUpload.length){
-      const logRows=await sbGet('reporte_logs',
-        `dt=in.("${dtsUpload.join('\",\"')}")&order=created_at.desc&limit=1000`
-      );
+      let logRows=[];
+      try{
+        logRows=await sbGet('reporte_logs',
+          `dt=in.("${dtsUpload.join('\",\"')}")&order=created_at.desc&limit=1000`
+        );
+      }catch(e){
+        if(!isMissingReporteLogsError(e)) throw e;
+      }
       (logRows||[]).forEach(l=>{
         const dtLog=normalizeDT(l.dt);
         const st=String(l.status||'').trim();
@@ -1356,7 +1361,7 @@ async function saveField(dt,dataRef,field,value){
     await sbPatch('reporte_carga',{[field]:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
     if(row){row[field]=value;}
-    await loadData();
+    await reloadTable();
     renderRows();
     renderReporte();
   }catch(e){showErr('Erro ao salvar: '+e.message);}
@@ -1380,7 +1385,7 @@ async function saveStatus(dt,dataRef,value){
     await sbPatch('reporte_carga',{status:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
     if(row){row.status=value;}
-    await loadData();
+    await reloadTable();
     renderRows();
     renderReporte();
     // Grava log só para status relevantes (evita poluição)
@@ -2353,7 +2358,7 @@ async function runPortariaPdfImport(file){
         const patch={status:'PATIO',updated_at:new Date().toISOString()};
         if(!row.hora_chegada) patch.hora_chegada=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         await sbPatch('reporte_carga',patch,{dt:row.dt,data_ref:row.data_ref});
-        await sbInsert('reporte_logs',[{dt:row.dt,data_ref:row.data_ref,status:'PATIO',transportadora:row.transportadora||'',created_at:new Date().toISOString()}]).catch(()=>{});
+        await tryInsertLog({dt:row.dt,data_ref:row.data_ref,status:'PATIO',transportadora:row.transportadora||'',created_at:new Date().toISOString()});
         row.status='PATIO';
         if(!row.hora_chegada) row.hora_chegada=patch.hora_chegada;
         atualizadas++;
