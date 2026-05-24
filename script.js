@@ -148,6 +148,11 @@ function parseBR(s){
   const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[,T\s]+(\d{2}):(\d{2}))?/);
   return m?new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)):null;
 }
+function normalizeDT(raw){
+  const v=String(raw||'').trim().replace(/\.0+$/,'').replace(/\D/g,'');
+  if(!v) return '';
+  return v.replace(/^0+(?=\d)/,'');
+}
 
 function parseAgendaDateTime(row){
   const grade=parseBR(row.grade_carregamento||'');
@@ -232,9 +237,7 @@ function processRelatorioExpedicao(text){
   const byDT={};
   for(let i=1;i<lines.length;i++){
     const c=lines[i].split(sep).map(strip);
-    const dtRaw=(c[iDT]||'').replace(/\.0+$/,'').trim();
-    if(!dtRaw) continue;
-    const dt=dtRaw.replace(/\D/g,'');
+    const dt=normalizeDT(c[iDT]);
     if(!dt||dt.length<5) continue;
     if(!byDT[dt]){
       // Prioriza Data Agendamento; fallback: Data Carregar
@@ -328,8 +331,8 @@ function processAgend(file){
       const stripQ=v=>(v||'').trim().replace(/^"|"$/g,'').trim();
       for(let i=headerIdx+1;i<lines.length;i++){
         const c=lines[i].split(sep);
-        const dtRaw=stripQ(c[iDT]);
-        if(!dtRaw)continue;
+        const dt=normalizeDT(stripQ(c[iDT]));
+        if(!dt)continue;
         const loc=stripQ(c[iLoc]);
         if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
         const docaRaw=stripQ(c[iDoca]);
@@ -340,7 +343,6 @@ function processAgend(file){
         const agenda=parseBR(stripQ(c[iAg]));
         // Mantém somente agenda para hoje ou amanhã.
         if(!agenda || (!sameDay(agenda,T) && !sameDay(agenda,AM))) continue;
-        const dt=dtRaw.replace(/\.0+$/,'');
         if(!byDT[dt]){
           byDT[dt]={
           DT:dt,LOCAL:loc,
@@ -413,7 +415,7 @@ function tryImportMaterialsFromAgend(buf){
     let cnt=0;
     for(const row of rows){
       const rawDT=row[kDT];
-      const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
+      const dt=normalizeDT(rawDT);
       const rawMat=row[kMat];
       const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
       const qtdRaw=kQtd?String(row[kQtd]||''):'';
@@ -498,8 +500,7 @@ function parseZlesText(text){
     for(let i=1;i<lines.length;i++){
       const c=lines[i].split(sep).map(strip);
       if(c.every(v=>!v)){linhasIgnoradas++;continue;}
-      const dtRaw=(c[iDT]||'').replace(/\.0+$/,'').trim();
-      const dt=dtRaw.replace(/\D/g,'');
+      const dt=normalizeDT(c[iDT]);
       if(!dt||dt.length<5){linhasIgnoradas++;continue;}
       const matRaw=(c[iMat]||'').replace(/\.0+$/,'').trim();
       const mat=matRaw.replace(/\D/g,'');
@@ -572,7 +573,7 @@ function processExtra(file){
       let cnt=0;
       for(const row of rows){
         const rawDT=row[kDT];
-        const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
+        const dt=normalizeDT(rawDT);
         const rawMat=row[kMat];
         const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
         const qtd=kQtd?String(row[kQtd]||''):'';
