@@ -1875,7 +1875,7 @@ function rpSetHoraCorte(v){
   renderReporte();
 }
 
-function rpGetAgoraCorte(){
+function rpGetCorteDate(){
   const now=new Date();
   const selectedDate=parseBR(rpDataRef||'') || today();
   const corte=new Date(selectedDate);
@@ -1886,6 +1886,22 @@ function rpGetAgoraCorte(){
   const [hh,mm]=rpHoraCorte.split(':').map(n=>parseInt(n,10));
   corte.setHours(hh||0,mm||0,59,999);
   return corte;
+}
+
+function rpGetCorteMinutes(){
+  const d=rpGetCorteDate();
+  return d.getHours()*60+d.getMinutes();
+}
+
+function rpRowFimMinutes(row){
+  const fim=rpRefDate(row);
+  if(!fim) return null;
+  return fim.getHours()*60+fim.getMinutes();
+}
+
+function rpRowDentroDoCorte(row,corteMin){
+  const fimMin=rpRowFimMinutes(row);
+  return fimMin!==null && fimMin<=corteMin;
 }
 
 
@@ -1959,12 +1975,13 @@ function renderReporte(){
   // Inputs de meta
   const metasEl=document.getElementById('rp-metas-inputs');
   if(metasEl){
-    metasEl.innerHTML='<div style="font-size:12px;color:#94a3b8;line-height:1.6;">Planejado: soma as toneladas das DTs do dia selecionado cujo fim da agenda vai de 00:00 até o horário de corte. Realizado: dentro desse mesmo conjunto, soma somente status EM FATURAMENTO, EXPEDIDO e NO SHOW. Transferência usa Desc. Documento; Venda Arujá usa Venda Normal + centro 1111; Venda Mogi usa Venda Normal + centro 1110.</div>';
+    metasEl.innerHTML='<div style="font-size:12px;color:#94a3b8;line-height:1.6;">Modo manual: escolha o horário de corte. Planejado soma as toneladas das DTs do dia selecionado cujo Fim Agenda é menor ou igual ao horário escolhido. Realizado usa esse mesmo conjunto e soma somente status EM FATURAMENTO, EXPEDIDO e NO SHOW. Transferência usa Desc. Documento; Venda Arujá usa Venda Normal + centro 1111; Venda Mogi usa Venda Normal + centro 1110.</div>';
   }
 
-  const agora=rpGetAgoraCorte();
-  const corteLabel=agora.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual · corte '+corteLabel;
+  const corte=rpGetCorteDate();
+  const corteMin=rpGetCorteMinutes();
+  const corteLabel=corte.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual · corte até '+corteLabel;
 
   const planejadoTon={};
   const realizadoTon={};
@@ -1973,8 +1990,7 @@ function renderReporte(){
   rows.forEach(r=>{
     const modalidade=rpModalidade(r);
     const ton=rpParseToneladas(r);
-    const ref=rpRefDate(r);
-    if(!ref || !sameDay(ref,agora) || ref>agora) return;
+    if(!rpRowDentroDoCorte(r,corteMin)) return;
     const realizado=STATUS_REALIZADO.includes(r.status);
 
     planejadoTon['GRADE']+=ton;
