@@ -10,6 +10,7 @@ alter table if exists public.reporte_carga
   add column if not exists paletizacao text,
   add column if not exists tipo_operacao text,
   add column if not exists descricao_documento text,
+  add column if not exists centro text,
   add column if not exists reagendada boolean default false,
   add column if not exists updated_at timestamptz default now();
 

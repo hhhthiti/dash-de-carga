@@ -165,13 +165,14 @@ function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
   return emptyDash?'<span class="tag-sem">—</span>':'';
 }
 
-let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
+let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, centroMap={}, tableData=[];
 let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={}, paletizacaoMap={};
 let preFatMode=false; // Ctrl+Ç ativa checkboxes de Pré-Fat nas DTs
 let panelDT=null;
 let currentTableTab='todas';
 let reagendDT=null;
 let dtSearchTerm='';
+let tableSortMode=localStorage.getItem('table_sort_mode')||'inicio';
 let activeRefsOverride=[];
 let autoSyncPausedUntil=0;
 let fileWorkflowInProgress=false;
@@ -257,7 +258,13 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     setStep(1);
   }
   // Ticker para atualizar emojis de relógio a cada minuto
-  setInterval(()=>{ if(tableData.length) renderRows(); }, 60000);
+  updateStatusReminder();
+  setInterval(()=>{
+    updateStatusReminder();
+    if(!tableData.length) return;
+    if(currentTableTab==='reporte') renderReporte();
+    else if(currentTableTab==='todas'||currentTableTab==='finalizadas') renderRows();
+  }, 60000);
   // Auto-sync para ambiente com múltiplos usuários
   setInterval(async ()=>{
     if(shouldSkipAutoSync()) return;
@@ -474,6 +481,12 @@ function onSearchDT(v){
   renderRows();
 }
 
+function setTableSortMode(v){
+  tableSortMode=v==='fim'?'fim':'inicio';
+  try{localStorage.setItem('table_sort_mode',tableSortMode);}catch(e){}
+  renderRows();
+}
+
 /* ═══════════════════════════════════════════════════════
    DATAS
 ═══════════════════════════════════════════════════════ */
@@ -526,15 +539,23 @@ async function persistNormalizedDiaRefs(rows){
   }
 }
 function compareAgendaRows(a,b){
-  const iniA=parseAgendaDateTime(a);
-  const iniB=parseAgendaDateTime(b);
+  const iniA=parseBR(a.grade_carregamento||'')||new Date(9999,0,1);
+  const iniB=parseBR(b.grade_carregamento||'')||new Date(9999,0,1);
   const diffIni=iniA-iniB;
   if(diffIni) return diffIni;
-  const fimA=parseBR(a.fim_carregamento||'')||new Date(9999,0,1);
-  const fimB=parseBR(b.fim_carregamento||'')||new Date(9999,0,1);
+  return String(a.dt||'').localeCompare(String(b.dt||''),'pt-BR',{numeric:true});
+}
+
+function compareFimAgendaRows(a,b){
+  const fimA=parseBR(a.fim_carregamento||'')||parseBR(a.grade_carregamento||'')||new Date(9999,0,1);
+  const fimB=parseBR(b.fim_carregamento||'')||parseBR(b.grade_carregamento||'')||new Date(9999,0,1);
   const diffFim=fimA-fimB;
   if(diffFim) return diffFim;
-  return String(a.dt||'').localeCompare(String(b.dt||''),'pt-BR',{numeric:true});
+  return compareAgendaRows(a,b);
+}
+
+function compareTableRows(a,b){
+  return tableSortMode==='fim'?compareFimAgendaRows(a,b):compareAgendaRows(a,b);
 }
 
 const FARDOS_POR_PALETE={
@@ -830,7 +851,7 @@ function processRelatorioCSV(file) {
 
       if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
 
-      exportMap = {}; tipoOpMap = {}; descDocMap = {};
+      exportMap = {}; tipoOpMap = {}; descDocMap = {}; centroMap = {};
       remessaMap = {}; pesoLiquidoMap = {}; horaChegadaCSVMap = {}; sapNumMap = {}; paletizacaoMap = {};
       let linhasOk = 0;
 
@@ -848,17 +869,18 @@ function processRelatorioCSV(file) {
         const qtde    = qtdeRaw.replace(/\./g,'').replace(',','.');
         const horaCsv = iHora !== -1 ? normalizeHora(strip(cols[iHora])) : '';
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
+        const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
         const infoAgenda = String((cols[ci('Inf. Agenda Entrega')]||'')).toUpperCase();
         if(!paletizacaoMap[dt]) paletizacaoMap[dt]=infoAgenda.includes('PLT')?'PALETIZADA':'ESTIVADA';
 
         if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
         if (sapCsv) sapNumMap[dt] = sapCsv;
+        if (centroRaw && !centroMap[dt]) centroMap[dt] = centroRaw;
 
         // descricao_documento e tipo operacao — centro 1111=ARUJA, 1110=MOGI
         if (!descDocMap[dt]) descDocMap[dt] = descDoc;
         if (!tipoOpMap[dt]) {
           const raw = String(descDoc || '').toUpperCase();
-          const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
           const localRaw = String((cols[ci('Local')]||'')).trim().toUpperCase();
           const isMogi  = centroRaw === '1110';
           const isAruja = centroRaw === '1111' || centroRaw === '';
@@ -993,6 +1015,7 @@ async function persistRelatorioFieldsForCurrentTable(){
     const patch={updated_at:new Date().toISOString()};
     if(descDocMap[dt]) patch.descricao_documento=String(descDocMap[dt]);
     if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
+    if(centroMap[dt]) patch.centro=String(centroMap[dt]);
     if(pesoLiquidoMap[dt]) patch.peso_liquido=String(pesoLiquidoMap[dt].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}));
     if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
     if(sapNumMap[dt]) patch.n_portaria=String(sapNumMap[dt]);
@@ -1033,16 +1056,21 @@ async function buildTable(){
     // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(r.AGENDA||T)))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,reagendada`
+      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
     const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
     const logsStatusMap={};
     if(dtsUpload.length){
-      const logRows=await sbGet('reporte_logs',
-        `dt=in.("${dtsUpload.join('\",\"')}")&order=created_at.desc&limit=1000`
-      );
+      let logRows=[];
+      try{
+        logRows=await sbGet('reporte_logs',
+          `dt=in.("${dtsUpload.join('\",\"')}")&order=created_at.desc&limit=1000`
+        );
+      }catch(e){
+        if(!isMissingReporteLogsError(e)) throw e;
+      }
       (logRows||[]).forEach(l=>{
         const dtLog=normalizeDT(l.dt);
         const st=String(l.status||'').trim();
@@ -1070,6 +1098,7 @@ async function buildTable(){
         n_portaria:sapNumMap[dt.DT] || ex.n_portaria || '',
         status:statusAtual,
         descricao_documento:String(descDocMap[dt.DT]||ex.descricao_documento||''),
+        centro:String(centroMap[dt.DT]||ex.centro||''),
         toneladas:String(toTonInt(dt.PESO)),
         peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] ?? dt.PESO)),
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
@@ -1102,7 +1131,7 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',toneladas:String(toTonInt(dt.PESO)),
+      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:String(toTonInt(dt.PESO)),
       peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] ?? dt.PESO)),
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ',
@@ -1153,13 +1182,16 @@ async function getActiveRefs(){
     const toDate=(k)=>{const m=String(k).match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?new Date(+m[3],+m[2]-1,+m[1]):new Date(0);};
     uniq.sort((a,b)=>toDate(b)-toDate(a));
     return uniq.slice(0,2);
-  }catch(e){return base;}
+  }catch(e){
+    if(isMissingReporteLogsError(e)) return base;
+    return base;
+  }
 }
 
 async function reloadTable(){
   try{
     const refs=await getActiveRefs();
-    if(!refs.length){tableData=[];renderRows();return;}
+    if(!refs.length){tableData=[]; if(currentTableTab==='reporte') renderReporte(); else renderRows(); return;}
     const data=await sbGet('reporte_carga',
       `data_ref=${sbIn(refs)}&order=dia_ref.asc,agenda.asc`
     );
@@ -1251,8 +1283,9 @@ async function renderMaterialsBoard(){
 function renderRows(){
   const board=document.getElementById('mat-board');
   const twrap=document.getElementById('twrap');
-  if(board) board.style.display='none';
-  if(twrap) twrap.style.display='block';
+  const isTableView=currentTableTab==='todas'||currentTableTab==='finalizadas';
+  if(board && isTableView) board.style.display='none';
+  if(twrap) twrap.style.display=isTableView?'block':'none';
   // Resumo de status
   const sum={};
   tableData.forEach(r=>{sum[r.status]=(sum[r.status]||0)+1;});
@@ -1269,7 +1302,10 @@ function renderRows(){
     `<span style="color:#60a5fa">${cH} hoje</span> · <span style="color:#a78bfa">${cA} amanhã</span>`;
 
   // Filtro de aba
-  let rows=[...tableData].sort(compareAgendaRows);
+  const sortSelect=document.getElementById('table-sort-mode');
+  if(sortSelect && sortSelect.value!==tableSortMode) sortSelect.value=tableSortMode;
+
+  let rows=[...tableData].sort(compareTableRows);
   if(currentTableTab==='finalizadas'){
     rows=rows.filter(r=>STATUS_FINAIS.includes(r.status));
   }else{
@@ -1356,7 +1392,10 @@ async function saveField(dt,dataRef,field,value){
   try{
     await sbPatch('reporte_carga',{[field]:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    if(row){row[field]=value;renderRows();}
+    if(row){row[field]=value;}
+    await reloadTable();
+    renderRows();
+    renderReporte();
   }catch(e){showErr('Erro ao salvar: '+e.message);}
   spin(false);
 }
@@ -1366,7 +1405,7 @@ async function tryInsertLog(row){
     await sbInsert('reporte_logs',[row]);
   }catch(e){
     const msg=String(e&&e.message||'');
-    if(msg.includes("Could not find the table 'public.reporte_logs'")) return;
+    if(isMissingReporteLogsError(e)) return;
     console.warn('Falha ao gravar log:',msg);
   }
 }
@@ -1377,7 +1416,10 @@ async function saveStatus(dt,dataRef,value){
   try{
     await sbPatch('reporte_carga',{status:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    if(row){row.status=value;renderRows();}
+    if(row){row.status=value;}
+    await reloadTable();
+    renderRows();
+    renderReporte();
     // Grava log só para status relevantes (evita poluição)
     const STATUS_LOG=['EXPEDIDO','NO SHOW','EM FATURAMENTO','VEICULO RECUSADO','FOI EMBORA'];
     if(STATUS_LOG.includes(value)){
@@ -1403,6 +1445,14 @@ function openLogs(){
 function closeLogs(){
   document.getElementById('log-overlay').classList.remove('open');
 }
+function isMissingReporteLogsError(err){
+  const msg=String(err&&err.message||err||'').toLowerCase();
+  return msg.includes("public.reporte_logs")
+    || msg.includes('relation "reporte_logs" does not exist')
+    || msg.includes('404')
+    || msg.includes('pgrst');
+}
+
 async function loadLogs(searchDT=""){
   const list=document.getElementById('log-list');
   list.innerHTML='<div style="color:#64748b;padding:12px;">Carregando…</div>';
@@ -1426,7 +1476,7 @@ async function loadLogs(searchDT=""){
     });
   }catch(e){
     const msg=String(e&&e.message||'');
-    if(msg.includes("Could not find the table 'public.reporte_logs'")){
+    if(isMissingReporteLogsError(e)){
       list.innerHTML='<div style="color:#94a3b8;padding:12px;">ℹ️ Log desativado: tabela <b>reporte_logs</b> não existe neste projeto Supabase. O painel de carga continua funcionando normalmente.</div>';
       return;
     }
@@ -1678,7 +1728,7 @@ async function tryLoadExisting(){
       await persistNormalizedDiaRefs(tableData);
       // Popula tipoOpMap a partir do banco para o painel funcionar sem ZLES002
       tableData.forEach(r=>{ if(r.dt&&r.tipo_operacao) tipoOpMap[r.dt]=r.tipo_operacao; });
-      renderRows();
+      if(currentTableTab==='reporte') renderReporte(); else renderRows();
       setStep(4);
     }
   }catch(e){ throw e; /* erro de conexão — propaga para o badge */ }
@@ -1737,17 +1787,62 @@ function exportCSV(){
 /* ═══════════════════════════════════════════════════════
    REPORTE DE STATUS
 ═══════════════════════════════════════════════════════ */
-const RP_TIPOS = ['VENDA ARUJA','VENDA MOGI','PRÉ-FATURA','TRANSFERÊNCIA','GRADE'];
+const RP_TIPOS = ['GRADE','TRANSFERÊNCIA','VENDA ARUJA','VENDA MOGI','PRÉ-FATURA'];
 const RP_COLORS = {
   'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','PRÉ-FATURA':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
 };
 let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
 let rpHoraCorte = localStorage.getItem('rp_hora_corte') || '';
+let rpDataRef = localStorage.getItem('rp_data_ref') || '';
+let rpLastReport = null;
+
+const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO','NO SHOW'];
+
+function rpRefDate(row){
+  return parseBR(row.fim_carregamento||'') || parseBR(row.fim_agenda||'') || parseBR(row.agenda||'') || parseBR(row.grade_carregamento||'');
+}
+
+function isTransferencia(row){
+  const d=String(row.descricao_documento||'').toUpperCase();
+  return d.includes('TRANSFER') || d.includes('TNF') || d.includes('FILIAL') || d.includes('INTERCOMP') || d.includes('REMESSA');
+}
+
+function isVendaNormal(row){
+  const d=String(row.descricao_documento||'').toUpperCase();
+  if(isTransferencia(row)) return false;
+  return !d || d.includes('VENDA NORMAL') || d.includes('VENDA');
+}
+
+function isVendaAruja(row){
+  const centro=String(row.centro||'').trim();
+  const op=String(row.tipo_operacao||'').toUpperCase();
+  if(!isVendaNormal(row) || op.includes('TRANSFER')) return false;
+  return centro==='1111' || (!centro && op.includes('ARUJA'));
+}
+
+function isVendaMogi(row){
+  const centro=String(row.centro||'').trim();
+  const op=String(row.tipo_operacao||'').toUpperCase();
+  if(!isVendaNormal(row) || op.includes('TRANSFER')) return false;
+  return centro==='1110' || (!centro && op.includes('MOGI'));
+}
+
+function rpModalidade(row){
+  const op=(row.tipo_operacao||'').trim().toUpperCase();
+  if(op==='PRÉ-FAT'||op==='PRÉ-FATURA'||op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FATURA';
+  if(isTransferencia(row)) return 'TRANSFERÊNCIA';
+  if(isVendaMogi(row)) return 'VENDA MOGI';
+  if(isVendaAruja(row)) return 'VENDA ARUJA';
+  if(op.includes('TRANSFER')) return 'TRANSFERÊNCIA';
+  if(op.includes('MOGI')) return 'VENDA MOGI';
+  if(op.includes('ARUJA')) return 'VENDA ARUJA';
+  return '';
+}
 
 function rpGetTurno(row){
   // Classifica pelo horário do FIM da agenda
-  const grade = parseBR(row.grade_carregamento||'') || parseBR(row.agenda||'');
+  const grade = rpRefDate(row);
   if(!grade) return null;
   const h = grade.getHours();
   if(h>=7 && h<=14) return 'T1';
@@ -1756,17 +1851,7 @@ function rpGetTurno(row){
 }
 
 function rpNormalizeTipo(row){
-  const op=(row.tipo_operacao||'').trim().toUpperCase();
-  // Tipos exatos que vêm do tipoOpMap (ZLES002)
-  if(op==='VENDA ARUJA')         return 'VENDA ARUJA';
-  if(op==='VENDA MOGI')          return 'VENDA MOGI';
-  if(op==='TRANSFERÊNCIA ARUJA'||op==='TRANSFERÊNCIA MOGI'||op==='TRANSFERÊNCIA') return 'TRANSFERÊNCIA';
-  if(op==='PRÉ-FAT'||op==='PRÉ-FATURA'||op.includes('PRÉ')||op.includes('PRE')) return 'PRÉ-FATURA';
-  if(op==='GRADE'||op.includes('GRADE')) return 'GRADE';
-  // Fallback por texto
-  if(op.includes('TRANSFER')) return 'TRANSFERÊNCIA';
-  if(op.includes('MOGI'))     return 'VENDA MOGI';
-  return 'VENDA ARUJA';
+  return rpModalidade(row) || 'VENDA ARUJA';
 }
 
 function rpSetTurno(t){
@@ -1786,19 +1871,45 @@ function rpSaveMeta(tipo,val){
   renderReporte();
 }
 
+function rpSetDataRef(v){
+  rpDataRef=String(v||'').trim();
+  try{localStorage.setItem('rp_data_ref',rpDataRef);}catch(e){}
+  renderReporte();
+}
+
 function rpSetHoraCorte(v){
   rpHoraCorte=String(v||'').trim();
   try{localStorage.setItem('rp_hora_corte',rpHoraCorte);}catch(e){}
   renderReporte();
 }
 
-function rpGetAgoraCorte(){
+function rpGetCorteDate(){
   const now=new Date();
-  if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)) return now;
+  const selectedDate=parseBR(rpDataRef||'') || today();
+  const corte=new Date(selectedDate);
+  if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)){
+    corte.setHours(now.getHours(),now.getMinutes(),59,999);
+    return corte;
+  }
   const [hh,mm]=rpHoraCorte.split(':').map(n=>parseInt(n,10));
-  const corte=new Date(now);
   corte.setHours(hh||0,mm||0,59,999);
   return corte;
+}
+
+function rpGetCorteMinutes(){
+  const d=rpGetCorteDate();
+  return d.getHours()*60+d.getMinutes();
+}
+
+function rpRowFimMinutes(row){
+  const fim=rpRefDate(row);
+  if(!fim) return null;
+  return fim.getHours()*60+fim.getMinutes();
+}
+
+function rpRowDentroDoCorte(row,corteMin){
+  const fimMin=rpRowFimMinutes(row);
+  return fimMin!==null && fimMin<=corteMin;
 }
 
 
@@ -1835,6 +1946,42 @@ function fmtTon(raw){
   return toTonInt(raw).toLocaleString('pt-BR');
 }
 
+function fmtCargaCompact(raw){
+  const n=Number(raw)||0;
+  const abs=Math.abs(n);
+  if(abs>=1000){
+    const t=Math.trunc((n/1000)*10)/10;
+    const txt=t.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+    return txt+' t';
+  }
+  return Math.round(n).toLocaleString('pt-BR')+' kg';
+}
+
+function fmtCargaValue(raw){
+  return fmtCargaCompact(raw).replace(' t','').replace(' kg','');
+}
+
+function fmtCargaUnit(raw){
+  return Math.abs(Number(raw)||0)>=1000?'t':'kg';
+}
+
+function updateStatusReminder(){
+  const el=document.getElementById('status-reminder');
+  if(!el) return;
+  const now=new Date();
+  const min=now.getMinutes();
+  if(min<50){
+    el.style.display='none';
+    el.textContent='';
+    return;
+  }
+  const next=new Date(now);
+  next.setHours(now.getHours()+1,0,0,0);
+  const faltam=Math.max(1,Math.ceil((next-now)/60000));
+  el.textContent='Enviar status em '+faltam+' min ('+next.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+')';
+  el.style.display='inline-flex';
+}
+
 function rpWithinWindow(dt,start,end){
   return !!dt && dt>=start && dt<=end;
 }
@@ -1851,76 +1998,73 @@ function renderReporte(){
   const horaInput=document.getElementById('rp-hora-corte');
   if(horaInput && horaInput.value!==rpHoraCorte) horaInput.value=rpHoraCorte;
 
-  const rows=rpTurnoFiltro==='todos'?[...tableData]
-    :tableData.filter(r=>rpGetTurno(r)===rpTurnoFiltro);
+  const refs=[...new Set(tableData.map(r=>String(r.data_ref||'')).filter(Boolean))].sort((a,b)=>{
+    const da=parseBR(a), db=parseBR(b);
+    return (da?da.getTime():0)-(db?db.getTime():0);
+  });
+  if(!rpDataRef || (refs.length && !refs.includes(rpDataRef))) rpDataRef=refs[0]||dKey(today());
+
+  const diaSelect=document.getElementById('rp-data-ref');
+  if(diaSelect){
+    diaSelect.innerHTML=refs.map(ref=>`<option value="${ref}">${ref}</option>`).join('');
+    diaSelect.value=rpDataRef;
+  }
+
+  const dayRows=tableData.filter(r=>String(r.data_ref||'')===rpDataRef);
+  const rows=(rpTurnoFiltro==='todos'?[...dayRows]
+    :dayRows.filter(r=>rpGetTurno(r)===rpTurnoFiltro)).sort(compareFimAgendaRows);
 
   const infoEl=document.getElementById('rp-turno-info');
-  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual';
 
   // Inputs de meta
   const metasEl=document.getElementById('rp-metas-inputs');
   if(metasEl){
-    metasEl.innerHTML=RP_TIPOS.map(tipo=>`
-      <div>
-        <label style="font-size:9px;letter-spacing:1.5px;color:${RP_COLORS[tipo]||'#64748b'};font-weight:700;display:block;margin-bottom:4px;">${tipo}</label>
-        <input class="rp-meta-input" type="number" min="0" value="${rpMetas[tipo]||0}"
-          oninput="rpSaveMeta('${tipo}',this.value)" title="Meta do dia para ${tipo}"/>
-      </div>
-    `).join('');
+    metasEl.innerHTML='';
   }
 
-  const agora=rpGetAgoraCorte();
-  const inicioDia=new Date(agora); inicioDia.setHours(0,0,0,0);
+  const corte=rpGetCorteDate();
+  const corteMin=rpGetCorteMinutes();
+  const corteLabel=corte.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual · corte até '+corteLabel;
 
+  const planejadoTon={};
   const realizadoTon={};
-  RP_TIPOS.forEach(t=>{realizadoTon[t]=0;});
-
-  const GRADE_STATUS_REALIZADO=['CARREGANDO','EM FATURAMENTO','EXPEDIDO'];
+  RP_TIPOS.forEach(t=>{planejadoTon[t]=0;realizadoTon[t]=0;});
 
   rows.forEach(r=>{
-    const tipo=rpNormalizeTipo(r);
+    const modalidade=rpModalidade(r);
     const ton=rpParseToneladas(r);
+    if(!rpRowDentroDoCorte(r,corteMin)) return;
+    const realizado=STATUS_REALIZADO.includes(r.status);
 
-    // GRADE: realizado automático pelas DTs do dia com início de carregamento hoje
-    const inicioCarga=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'');
-    const fimDia=new Date(inicioDia); fimDia.setHours(23,59,59,999);
-    if(rpWithinWindow(inicioCarga,inicioDia,fimDia) && GRADE_STATUS_REALIZADO.includes(r.status)){
-      realizadoTon['GRADE']+=ton;
-    }
+    planejadoTon['GRADE']+=ton;
+    if(realizado) realizadoTon['GRADE']+=ton;
 
-    if(tipo==='VENDA ARUJA'){
-      const centro=String(r.centro||'').trim();
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if(centro==='1111' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA ARUJA']+=ton;
-      return;
-    }
-    if(tipo==='VENDA MOGI'){
-      const centro=String(r.centro||'').trim();
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if(centro==='1110' && desc.includes('VENDA') && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['VENDA MOGI']+=ton;
-      return;
-    }
-    if(tipo==='TRANSFERÊNCIA'){
-      const desc=String(r.descricao_documento||'').toUpperCase();
-      const ref=parseBR(r.grade_carregamento||'')||parseBR(r.agenda||'')||parseBR(r.fim_carregamento||'');
-      if((desc.includes('TRANSFER')||desc.includes('TNF')) && rpWithinWindow(ref,inicioDia,agora)) realizadoTon['TRANSFERÊNCIA']+=ton;
-      return;
+    if(modalidade && planejadoTon[modalidade]!==undefined){
+      planejadoTon[modalidade]+=ton;
+      if(realizado) realizadoTon[modalidade]+=ton;
     }
   });
 
-  // Planejado da grade é automático pelo início de carregamento dentro do dia atual
-  const fimDiaPlanejado=new Date(inicioDia); fimDiaPlanejado.setHours(23,59,59,999);
-  const planejadoGrade = rows
-    .filter(r=>rpWithinWindow(parseBR(r.grade_carregamento||'')||parseBR(r.agenda||''),inicioDia,fimDiaPlanejado))
-    .reduce((acc,r)=>acc+rpParseToneladas(r),0);
+  rpLastReport={
+    dataRef:rpDataRef,
+    corteLabel,
+    tipos:RP_TIPOS.map(tipo=>({
+      tipo,
+      planejado:planejadoTon[tipo]||0,
+      realizado:realizadoTon[tipo]||0,
+      pendente:Math.max(0,(planejadoTon[tipo]||0)-(realizadoTon[tipo]||0)),
+    })),
+    statusCounts:{},
+    turnos:null,
+  };
+
 // Gráfico de barras
   const chart=document.getElementById('rp-chart');
   if(chart){
-    const maxVal=Math.max(1,...RP_TIPOS.map(t=>{ const p=t==='GRADE'?planejadoGrade:(rpMetas[t]||0); return Math.max(p,realizadoTon[t]||0);}));
+    const maxVal=Math.max(1,...RP_TIPOS.map(t=>Math.max(planejadoTon[t]||0,realizadoTon[t]||0)));
     chart.innerHTML=RP_TIPOS.map(tipo=>{
-      const plan=tipo==='GRADE'?planejadoGrade:(rpMetas[tipo]||0);
+      const plan=planejadoTon[tipo]||0;
       const real=realizadoTon[tipo]||0;
       const pend=Math.max(0,plan-real);
       const hPlan=plan?Math.round((plan/maxVal)*130):0;
@@ -1943,8 +2087,8 @@ function renderReporte(){
   if(numEl){
     numEl.innerHTML=RP_TIPOS.map(tipo=>{
       const realTon=(realizadoTon[tipo]||0);
-      const plan = tipo==='GRADE' ? planejadoGrade : (rpMetas[tipo]||0);
-      const tonStr=realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+      const plan = planejadoTon[tipo]||0;
+      const realStr=fmtCargaValue(realTon);
       const pend=Math.max(0,plan-realTon);
       const pct=plan>0?Math.min(100,Math.round(realTon/plan*100)):0;
       const c=RP_COLORS[tipo]||'#3b82f6';
@@ -1952,15 +2096,15 @@ function renderReporte(){
       return `<div class="rp-tipo-card" style="border-color:${c}44;">
         <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
-          <div><div class="rp-num-plan">${plan}</div><div class="rp-num-label">Planej.</div></div>
-          <div><div class="rp-num-real">${tonStr}</div><div class="rp-num-label">⚖️ Tons</div></div>
-          <div><div class="rp-num-pend">${pend}</div><div class="rp-num-label">Pendente</div></div>
+          <div><div class="rp-num-plan">${fmtCargaValue(plan)}</div><div class="rp-num-label">Planej. ${fmtCargaUnit(plan)}</div></div>
+          <div><div class="rp-num-real">${realStr}</div><div class="rp-num-label">Real. ${fmtCargaUnit(realTon)}</div></div>
+          <div><div class="rp-num-pend">${fmtCargaValue(pend)}</div><div class="rp-num-label">Pend. ${fmtCargaUnit(pend)}</div></div>
         </div>
         <div style="background:#0f172a;border-radius:4px;height:4px;margin-bottom:6px;overflow:hidden;">
           <div style="height:100%;width:${barW}%;background:${c};border-radius:4px;transition:.4s;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
-          <span>${realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
+          <span>${fmtCargaCompact(realTon)} realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
         </div>
       </div>`;
     }).join('');
@@ -1972,7 +2116,8 @@ function renderReporte(){
     const statusList=['AG CHEGADA','PATIO','CARREGANDO','EM FATURAMENTO','SEPARANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','FOI EMBORA'];
     const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
     const sCounts={};
-    tableData.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
+    rows.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
+    if(rpLastReport) rpLastReport.statusCounts={...sCounts};
     statusCountEl.innerHTML=statusList
       .filter(s=>sCounts[s]>0)
       .map(s=>{
@@ -1991,7 +2136,7 @@ function renderReporte(){
     const byTurno={T1:0,T2:0,T3:0};
     let t3DiaProd=0;
     let t3TurnoProd=0;
-    const hoje0=new Date(); hoje0.setHours(0,0,0,0);
+    const hoje0=parseBR(rpDataRef||'')||today(); hoje0.setHours(0,0,0,0);
     const amanha0=new Date(hoje0); amanha0.setDate(amanha0.getDate()+1);
     const t3DiaIni=new Date(hoje0); t3DiaIni.setHours(23,0,0,0);
     const t3DiaFim=new Date(hoje0); t3DiaFim.setHours(23,59,59,999);
@@ -2000,6 +2145,7 @@ function renderReporte(){
 
     rows.forEach(r=>{
       const grade=parseBR(r.grade_carregamento||'');
+      if(!grade || !sameDay(grade,hoje0)) return;
       const turno=rpTurnoFromDate(grade);
       if(!turno) return;
       const ton=rpParseToneladas(r);
@@ -2016,12 +2162,12 @@ function renderReporte(){
     const cards=['T1','T2','T3'].map(t=>`
       <div class="rp-turno-card" style="border-color:${cores[t]}44;">
         <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
-        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t].toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
-        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
+        <div class="rp-turno-num" style="color:${cores[t]}">${fmtCargaValue(byTurno[t])}</div>
+        <div style="font-size:10px;color:#64748b;">${fmtCargaUnit(byTurno[t])} planejados</div>
         ${t==='T3'
           ? `<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.6;">
-              Dia (23-00): <b style="color:#c4b5fd;">${t3DiaProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b><br/>
-              Turno (23-06): <b style="color:#c4b5fd;">${t3TurnoProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b>
+              Dia (23-00): <b style="color:#c4b5fd;">${fmtCargaCompact(t3DiaProd)}</b><br/>
+              Turno (23-06): <b style="color:#c4b5fd;">${fmtCargaCompact(t3TurnoProd)}</b>
             </div>`
           : ''
         }
@@ -2030,12 +2176,119 @@ function renderReporte(){
     const totalCard=`
       <div class="rp-turno-card" style="border-color:#22c55e44;">
         <div class="rp-turno-label" style="color:#22c55e">📦 TOTAL DO DIA</div>
-        <div class="rp-turno-num" style="color:#22c55e">${totalTurnos.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
-        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
+        <div class="rp-turno-num" style="color:#22c55e">${fmtCargaValue(totalTurnos)}</div>
+        <div style="font-size:10px;color:#64748b;">${fmtCargaUnit(totalTurnos)} planejados</div>
       </div>
     `;
+    if(rpLastReport){
+      rpLastReport.turnos={...byTurno,total:totalTurnos,t3DiaProd,t3TurnoProd};
+    }
     turnosEl.innerHTML=cards+totalCard;
   }
+}
+
+function exportReporteJPG(){
+  renderReporte();
+  if(!rpLastReport){showErr('Reporte ainda sem dados para exportar.');return;}
+  const W=1300,H=900;
+  const canvas=document.createElement('canvas');
+  canvas.width=W; canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  const rr=(x,y,w,h,r,fill,stroke)=>{
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+    ctx.fillStyle=fill; ctx.fill();
+    if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
+  };
+  const text=(s,x,y,size,color,weight='600',align='left')=>{
+    ctx.font=weight+' '+size+'px Segoe UI, Arial';
+    ctx.fillStyle=color;
+    ctx.textAlign=align;
+    ctx.fillText(String(s),x,y);
+  };
+
+  ctx.fillStyle='#0b1220';
+  ctx.fillRect(0,0,W,H);
+  text('Reporte de Status',40,54,28,'#e2e8f0','800');
+  text('Dia '+rpLastReport.dataRef+'  |  Corte ate '+rpLastReport.corteLabel,40,84,15,'#94a3b8','600');
+  text(new Date().toLocaleString('pt-BR'),W-40,54,14,'#64748b','600','right');
+
+  const colors=RP_COLORS;
+  let x=40,y=118;
+  rpLastReport.tipos.forEach((r,i)=>{
+    const c=colors[r.tipo]||'#60a5fa';
+    const cardX=x+(i%2)*390;
+    const cardY=y+Math.floor(i/2)*128;
+    rr(cardX,cardY,360,104,10,'#111c2e',c+'66');
+    text(r.tipo,cardX+18,cardY+28,13,c,'800');
+    text(fmtCargaCompact(r.planejado),cardX+18,cardY+66,22,'#60a5fa','800');
+    text('Planejado',cardX+18,cardY+88,11,'#64748b','700');
+    text(fmtCargaCompact(r.realizado),cardX+154,cardY+66,22,'#22c55e','800');
+    text('Realizado',cardX+154,cardY+88,11,'#64748b','700');
+    text(fmtCargaCompact(r.pendente),cardX+282,cardY+66,22,'#f59e0b','800','center');
+    text('Pendente',cardX+282,cardY+88,11,'#64748b','700','center');
+  });
+
+  const rightX=850;
+  rr(rightX,118,410,250,10,'#111c2e','#334155');
+  text('Status Atual das DTs',rightX+20,150,16,'#e2e8f0','800');
+  const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
+  let sy=184;
+  Object.entries(rpLastReport.statusCounts||{}).forEach(([st,n])=>{
+    const c=statusColors[st]||'#94a3b8';
+    text(st,rightX+22,sy,13,c,'800');
+    text(n,rightX+360,sy,18,'#e2e8f0','800','right');
+    sy+=28;
+  });
+
+  rr(rightX,398,410,250,10,'#111c2e','#334155');
+  text('Separacoes por Turno',rightX+20,430,16,'#e2e8f0','800');
+  const t=rpLastReport.turnos||{T1:0,T2:0,T3:0,total:0,t3DiaProd:0,t3TurnoProd:0};
+  [
+    ['T1 07-14h',t.T1,'#60a5fa'],
+    ['T2 15-22h',t.T2,'#f59e0b'],
+    ['T3 23-06h',t.T3,'#a78bfa'],
+    ['Total do dia',t.total,'#22c55e'],
+  ].forEach((row,idx)=>{
+    const yy=468+idx*38;
+    text(row[0],rightX+22,yy,13,row[2],'800');
+    text(fmtCargaCompact(row[1]),rightX+360,yy,18,row[2],'800','right');
+  });
+  text('T3 dia 23-00: '+fmtCargaCompact(t.t3DiaProd),rightX+22,628,12,'#94a3b8','700');
+  text('T3 turno 23-06: '+fmtCargaCompact(t.t3TurnoProd),rightX+210,628,12,'#94a3b8','700');
+
+  rr(40,540,760,170,10,'#111c2e','#334155');
+  text('Planejado x Realizado',64,574,16,'#e2e8f0','800');
+  const max=Math.max(1,...rpLastReport.tipos.flatMap(r=>[r.planejado,r.realizado,r.pendente]));
+  rpLastReport.tipos.forEach((r,i)=>{
+    const bx=80+i*138;
+    const base=680;
+    const vals=[
+      [r.planejado,'#3b82f6'],
+      [r.realizado,'#22c55e'],
+      [r.pendente,'#f59e0b'],
+    ];
+    vals.forEach((v,j)=>{
+      const h=Math.round((v[0]/max)*78);
+      ctx.fillStyle=v[1];
+      ctx.fillRect(bx+j*18,base-h,12,h);
+    });
+    text(r.tipo.replace('TRANSFERENCIA','TRANSF.'),bx+18,704,10,colors[r.tipo]||'#94a3b8','800','center');
+  });
+
+  canvas.toBlob(blob=>{
+    if(!blob){showErr('Nao foi possivel gerar a imagem.');return;}
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='reporte_status_'+String(rpLastReport.dataRef||'').replace(/\//g,'-')+'_'+String(rpLastReport.corteLabel||'').replace(':','h')+'.jpg';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  },'image/jpeg',0.92);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2333,7 +2586,7 @@ async function runPortariaPdfImport(file){
         const patch={status:'PATIO',updated_at:new Date().toISOString()};
         if(!row.hora_chegada) patch.hora_chegada=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         await sbPatch('reporte_carga',patch,{dt:row.dt,data_ref:row.data_ref});
-        await sbInsert('reporte_logs',[{dt:row.dt,data_ref:row.data_ref,status:'PATIO',transportadora:row.transportadora||'',created_at:new Date().toISOString()}]).catch(()=>{});
+        await tryInsertLog({dt:row.dt,data_ref:row.data_ref,status:'PATIO',transportadora:row.transportadora||'',created_at:new Date().toISOString()});
         row.status='PATIO';
         if(!row.hora_chegada) row.hora_chegada=patch.hora_chegada;
         atualizadas++;
@@ -2607,8 +2860,9 @@ async function runImport(){
       }catch(e){}
     }
 
-    // Atualiza tabela
+    // Atualiza tela
     renderRows();
+    renderReporte();
 
     const msg=`✅ Concluído! Status atualizados: ${updated} | Hora/SAP preenchidos: ${fieldUpdated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
     document.getElementById('import-result').textContent=msg;
