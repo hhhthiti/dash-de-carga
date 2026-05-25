@@ -870,12 +870,8 @@ function processRelatorioCSV(file) {
         const horaCsv = iHora !== -1 ? normalizeHora(strip(cols[iHora])) : '';
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
         const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
-        const infoAgenda = String((cols[ci('Inf. Agenda Entrega')]||'')).toUpperCase();
-        if(!paletizacaoMap[dt]) {
-          if (infoAgenda.includes('TORDE')) paletizacaoMap[dt] = 'TORDESILHAS';
-          else if (infoAgenda.includes('PLT')) paletizacaoMap[dt] = 'PALETIZADA';
-          else paletizacaoMap[dt] = 'ESTIVADA';
-        }
+        const infoAgenda = String(cols[ci('Inf. Agenda Entrega')]||'');
+        if(!paletizacaoMap[dt]) paletizacaoMap[dt] = normalizePaletizacaoLabel(infoAgenda);
 
         if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
         if (sapCsv) sapNumMap[dt] = sapCsv;
@@ -1998,6 +1994,13 @@ function rpTurnoFromDate(dt){
   return 'T3'; // 23-06
 }
 
+function normalizePaletizacaoLabel(raw){
+  const base=String(raw||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
+  if(base.includes('TORDE')) return 'TORDESILHAS';
+  if(base.includes('PLT') || base.includes('PALET')) return 'PALETIZADA';
+  return 'ESTIVADA';
+}
+
 function renderReporte(){
   const horaInput=document.getElementById('rp-hora-corte');
   if(horaInput && horaInput.value!==rpHoraCorte) horaInput.value=rpHoraCorte;
@@ -2160,8 +2163,7 @@ function renderReporte(){
       const ton=rpParseToneladas(r);
       byTurno[turno]+=ton;
 
-      const paletLabel=String(r.paletizacao||'').trim().toUpperCase();
-      const paletKey=(paletLabel.includes('TORDE') ? 'TORDESILHAS' : (paletLabel.includes('PLT') || paletLabel.includes('PALET') ? 'PALETIZADA' : (paletLabel.includes('ESTIV') ? 'ESTIVADA' : 'ESTIVADA')));
+      const paletKey=normalizePaletizacaoLabel(r.paletizacao);
       paletByTurno[turno][paletKey]++;
 
       if(turno==='T3' && grade){
