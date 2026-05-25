@@ -19,6 +19,9 @@ ALTER TABLE public.reporte_carga
 ALTER TABLE public.reporte_carga
   ADD COLUMN IF NOT EXISTS n_portaria text;
 
+ALTER TABLE public.reporte_carga
+  ADD COLUMN IF NOT EXISTS centro text;
+
 -- 4. Índice de performance para as consultas por data_ref + status
 CREATE INDEX IF NOT EXISTS ix_reporte_carga_data_ref
   ON public.reporte_carga (data_ref);
