@@ -871,7 +871,11 @@ function processRelatorioCSV(file) {
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
         const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
         const infoAgenda = String((cols[ci('Inf. Agenda Entrega')]||'')).toUpperCase();
-        if(!paletizacaoMap[dt]) paletizacaoMap[dt]=infoAgenda.includes('PLT')?'PALETIZADA':'ESTIVADA';
+        if(!paletizacaoMap[dt]) {
+          if (infoAgenda.includes('TORDE')) paletizacaoMap[dt] = 'TORDESILHAS';
+          else if (infoAgenda.includes('PLT')) paletizacaoMap[dt] = 'PALETIZADA';
+          else paletizacaoMap[dt] = 'ESTIVADA';
+        }
 
         if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
         if (sapCsv) sapNumMap[dt] = sapCsv;
@@ -2134,6 +2138,11 @@ function renderReporte(){
   const turnosEl=document.getElementById('rp-turnos-resumo');
   if(turnosEl){
     const byTurno={T1:0,T2:0,T3:0};
+    const paletByTurno={
+      T1:{TORDESILHAS:0,PALETIZADA:0,ESTIVADA:0},
+      T2:{TORDESILHAS:0,PALETIZADA:0,ESTIVADA:0},
+      T3:{TORDESILHAS:0,PALETIZADA:0,ESTIVADA:0},
+    };
     let t3DiaProd=0;
     let t3TurnoProd=0;
     const hoje0=parseBR(rpDataRef||'')||today(); hoje0.setHours(0,0,0,0);
@@ -2151,6 +2160,10 @@ function renderReporte(){
       const ton=rpParseToneladas(r);
       byTurno[turno]+=ton;
 
+      const paletLabel=String(r.paletizacao||'').trim().toUpperCase();
+      const paletKey=(paletLabel.includes('TORDE') ? 'TORDESILHAS' : (paletLabel.includes('PLT') || paletLabel.includes('PALET') ? 'PALETIZADA' : (paletLabel.includes('ESTIV') ? 'ESTIVADA' : 'ESTIVADA')));
+      paletByTurno[turno][paletKey]++;
+
       if(turno==='T3' && grade){
         if(grade>=t3DiaIni && grade<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
         if(grade>=t3TurnoIni && grade<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno
@@ -2164,6 +2177,11 @@ function renderReporte(){
         <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
         <div class="rp-turno-num" style="color:${cores[t]}">${fmtCargaValue(byTurno[t])}</div>
         <div style="font-size:10px;color:#64748b;">${fmtCargaUnit(byTurno[t])} planejados</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.5;">
+          Tordesilhas: <b style="color:#c4b5fd;">${paletByTurno[t].TORDESILHAS}</b> ·
+          Paletizada: <b style="color:#c4b5fd;">${paletByTurno[t].PALETIZADA}</b> ·
+          Estivada: <b style="color:#c4b5fd;">${paletByTurno[t].ESTIVADA}</b>
+        </div>
         ${t==='T3'
           ? `<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.6;">
               Dia (23-00): <b style="color:#c4b5fd;">${fmtCargaCompact(t3DiaProd)}</b><br/>
