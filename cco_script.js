@@ -871,7 +871,7 @@ function processRelatorioCSV(file) {
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
         const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
         const infoAgenda = String(cols[ci('Inf. Agenda Entrega')]||'');
-        if(!paletizacaoMap[dt]) paletizacaoMap[dt] = normalizePaletizacaoLabel(infoAgenda);
+        paletizacaoMap[dt] = mergePaletizacaoLabel(paletizacaoMap[dt], infoAgenda);
 
         if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
         if (sapCsv) sapNumMap[dt] = sapCsv;
@@ -1999,6 +1999,13 @@ function normalizePaletizacaoLabel(raw){
   if(base.includes('TORDE')) return 'TORDESILHAS';
   if(base.includes('PLT') || base.includes('PALET')) return 'PALETIZADA';
   return 'ESTIVADA';
+}
+
+function mergePaletizacaoLabel(currentLabel,newRaw){
+  const current=normalizePaletizacaoLabel(currentLabel);
+  const incoming=normalizePaletizacaoLabel(newRaw);
+  const priority={ESTIVADA:0,PALETIZADA:1,TORDESILHAS:2};
+  return (priority[incoming]||0)>(priority[current]||0)?incoming:current;
 }
 
 function renderReporte(){
