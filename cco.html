@@ -143,9 +143,9 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 /* ── Reporte de Status ── */
 .rp-tipo-card{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;text-align:center;}
 .rp-tipo-title{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;}
-.rp-num-plan{font-size:22px;font-weight:800;color:#3b82f6;}
-.rp-num-real{font-size:22px;font-weight:800;color:#22c55e;}
-.rp-num-pend{font-size:22px;font-weight:800;color:#f59e0b;}
+.rp-num-plan{font-size:17px;font-weight:800;color:#3b82f6;white-space:nowrap;}
+.rp-num-real{font-size:17px;font-weight:800;color:#22c55e;white-space:nowrap;}
+.rp-num-pend{font-size:17px;font-weight:800;color:#f59e0b;white-space:nowrap;}
 .rp-num-label{font-size:9px;color:#64748b;letter-spacing:1px;}
 .rp-bar-group{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:60px;}
 .rp-bar-wrap{display:flex;gap:3px;align-items:flex-end;height:140px;}
@@ -155,6 +155,7 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 .rp-turno-card{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;text-align:center;}
 .rp-turno-label{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:6px;}
 .rp-turno-num{font-size:26px;font-weight:800;color:#a78bfa;}
+#status-reminder{display:none;border:1px solid #f59e0b55;background:#f59e0b18;color:#fbbf24;border-radius:7px;padding:4px 9px;font-size:10px;font-weight:800;letter-spacing:.6px;}
 .rp-meta-input{background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:6px 10px;font-size:13px;width:100%;font-family:inherit;text-align:center;}
 .rp-meta-input:focus{outline:none;border-color:#3b82f6;}
 /* ── DT sem grade ── */
@@ -292,6 +293,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div id="tbar">
       <span style="font-weight:800;font-size:10px;letter-spacing:2px;color:#94a3b8">📋 TABELA OPERACIONAL</span>
       <span id="tinfo"></span>
+      <span id="status-reminder"></span>
       <div id="tstatus"></div>
       <div id="tactions">
         <input id="dt-search" type="text" placeholder="🔎 Buscar DT" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:11px;min-width:130px;" oninput="onSearchDT(this.value)"/>
@@ -362,10 +364,11 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <input id="rp-hora-corte" type="time" step="60" oninput="rpSetHoraCorte(this.value)" onchange="rpSetHoraCorte(this.value)"
           style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"/>
         <button class="bg" onclick="rpSetHoraCorte('')" style="font-size:10px;padding:4px 10px;">Agora</button>
+        <button class="bexp" onclick="exportReporteJPG()" style="font-size:10px;padding:4px 10px;">Salvar JPG</button>
         <span id="rp-turno-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
       </div>
       <!-- Metas configuráveis -->
-      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
+      <div style="display:none;background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
         <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📋 PLANEJADO AUTOMÁTICO DO DIA</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;" id="rp-metas-inputs"></div>
       </div>

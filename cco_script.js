@@ -258,7 +258,13 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     setStep(1);
   }
   // Ticker para atualizar emojis de relógio a cada minuto
-  setInterval(()=>{ if(tableData.length) renderRows(); }, 60000);
+  updateStatusReminder();
+  setInterval(()=>{
+    updateStatusReminder();
+    if(!tableData.length) return;
+    if(currentTableTab==='reporte') renderReporte();
+    else if(currentTableTab==='todas'||currentTableTab==='finalizadas') renderRows();
+  }, 60000);
   // Auto-sync para ambiente com múltiplos usuários
   setInterval(async ()=>{
     if(shouldSkipAutoSync()) return;
@@ -1185,7 +1191,7 @@ async function getActiveRefs(){
 async function reloadTable(){
   try{
     const refs=await getActiveRefs();
-    if(!refs.length){tableData=[];renderRows();return;}
+    if(!refs.length){tableData=[]; if(currentTableTab==='reporte') renderReporte(); else renderRows(); return;}
     const data=await sbGet('reporte_carga',
       `data_ref=${sbIn(refs)}&order=dia_ref.asc,agenda.asc`
     );
@@ -1277,8 +1283,9 @@ async function renderMaterialsBoard(){
 function renderRows(){
   const board=document.getElementById('mat-board');
   const twrap=document.getElementById('twrap');
-  if(board) board.style.display='none';
-  if(twrap) twrap.style.display='block';
+  const isTableView=currentTableTab==='todas'||currentTableTab==='finalizadas';
+  if(board && isTableView) board.style.display='none';
+  if(twrap) twrap.style.display=isTableView?'block':'none';
   // Resumo de status
   const sum={};
   tableData.forEach(r=>{sum[r.status]=(sum[r.status]||0)+1;});
@@ -1721,7 +1728,7 @@ async function tryLoadExisting(){
       await persistNormalizedDiaRefs(tableData);
       // Popula tipoOpMap a partir do banco para o painel funcionar sem ZLES002
       tableData.forEach(r=>{ if(r.dt&&r.tipo_operacao) tipoOpMap[r.dt]=r.tipo_operacao; });
-      renderRows();
+      if(currentTableTab==='reporte') renderReporte(); else renderRows();
       setStep(4);
     }
   }catch(e){ throw e; /* erro de conexão — propaga para o badge */ }
@@ -1788,6 +1795,7 @@ let rpTurnoFiltro = 'todos';
 let rpMetas = JSON.parse(localStorage.getItem('rp_metas')||'{}');
 let rpHoraCorte = localStorage.getItem('rp_hora_corte') || '';
 let rpDataRef = localStorage.getItem('rp_data_ref') || '';
+let rpLastReport = null;
 
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO','NO SHOW'];
 
@@ -1938,6 +1946,42 @@ function fmtTon(raw){
   return toTonInt(raw).toLocaleString('pt-BR');
 }
 
+function fmtCargaCompact(raw){
+  const n=Number(raw)||0;
+  const abs=Math.abs(n);
+  if(abs>=1000){
+    const t=Math.trunc((n/1000)*10)/10;
+    const txt=t.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+    return txt+' t';
+  }
+  return Math.round(n).toLocaleString('pt-BR')+' kg';
+}
+
+function fmtCargaValue(raw){
+  return fmtCargaCompact(raw).replace(' t','').replace(' kg','');
+}
+
+function fmtCargaUnit(raw){
+  return Math.abs(Number(raw)||0)>=1000?'t':'kg';
+}
+
+function updateStatusReminder(){
+  const el=document.getElementById('status-reminder');
+  if(!el) return;
+  const now=new Date();
+  const min=now.getMinutes();
+  if(min<50){
+    el.style.display='none';
+    el.textContent='';
+    return;
+  }
+  const next=new Date(now);
+  next.setHours(now.getHours()+1,0,0,0);
+  const faltam=Math.max(1,Math.ceil((next-now)/60000));
+  el.textContent='Enviar status em '+faltam+' min ('+next.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+')';
+  el.style.display='inline-flex';
+}
+
 function rpWithinWindow(dt,start,end){
   return !!dt && dt>=start && dt<=end;
 }
@@ -1975,7 +2019,7 @@ function renderReporte(){
   // Inputs de meta
   const metasEl=document.getElementById('rp-metas-inputs');
   if(metasEl){
-    metasEl.innerHTML='<div style="font-size:12px;color:#94a3b8;line-height:1.6;">Modo manual: escolha o horário de corte. Planejado soma as toneladas das DTs do dia selecionado cujo Fim Agenda é menor ou igual ao horário escolhido. Realizado usa esse mesmo conjunto e soma somente status EM FATURAMENTO, EXPEDIDO e NO SHOW. Transferência usa Desc. Documento; Venda Arujá usa Venda Normal + centro 1111; Venda Mogi usa Venda Normal + centro 1110.</div>';
+    metasEl.innerHTML='';
   }
 
   const corte=rpGetCorteDate();
@@ -2001,6 +2045,19 @@ function renderReporte(){
       if(realizado) realizadoTon[modalidade]+=ton;
     }
   });
+
+  rpLastReport={
+    dataRef:rpDataRef,
+    corteLabel,
+    tipos:RP_TIPOS.map(tipo=>({
+      tipo,
+      planejado:planejadoTon[tipo]||0,
+      realizado:realizadoTon[tipo]||0,
+      pendente:Math.max(0,(planejadoTon[tipo]||0)-(realizadoTon[tipo]||0)),
+    })),
+    statusCounts:{},
+    turnos:null,
+  };
 
 // Gráfico de barras
   const chart=document.getElementById('rp-chart');
@@ -2031,7 +2088,7 @@ function renderReporte(){
     numEl.innerHTML=RP_TIPOS.map(tipo=>{
       const realTon=(realizadoTon[tipo]||0);
       const plan = planejadoTon[tipo]||0;
-      const tonStr=realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+      const realStr=fmtCargaValue(realTon);
       const pend=Math.max(0,plan-realTon);
       const pct=plan>0?Math.min(100,Math.round(realTon/plan*100)):0;
       const c=RP_COLORS[tipo]||'#3b82f6';
@@ -2039,15 +2096,15 @@ function renderReporte(){
       return `<div class="rp-tipo-card" style="border-color:${c}44;">
         <div class="rp-tipo-title" style="color:${c}">${tipo}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
-          <div><div class="rp-num-plan">${plan}</div><div class="rp-num-label">Planej.</div></div>
-          <div><div class="rp-num-real">${tonStr}</div><div class="rp-num-label">⚖️ Tons</div></div>
-          <div><div class="rp-num-pend">${pend}</div><div class="rp-num-label">Pendente</div></div>
+          <div><div class="rp-num-plan">${fmtCargaValue(plan)}</div><div class="rp-num-label">Planej. ${fmtCargaUnit(plan)}</div></div>
+          <div><div class="rp-num-real">${realStr}</div><div class="rp-num-label">Real. ${fmtCargaUnit(realTon)}</div></div>
+          <div><div class="rp-num-pend">${fmtCargaValue(pend)}</div><div class="rp-num-label">Pend. ${fmtCargaUnit(pend)}</div></div>
         </div>
         <div style="background:#0f172a;border-radius:4px;height:4px;margin-bottom:6px;overflow:hidden;">
           <div style="height:100%;width:${barW}%;background:${c};border-radius:4px;transition:.4s;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
-          <span>${realTon.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
+          <span>${fmtCargaCompact(realTon)} realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
         </div>
       </div>`;
     }).join('');
@@ -2060,6 +2117,7 @@ function renderReporte(){
     const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
     const sCounts={};
     rows.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
+    if(rpLastReport) rpLastReport.statusCounts={...sCounts};
     statusCountEl.innerHTML=statusList
       .filter(s=>sCounts[s]>0)
       .map(s=>{
@@ -2104,12 +2162,12 @@ function renderReporte(){
     const cards=['T1','T2','T3'].map(t=>`
       <div class="rp-turno-card" style="border-color:${cores[t]}44;">
         <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
-        <div class="rp-turno-num" style="color:${cores[t]}">${byTurno[t].toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
-        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
+        <div class="rp-turno-num" style="color:${cores[t]}">${fmtCargaValue(byTurno[t])}</div>
+        <div style="font-size:10px;color:#64748b;">${fmtCargaUnit(byTurno[t])} planejados</div>
         ${t==='T3'
           ? `<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.6;">
-              Dia (23-00): <b style="color:#c4b5fd;">${t3DiaProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b><br/>
-              Turno (23-06): <b style="color:#c4b5fd;">${t3TurnoProd.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} t</b>
+              Dia (23-00): <b style="color:#c4b5fd;">${fmtCargaCompact(t3DiaProd)}</b><br/>
+              Turno (23-06): <b style="color:#c4b5fd;">${fmtCargaCompact(t3TurnoProd)}</b>
             </div>`
           : ''
         }
@@ -2118,12 +2176,119 @@ function renderReporte(){
     const totalCard=`
       <div class="rp-turno-card" style="border-color:#22c55e44;">
         <div class="rp-turno-label" style="color:#22c55e">📦 TOTAL DO DIA</div>
-        <div class="rp-turno-num" style="color:#22c55e">${totalTurnos.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
-        <div style="font-size:10px;color:#64748b;">Toneladas planejadas</div>
+        <div class="rp-turno-num" style="color:#22c55e">${fmtCargaValue(totalTurnos)}</div>
+        <div style="font-size:10px;color:#64748b;">${fmtCargaUnit(totalTurnos)} planejados</div>
       </div>
     `;
+    if(rpLastReport){
+      rpLastReport.turnos={...byTurno,total:totalTurnos,t3DiaProd,t3TurnoProd};
+    }
     turnosEl.innerHTML=cards+totalCard;
   }
+}
+
+function exportReporteJPG(){
+  renderReporte();
+  if(!rpLastReport){showErr('Reporte ainda sem dados para exportar.');return;}
+  const W=1300,H=900;
+  const canvas=document.createElement('canvas');
+  canvas.width=W; canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  const rr=(x,y,w,h,r,fill,stroke)=>{
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+    ctx.fillStyle=fill; ctx.fill();
+    if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
+  };
+  const text=(s,x,y,size,color,weight='600',align='left')=>{
+    ctx.font=weight+' '+size+'px Segoe UI, Arial';
+    ctx.fillStyle=color;
+    ctx.textAlign=align;
+    ctx.fillText(String(s),x,y);
+  };
+
+  ctx.fillStyle='#0b1220';
+  ctx.fillRect(0,0,W,H);
+  text('Reporte de Status',40,54,28,'#e2e8f0','800');
+  text('Dia '+rpLastReport.dataRef+'  |  Corte ate '+rpLastReport.corteLabel,40,84,15,'#94a3b8','600');
+  text(new Date().toLocaleString('pt-BR'),W-40,54,14,'#64748b','600','right');
+
+  const colors=RP_COLORS;
+  let x=40,y=118;
+  rpLastReport.tipos.forEach((r,i)=>{
+    const c=colors[r.tipo]||'#60a5fa';
+    const cardX=x+(i%2)*390;
+    const cardY=y+Math.floor(i/2)*128;
+    rr(cardX,cardY,360,104,10,'#111c2e',c+'66');
+    text(r.tipo,cardX+18,cardY+28,13,c,'800');
+    text(fmtCargaCompact(r.planejado),cardX+18,cardY+66,22,'#60a5fa','800');
+    text('Planejado',cardX+18,cardY+88,11,'#64748b','700');
+    text(fmtCargaCompact(r.realizado),cardX+154,cardY+66,22,'#22c55e','800');
+    text('Realizado',cardX+154,cardY+88,11,'#64748b','700');
+    text(fmtCargaCompact(r.pendente),cardX+282,cardY+66,22,'#f59e0b','800','center');
+    text('Pendente',cardX+282,cardY+88,11,'#64748b','700','center');
+  });
+
+  const rightX=850;
+  rr(rightX,118,410,250,10,'#111c2e','#334155');
+  text('Status Atual das DTs',rightX+20,150,16,'#e2e8f0','800');
+  const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
+  let sy=184;
+  Object.entries(rpLastReport.statusCounts||{}).forEach(([st,n])=>{
+    const c=statusColors[st]||'#94a3b8';
+    text(st,rightX+22,sy,13,c,'800');
+    text(n,rightX+360,sy,18,'#e2e8f0','800','right');
+    sy+=28;
+  });
+
+  rr(rightX,398,410,250,10,'#111c2e','#334155');
+  text('Separacoes por Turno',rightX+20,430,16,'#e2e8f0','800');
+  const t=rpLastReport.turnos||{T1:0,T2:0,T3:0,total:0,t3DiaProd:0,t3TurnoProd:0};
+  [
+    ['T1 07-14h',t.T1,'#60a5fa'],
+    ['T2 15-22h',t.T2,'#f59e0b'],
+    ['T3 23-06h',t.T3,'#a78bfa'],
+    ['Total do dia',t.total,'#22c55e'],
+  ].forEach((row,idx)=>{
+    const yy=468+idx*38;
+    text(row[0],rightX+22,yy,13,row[2],'800');
+    text(fmtCargaCompact(row[1]),rightX+360,yy,18,row[2],'800','right');
+  });
+  text('T3 dia 23-00: '+fmtCargaCompact(t.t3DiaProd),rightX+22,628,12,'#94a3b8','700');
+  text('T3 turno 23-06: '+fmtCargaCompact(t.t3TurnoProd),rightX+210,628,12,'#94a3b8','700');
+
+  rr(40,540,760,170,10,'#111c2e','#334155');
+  text('Planejado x Realizado',64,574,16,'#e2e8f0','800');
+  const max=Math.max(1,...rpLastReport.tipos.flatMap(r=>[r.planejado,r.realizado,r.pendente]));
+  rpLastReport.tipos.forEach((r,i)=>{
+    const bx=80+i*138;
+    const base=680;
+    const vals=[
+      [r.planejado,'#3b82f6'],
+      [r.realizado,'#22c55e'],
+      [r.pendente,'#f59e0b'],
+    ];
+    vals.forEach((v,j)=>{
+      const h=Math.round((v[0]/max)*78);
+      ctx.fillStyle=v[1];
+      ctx.fillRect(bx+j*18,base-h,12,h);
+    });
+    text(r.tipo.replace('TRANSFERENCIA','TRANSF.'),bx+18,704,10,colors[r.tipo]||'#94a3b8','800','center');
+  });
+
+  canvas.toBlob(blob=>{
+    if(!blob){showErr('Nao foi possivel gerar a imagem.');return;}
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='reporte_status_'+String(rpLastReport.dataRef||'').replace(/\//g,'-')+'_'+String(rpLastReport.corteLabel||'').replace(':','h')+'.jpg';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  },'image/jpeg',0.92);
 }
 
 /* ═══════════════════════════════════════════════════════
