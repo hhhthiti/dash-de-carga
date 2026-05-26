@@ -165,7 +165,14 @@ function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
   return emptyDash?'<span class="tag-sem">—</span>':'';
 }
 
-let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, centroMap={}, tableData=[];
+function buildPaletizacaoBadge(raw){
+  const tipo=normalizePaletizacaoLabel(raw);
+  if(tipo==='TORDESILHAS') return '<span class="tag-palet tag-tordesilhas">TORDESILHAS</span>';
+  if(tipo==='PALETIZADA') return '<span class="tag-palet tag-paletizada">PALETIZADA</span>';
+  return '<span class="tag-palet tag-estivada">ESTIVADA</span>';
+}
+
+let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, centroMap={}, infoAgendaMap={}, tableData=[];
 let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={}, paletizacaoMap={};
 let preFatMode=false; // Ctrl+Ç ativa checkboxes de Pré-Fat nas DTs
 let panelDT=null;
@@ -848,10 +855,11 @@ function processRelatorioCSV(file) {
       const iHora     = ci('Hora') !== -1 ? ci('Hora') : ci('HORA');
       const iSap      = ci('SAP') !== -1 ? ci('SAP') : ci('Número SAP') !== -1 ? ci('Número SAP') : ci('NR SAP') !== -1 ? ci('NR SAP') : ci('Nº SAP') !== -1 ? ci('Nº SAP') : -1;
       const iCentro   = ci('Centro') !== -1 ? ci('Centro') : ci('CENTRO') !== -1 ? ci('CENTRO') : ci('Ctr') !== -1 ? ci('Ctr') : -1;
+      const iInfoAgenda = ci('Inf. Agenda Entrega') !== -1 ? ci('Inf. Agenda Entrega') : ci('AGENDA ENTREGA');
 
       if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
 
-      exportMap = {}; tipoOpMap = {}; descDocMap = {}; centroMap = {};
+      exportMap = {}; tipoOpMap = {}; descDocMap = {}; centroMap = {}; infoAgendaMap = {};
       remessaMap = {}; pesoLiquidoMap = {}; horaChegadaCSVMap = {}; sapNumMap = {}; paletizacaoMap = {};
       let linhasOk = 0;
 
@@ -870,8 +878,12 @@ function processRelatorioCSV(file) {
         const horaCsv = iHora !== -1 ? normalizeHora(strip(cols[iHora])) : '';
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
         const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
-        const infoAgenda = String((cols[ci('Inf. Agenda Entrega')]||'')).toUpperCase();
-        if(!paletizacaoMap[dt]) paletizacaoMap[dt]=infoAgenda.includes('PLT')?'PALETIZADA':'ESTIVADA';
+        const infoAgenda = iInfoAgenda !== -1 ? String(cols[iInfoAgenda]||'') : '';
+        if (infoAgenda && !infoAgendaMap[dt]) infoAgendaMap[dt] = infoAgenda;
+        paletizacaoMap[dt] = mergePaletizacaoLabel(
+          paletizacaoMap[dt],
+          infoAgenda
+        );
 
         if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
         if (sapCsv) sapNumMap[dt] = sapCsv;
@@ -1016,6 +1028,7 @@ async function persistRelatorioFieldsForCurrentTable(){
     if(descDocMap[dt]) patch.descricao_documento=String(descDocMap[dt]);
     if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
     if(centroMap[dt]) patch.centro=String(centroMap[dt]);
+    if(paletizacaoMap[dt]) patch.paletizacao=String(paletizacaoMap[dt]);
     if(pesoLiquidoMap[dt]) patch.peso_liquido=String(pesoLiquidoMap[dt].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}));
     if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
     if(sapNumMap[dt]) patch.n_portaria=String(sapNumMap[dt]);
@@ -1198,9 +1211,56 @@ async function reloadTable(){
     tableData=normalizeDiaRefRows(data||[]).sort((a,b)=>{
       return compareAgendaRows(a,b);
     });
+    await enrichRowsWithPaletizacao(tableData);
     await persistNormalizedDiaRefs(tableData);
     renderRows();
   }catch(e){showErr('Erro ao carregar tabela: '+e.message);}
+}
+
+async function enrichRowsWithPaletizacao(rows){
+  if(!rows||!rows.length) return rows;
+  const refs=[...new Set(rows.map(r=>String(r.data_ref||'')).filter(Boolean))];
+  if(!refs.length) return rows;
+
+  const byDTRef={};
+  const byDT={};
+  try{
+    const mats=await sbGet('reporte_materiais',
+      `data_ref=${sbIn(refs)}&select=dt,data_ref,paletizacao`
+    );
+    (mats||[]).forEach(m=>{
+      const dt=normalizeDT(m.dt);
+      const dataRef=String(m.data_ref||'');
+      if(!dt||!dataRef) return;
+      const key=dt+'__'+dataRef;
+      byDTRef[key]=mergePaletizacaoLabel(byDTRef[key],m.paletizacao);
+      byDT[dt]=mergePaletizacaoLabel(byDT[dt],m.paletizacao);
+    });
+
+    const allDTs=[...new Set(rows.map(r=>normalizeDT(r.dt)).filter(Boolean))];
+    if(allDTs.length){
+      const extra=await sbGet('reporte_materiais',
+        `dt=${sbIn(allDTs)}&select=dt,paletizacao`
+      );
+      (extra||[]).forEach(m=>{
+        const dt=normalizeDT(m.dt);
+        if(!dt) return;
+        byDT[dt]=mergePaletizacaoLabel(byDT[dt],m.paletizacao);
+      });
+    }
+  }catch(e){
+    console.warn('Nao foi possivel carregar paletizacao dos materiais.',e);
+  }
+
+  rows.forEach(r=>{
+    const dt=normalizeDT(r.dt);
+    const key=dt+'__'+String(r.data_ref||'');
+    r.paletizacao=mergePaletizacaoLabel(
+      mergePaletizacaoLabel(r.paletizacao,byDTRef[key]),
+      byDT[dt]
+    );
+  });
+  return rows;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1330,6 +1390,7 @@ function renderRows(){
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
     const opTag=buildTipoOperacaoBadge(row.tipo_operacao,{small:false,emptyDash:true});
+    const paletTag=buildPaletizacaoBadge(row.paletizacao);
     const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
     const clock=clockEmoji(row);
     // Botão reagendamento — aparece nas finalizadas
@@ -1340,6 +1401,7 @@ function renderRows(){
       `<td>${diaTag}</td>`+
       `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${clock?` <span style="margin-left:4px;vertical-align:middle;">${clock}</span>`:''}${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}</td>` +
       `<td class="td-transp">${row.transportadora||'—'}</td>`+
+      `<td class="td-sm">${paletTag}</td>`+
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
       `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
       `<td><input type="time" value="${row.hora_chegada||''}" onchange="saveField('${row.dt}','${row.data_ref}','hora_chegada',this.value)"/></td>`+
@@ -1350,15 +1412,15 @@ function renderRows(){
 }</td>`+
       `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
-      `</select></div></td>`+
-      `<td class="td-sm"><div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">${opTag?opTag+' ':''}<span>${row.descricao_documento||'—'}</span></div></td>`+
+      `</select>${opTag?opTag:''}</div></td>`+
+      `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
       `<td class="td-sm">${fmtTon(row.peso_liquido||row.toneladas||0)}</td>`;
     tbody.appendChild(tr);
   });
 
   if(!rows.length){
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td colspan="9" style="text-align:center;padding:30px;color:#334155;font-size:13px;">
+    tr.innerHTML=`<td colspan="11" style="text-align:center;padding:30px;color:#334155;font-size:13px;">
       ${currentTableTab==='finalizadas'?'Nenhuma DT finalizada ainda.':'Todas as DTs do dia estão finalizadas.'}
     </td>`;
     tbody.appendChild(tr);
@@ -1691,13 +1753,16 @@ function printPanelMapa(){
 async function saveMateriais(){
   if(!panelDT)return;
   const {dt,dataRef}=panelDT;
+  const row=tableData.find(r=>String(r.dt)===String(dt)&&String(r.data_ref)===String(dataRef));
+  const paletizacao=normalizePaletizacaoLabel(row&&row.paletizacao);
   const rows=[...document.getElementById('mat-list').querySelectorAll('.mat-row')];
   const mats=rows.map((r,i)=>({
     dt,data_ref:dataRef,
     material:r.querySelector('[data-f=material]').value.trim(),
     quantidade:r.querySelector('[data-f=quantidade]').value.trim(),
     observacao:document.getElementById('pobs').value.trim(),
-    ordem:i
+    ordem:i,
+    paletizacao
   })).filter(m=>m.material);
   spin(true);
   try{
@@ -1725,6 +1790,7 @@ async function tryLoadExisting(){
         const gb=parseBR(b.grade_carregamento)||new Date(9999,0);
         return ga-gb;
       });
+      await enrichRowsWithPaletizacao(tableData);
       await persistNormalizedDiaRefs(tableData);
       // Popula tipoOpMap a partir do banco para o painel funcionar sem ZLES002
       tableData.forEach(r=>{ if(r.dt&&r.tipo_operacao) tipoOpMap[r.dt]=r.tipo_operacao; });
@@ -1884,11 +1950,10 @@ function rpSetHoraCorte(v){
 }
 
 function rpGetCorteDate(){
-  const now=new Date();
   const selectedDate=parseBR(rpDataRef||'') || today();
   const corte=new Date(selectedDate);
   if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)){
-    corte.setHours(now.getHours(),now.getMinutes(),59,999);
+    corte.setHours(23,59,59,999);
     return corte;
   }
   const [hh,mm]=rpHoraCorte.split(':').map(n=>parseInt(n,10));
@@ -1992,6 +2057,31 @@ function rpTurnoFromDate(dt){
   if(h>=7 && h<=14) return 'T1';
   if(h>=15 && h<=22) return 'T2';
   return 'T3'; // 23-06
+}
+
+function normalizePaletizacaoLabel(raw){
+  const base=String(raw||'')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g,'')
+    .toUpperCase();
+
+  // Qualquer variação contendo TORDE ou o rótulo já normalizado
+  if(base.includes('TORDE') || base.includes('TORDESILHAS')) return 'TORDESILHAS';
+
+  // Qualquer variação contendo PLT, PALET ou o rótulo já normalizado
+  if(base.includes('PLT') || base.includes('PALET') || base.includes('PALETIZADA')) return 'PALETIZADA';
+
+  if(base.includes('ESTIVADA')) return 'ESTIVADA';
+
+  // Caso não encontre nenhum padrão
+  return 'ESTIVADA';
+}
+
+function mergePaletizacaoLabel(currentLabel,newRaw){
+  const current=normalizePaletizacaoLabel(currentLabel);
+  const incoming=normalizePaletizacaoLabel(newRaw);
+  const priority={ESTIVADA:0,PALETIZADA:1,TORDESILHAS:2};
+  return (priority[incoming]||0)>(priority[current]||0)?incoming:current;
 }
 
 function renderReporte(){
@@ -2134,10 +2224,10 @@ function renderReporte(){
   const turnosEl=document.getElementById('rp-turnos-resumo');
   if(turnosEl){
     const byTurno={T1:0,T2:0,T3:0};
-    const separacaoByTurno={
-      T1:{paletizadas:0,tordesilhas:0,estivadas:0},
-      T2:{paletizadas:0,tordesilhas:0,estivadas:0},
-      T3:{paletizadas:0,tordesilhas:0,estivadas:0},
+    const paletByTurno={
+      T1:{TORDESILHAS:0,PALETIZADA:0,ESTIVADA:0},
+      T2:{TORDESILHAS:0,PALETIZADA:0,ESTIVADA:0},
+      T3:{TORDESILHAS:0,PALETIZADA:0,ESTIVADA:0},
     };
     let t3DiaProd=0;
     let t3TurnoProd=0;
@@ -2156,11 +2246,8 @@ function renderReporte(){
       const ton=rpParseToneladas(r);
       byTurno[turno]+=ton;
 
-      const palFlag=String(paletizacaoMap[String(r.dt)]||'').toUpperCase();
-      const transp=String(r.transportadora||'').toUpperCase();
-      if(palFlag.includes('PALETIZ')) separacaoByTurno[turno].paletizadas+=1;
-      else separacaoByTurno[turno].estivadas+=1;
-      if(transp.includes('TORDESILHAS')) separacaoByTurno[turno].tordesilhas+=1;
+      const paletKey=normalizePaletizacaoLabel(r.paletizacao);
+      paletByTurno[turno][paletKey]++;
 
       if(turno==='T3' && grade){
         if(grade>=t3DiaIni && grade<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
@@ -2175,10 +2262,10 @@ function renderReporte(){
         <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
         <div class="rp-turno-num" style="color:${cores[t]}">${fmtCargaValue(byTurno[t])}</div>
         <div style="font-size:10px;color:#64748b;">${fmtCargaUnit(byTurno[t])} planejados</div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.45;">
-          📦 Paletizadas: <b style="color:#a7f3d0;">${separacaoByTurno[t].paletizadas}</b><br/>
-          🚛 Tordesilhas: <b style="color:#93c5fd;">${separacaoByTurno[t].tordesilhas}</b><br/>
-          🧱 Estivadas: <b style="color:#fda4af;">${separacaoByTurno[t].estivadas}</b>
+        <div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.5;">
+          Tordesilhas: <b style="color:#c4b5fd;">${paletByTurno[t].TORDESILHAS}</b> ·
+          Paletizada: <b style="color:#c4b5fd;">${paletByTurno[t].PALETIZADA}</b> ·
+          Estivada: <b style="color:#c4b5fd;">${paletByTurno[t].ESTIVADA}</b>
         </div>
         ${t==='T3'
           ? `<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.6;">
@@ -2197,7 +2284,7 @@ function renderReporte(){
       </div>
     `;
     if(rpLastReport){
-      rpLastReport.turnos={...byTurno,total:totalTurnos,t3DiaProd,t3TurnoProd,separacaoByTurno};
+      rpLastReport.turnos={...byTurno,total:totalTurnos,t3DiaProd,t3TurnoProd,paletByTurno};
     }
     turnosEl.innerHTML=cards+totalCard;
   }
@@ -2264,27 +2351,21 @@ function exportReporteJPG(){
 
   rr(rightX,398,410,250,10,'#111c2e','#334155');
   text('Separacoes por Turno',rightX+20,430,16,'#e2e8f0','800');
-  const t=rpLastReport.turnos||{T1:0,T2:0,T3:0,total:0,t3DiaProd:0,t3TurnoProd:0,separacaoByTurno:{T1:{paletizadas:0,tordesilhas:0,estivadas:0},T2:{paletizadas:0,tordesilhas:0,estivadas:0},T3:{paletizadas:0,tordesilhas:0,estivadas:0}}};
+  const t=rpLastReport.turnos||{T1:0,T2:0,T3:0,total:0,t3DiaProd:0,t3TurnoProd:0,paletByTurno:{}};
   [
-    ['T1 07-14h',t.T1,'#60a5fa'],
-    ['T2 15-22h',t.T2,'#f59e0b'],
-    ['T3 23-06h',t.T3,'#a78bfa'],
-    ['Total do dia',t.total,'#22c55e'],
+    ['T1 07-14h',t.T1,'#60a5fa','T1'],
+    ['T2 15-22h',t.T2,'#f59e0b','T2'],
+    ['T3 23-06h',t.T3,'#a78bfa','T3'],
+    ['Total do dia',t.total,'#22c55e',''],
   ].forEach((row,idx)=>{
     const yy=468+idx*38;
     text(row[0],rightX+22,yy,13,row[2],'800');
     text(fmtCargaCompact(row[1]),rightX+360,yy,18,row[2],'800','right');
+    if(row[3]){
+      const p=(t.paletByTurno&&t.paletByTurno[row[3]])||{TORDESILHAS:0,PALETIZADA:0,ESTIVADA:0};
+      text('Tord: '+p.TORDESILHAS+'  |  Pal: '+p.PALETIZADA+'  |  Est: '+p.ESTIVADA,rightX+22,yy+16,10,'#94a3b8','700');
+    }
   });
-
-  const sep=t.separacaoByTurno||{};
-  const drawSep=(turno,labelBase,y,color)=>{
-    const s=sep[turno]||{paletizadas:0,tordesilhas:0,estivadas:0};
-    text(`${labelBase} · 📦 ${s.paletizadas}  🚛 ${s.tordesilhas}  🧱 ${s.estivadas}`,rightX+22,y,11,color,'700');
-  };
-  drawSep('T1','T1 sep.',560,'#93c5fd');
-  drawSep('T2','T2 sep.',578,'#fcd34d');
-  drawSep('T3','T3 sep.',596,'#c4b5fd');
-
   text('T3 dia 23-00: '+fmtCargaCompact(t.t3DiaProd),rightX+22,628,12,'#94a3b8','700');
   text('T3 turno 23-06: '+fmtCargaCompact(t.t3TurnoProd),rightX+210,628,12,'#94a3b8','700');
 
