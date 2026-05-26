@@ -1866,7 +1866,9 @@ let rpLastReport = null;
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO','NO SHOW'];
 
 function rpRefDate(row){
-  return parseBR(row.fim_carregamento||'') || parseBR(row.fim_agenda||'') || parseBR(row.agenda||'') || parseBR(row.grade_carregamento||'');
+  // O reporte de planejado x realizado deve considerar somente o FIM da agenda/operação.
+  // Não usar início da agenda para evitar contabilizações indevidas no corte.
+  return parseBR(row.fim_carregamento||'') || parseBR(row.fim_agenda||'');
 }
 
 function isTransferencia(row){
