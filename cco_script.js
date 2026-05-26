@@ -2262,9 +2262,9 @@ function renderReporte(){
     const t3TurnoFim=new Date(amanha0); t3TurnoFim.setHours(6,59,59,999);
 
     rows.forEach(r=>{
-      const grade=parseBR(r.grade_carregamento||'');
-      if(!grade || !sameDay(grade,hoje0)) return;
-      const turno=rpTurnoFromDate(grade);
+      const fim=rpRefDate(r);
+      if(!fim || !sameDay(fim,hoje0)) return;
+      const turno=rpTurnoFromDate(fim);
       if(!turno) return;
       const ton=rpParseToneladas(r);
       byTurno[turno]+=ton;
@@ -2272,9 +2272,9 @@ function renderReporte(){
       const paletKey=normalizePaletizacaoLabel(r.paletizacao);
       paletByTurno[turno][paletKey]++;
 
-      if(turno==='T3' && grade){
-        if(grade>=t3DiaIni && grade<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
-        if(grade>=t3TurnoIni && grade<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno
+      if(turno==='T3'){
+        if(fim>=t3DiaIni && fim<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
+        if(fim>=t3TurnoIni && fim<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno
       }
     });
     const totalTurnos=byTurno.T1+byTurno.T2+byTurno.T3;
