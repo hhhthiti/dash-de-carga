@@ -2263,7 +2263,15 @@ function renderReporte(){
 
     rows.forEach(r=>{
       const fim=rpRefDate(r);
-      if(!fim || !sameDay(fim,hoje0)) return;
+      if(!fim) return;
+
+      // Turno noturno cruza a meia-noite:
+      // - fechamento do dia: 23:00-23:59 do dia selecionado
+      // - continuidade do turno: 00:00-06:59 do dia seguinte
+      const dentroJanelaDia = sameDay(fim,hoje0);
+      const dentroJanelaNoiteSeguinte = fim>=t3TurnoIni && fim<=t3TurnoFim;
+      if(!dentroJanelaDia && !dentroJanelaNoiteSeguinte) return;
+
       const turno=rpTurnoFromDate(fim);
       if(!turno) return;
       const ton=rpParseToneladas(r);
@@ -2274,7 +2282,7 @@ function renderReporte(){
 
       if(turno==='T3'){
         if(fim>=t3DiaIni && fim<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
-        if(fim>=t3TurnoIni && fim<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno
+        if(fim>=t3TurnoIni && fim<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno (23:00-06:59)
       }
     });
     const totalTurnos=byTurno.T1+byTurno.T2+byTurno.T3;
