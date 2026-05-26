@@ -871,7 +871,10 @@ function processRelatorioCSV(file) {
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
         const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
         const infoAgenda = String(cols[ci('Inf. Agenda Entrega')]||'');
-        paletizacaoMap[dt] = mergePaletizacaoLabel(paletizacaoMap[dt], infoAgenda);
+        paletizacaoMap[dt] = mergePaletizacaoLabel(
+          paletizacaoMap[dt],
+          infoAgenda
+        );
 
         if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
         if (sapCsv) sapNumMap[dt] = sapCsv;
@@ -1995,9 +1998,18 @@ function rpTurnoFromDate(dt){
 }
 
 function normalizePaletizacaoLabel(raw){
-  const base=String(raw||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
+  const base=String(raw||'')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g,'')
+    .toUpperCase();
+
+  // Qualquer variação contendo TORDE
   if(base.includes('TORDE')) return 'TORDESILHAS';
+
+  // Qualquer variação contendo PLT ou PALET
   if(base.includes('PLT') || base.includes('PALET')) return 'PALETIZADA';
+
+  // Caso não encontre nenhum padrão
   return 'ESTIVADA';
 }
 
