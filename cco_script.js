@@ -2134,6 +2134,11 @@ function renderReporte(){
   const turnosEl=document.getElementById('rp-turnos-resumo');
   if(turnosEl){
     const byTurno={T1:0,T2:0,T3:0};
+    const separacaoByTurno={
+      T1:{paletizadas:0,tordesilhas:0,estivadas:0},
+      T2:{paletizadas:0,tordesilhas:0,estivadas:0},
+      T3:{paletizadas:0,tordesilhas:0,estivadas:0},
+    };
     let t3DiaProd=0;
     let t3TurnoProd=0;
     const hoje0=parseBR(rpDataRef||'')||today(); hoje0.setHours(0,0,0,0);
@@ -2151,6 +2156,12 @@ function renderReporte(){
       const ton=rpParseToneladas(r);
       byTurno[turno]+=ton;
 
+      const palFlag=String(paletizacaoMap[String(r.dt)]||'').toUpperCase();
+      const transp=String(r.transportadora||'').toUpperCase();
+      if(palFlag.includes('PALETIZ')) separacaoByTurno[turno].paletizadas+=1;
+      else separacaoByTurno[turno].estivadas+=1;
+      if(transp.includes('TORDESILHAS')) separacaoByTurno[turno].tordesilhas+=1;
+
       if(turno==='T3' && grade){
         if(grade>=t3DiaIni && grade<=t3DiaFim) t3DiaProd+=ton;         // produtividade do dia
         if(grade>=t3TurnoIni && grade<=t3TurnoFim) t3TurnoProd+=ton;   // produtividade do turno
@@ -2164,6 +2175,11 @@ function renderReporte(){
         <div class="rp-turno-label" style="color:${cores[t]}">${labels[t]}</div>
         <div class="rp-turno-num" style="color:${cores[t]}">${fmtCargaValue(byTurno[t])}</div>
         <div style="font-size:10px;color:#64748b;">${fmtCargaUnit(byTurno[t])} planejados</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.45;">
+          📦 Paletizadas: <b style="color:#a7f3d0;">${separacaoByTurno[t].paletizadas}</b><br/>
+          🚛 Tordesilhas: <b style="color:#93c5fd;">${separacaoByTurno[t].tordesilhas}</b><br/>
+          🧱 Estivadas: <b style="color:#fda4af;">${separacaoByTurno[t].estivadas}</b>
+        </div>
         ${t==='T3'
           ? `<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.6;">
               Dia (23-00): <b style="color:#c4b5fd;">${fmtCargaCompact(t3DiaProd)}</b><br/>
@@ -2181,7 +2197,7 @@ function renderReporte(){
       </div>
     `;
     if(rpLastReport){
-      rpLastReport.turnos={...byTurno,total:totalTurnos,t3DiaProd,t3TurnoProd};
+      rpLastReport.turnos={...byTurno,total:totalTurnos,t3DiaProd,t3TurnoProd,separacaoByTurno};
     }
     turnosEl.innerHTML=cards+totalCard;
   }
@@ -2248,7 +2264,7 @@ function exportReporteJPG(){
 
   rr(rightX,398,410,250,10,'#111c2e','#334155');
   text('Separacoes por Turno',rightX+20,430,16,'#e2e8f0','800');
-  const t=rpLastReport.turnos||{T1:0,T2:0,T3:0,total:0,t3DiaProd:0,t3TurnoProd:0};
+  const t=rpLastReport.turnos||{T1:0,T2:0,T3:0,total:0,t3DiaProd:0,t3TurnoProd:0,separacaoByTurno:{T1:{paletizadas:0,tordesilhas:0,estivadas:0},T2:{paletizadas:0,tordesilhas:0,estivadas:0},T3:{paletizadas:0,tordesilhas:0,estivadas:0}}};
   [
     ['T1 07-14h',t.T1,'#60a5fa'],
     ['T2 15-22h',t.T2,'#f59e0b'],
@@ -2259,6 +2275,16 @@ function exportReporteJPG(){
     text(row[0],rightX+22,yy,13,row[2],'800');
     text(fmtCargaCompact(row[1]),rightX+360,yy,18,row[2],'800','right');
   });
+
+  const sep=t.separacaoByTurno||{};
+  const drawSep=(turno,labelBase,y,color)=>{
+    const s=sep[turno]||{paletizadas:0,tordesilhas:0,estivadas:0};
+    text(`${labelBase} · 📦 ${s.paletizadas}  🚛 ${s.tordesilhas}  🧱 ${s.estivadas}`,rightX+22,y,11,color,'700');
+  };
+  drawSep('T1','T1 sep.',560,'#93c5fd');
+  drawSep('T2','T2 sep.',578,'#fcd34d');
+  drawSep('T3','T3 sep.',596,'#c4b5fd');
+
   text('T3 dia 23-00: '+fmtCargaCompact(t.t3DiaProd),rightX+22,628,12,'#94a3b8','700');
   text('T3 turno 23-06: '+fmtCargaCompact(t.t3TurnoProd),rightX+210,628,12,'#94a3b8','700');
 
