@@ -1963,20 +1963,10 @@ function rpGetCorteDate(){
   return corte;
 }
 
-function rpGetCorteMinutes(){
-  const d=rpGetCorteDate();
-  return d.getHours()*60+d.getMinutes();
-}
-
-function rpRowFimMinutes(row){
+function rpRowDentroDoCorte(row,corteDate){
   const fim=rpRefDate(row);
-  if(!fim) return null;
-  return fim.getHours()*60+fim.getMinutes();
-}
-
-function rpRowDentroDoCorte(row,corteMin){
-  const fimMin=rpRowFimMinutes(row);
-  return fimMin!==null && fimMin<=corteMin;
+  if(!fim) return false;
+  return fim.getTime()<=corteDate.getTime();
 }
 
 
@@ -2115,7 +2105,6 @@ function renderReporte(){
   }
 
   const corte=rpGetCorteDate();
-  const corteMin=rpGetCorteMinutes();
   const corteLabel=corte.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual · corte até '+corteLabel;
 
@@ -2126,7 +2115,7 @@ function renderReporte(){
   rows.forEach(r=>{
     const modalidade=rpModalidade(r);
     const ton=rpParseToneladas(r);
-    if(!rpRowDentroDoCorte(r,corteMin)) return;
+    if(!rpRowDentroDoCorte(r,corte)) return;
     const realizado=STATUS_REALIZADO.includes(r.status);
 
     planejadoTon['GRADE']+=ton;
