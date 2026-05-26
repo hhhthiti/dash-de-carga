@@ -1235,15 +1235,10 @@ async function enrichRowsWithPaletizacao(rows){
       byDT[dt]=mergePaletizacaoLabel(byDT[dt],m.paletizacao);
     });
 
-    const missingDTs=[...new Set(rows
-      .filter(r=>{
-        const key=normalizeDT(r.dt)+'__'+String(r.data_ref||'');
-        return !byDTRef[key] && normalizeDT(r.dt);
-      })
-      .map(r=>normalizeDT(r.dt)))];
-    if(missingDTs.length){
+    const allDTs=[...new Set(rows.map(r=>normalizeDT(r.dt)).filter(Boolean))];
+    if(allDTs.length){
       const extra=await sbGet('reporte_materiais',
-        `dt=${sbIn(missingDTs)}&select=dt,paletizacao`
+        `dt=${sbIn(allDTs)}&select=dt,paletizacao`
       );
       (extra||[]).forEach(m=>{
         const dt=normalizeDT(m.dt);
@@ -1258,7 +1253,10 @@ async function enrichRowsWithPaletizacao(rows){
   rows.forEach(r=>{
     const dt=normalizeDT(r.dt);
     const key=dt+'__'+String(r.data_ref||'');
-    r.paletizacao=byDTRef[key]||byDT[dt]||normalizePaletizacaoLabel(r.paletizacao);
+    r.paletizacao=mergePaletizacaoLabel(
+      mergePaletizacaoLabel(r.paletizacao,byDTRef[key]),
+      byDT[dt]
+    );
   });
   return rows;
 }
@@ -1753,13 +1751,16 @@ function printPanelMapa(){
 async function saveMateriais(){
   if(!panelDT)return;
   const {dt,dataRef}=panelDT;
+  const row=tableData.find(r=>String(r.dt)===String(dt)&&String(r.data_ref)===String(dataRef));
+  const paletizacao=normalizePaletizacaoLabel(row&&row.paletizacao);
   const rows=[...document.getElementById('mat-list').querySelectorAll('.mat-row')];
   const mats=rows.map((r,i)=>({
     dt,data_ref:dataRef,
     material:r.querySelector('[data-f=material]').value.trim(),
     quantidade:r.querySelector('[data-f=quantidade]').value.trim(),
     observacao:document.getElementById('pobs').value.trim(),
-    ordem:i
+    ordem:i,
+    paletizacao
   })).filter(m=>m.material);
   spin(true);
   try{
