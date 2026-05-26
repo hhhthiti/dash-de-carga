@@ -848,6 +848,7 @@ function processRelatorioCSV(file) {
       const iHora     = ci('Hora') !== -1 ? ci('Hora') : ci('HORA');
       const iSap      = ci('SAP') !== -1 ? ci('SAP') : ci('Número SAP') !== -1 ? ci('Número SAP') : ci('NR SAP') !== -1 ? ci('NR SAP') : ci('Nº SAP') !== -1 ? ci('Nº SAP') : -1;
       const iCentro   = ci('Centro') !== -1 ? ci('Centro') : ci('CENTRO') !== -1 ? ci('CENTRO') : ci('Ctr') !== -1 ? ci('Ctr') : -1;
+      const iInfoAgenda = ci('Inf. Agenda Entrega') !== -1 ? ci('Inf. Agenda Entrega') : ci('AGENDA ENTREGA');
 
       if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
 
@@ -870,7 +871,7 @@ function processRelatorioCSV(file) {
         const horaCsv = iHora !== -1 ? normalizeHora(strip(cols[iHora])) : '';
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
         const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
-        const infoAgenda = String(cols[ci('Inf. Agenda Entrega')]||'');
+        const infoAgenda = iInfoAgenda !== -1 ? String(cols[iInfoAgenda]||'') : '';
         paletizacaoMap[dt] = mergePaletizacaoLabel(
           paletizacaoMap[dt],
           infoAgenda
@@ -2003,11 +2004,13 @@ function normalizePaletizacaoLabel(raw){
     .replace(/[̀-ͯ]/g,'')
     .toUpperCase();
 
-  // Qualquer variação contendo TORDE
-  if(base.includes('TORDE')) return 'TORDESILHAS';
+  // Qualquer variação contendo TORDE ou o rótulo já normalizado
+  if(base.includes('TORDE') || base.includes('TORDESILHAS')) return 'TORDESILHAS';
 
-  // Qualquer variação contendo PLT ou PALET
-  if(base.includes('PLT') || base.includes('PALET')) return 'PALETIZADA';
+  // Qualquer variação contendo PLT, PALET ou o rótulo já normalizado
+  if(base.includes('PLT') || base.includes('PALET') || base.includes('PALETIZADA')) return 'PALETIZADA';
+
+  if(base.includes('ESTIVADA')) return 'ESTIVADA';
 
   // Caso não encontre nenhum padrão
   return 'ESTIVADA';
