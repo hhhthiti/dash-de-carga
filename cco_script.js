@@ -1866,7 +1866,9 @@ let rpLastReport = null;
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO','NO SHOW'];
 
 function rpRefDate(row){
-  return parseBR(row.fim_carregamento||'') || parseBR(row.fim_agenda||'') || parseBR(row.agenda||'') || parseBR(row.grade_carregamento||'');
+  // Reporte deve considerar o fim da agenda (não o início).
+  // Evita contabilizar toneladas antes da janela realmente encerrar.
+  return parseBR(row.fim_carregamento||'') || parseBR(row.fim_agenda||'');
 }
 
 function isTransferencia(row){
