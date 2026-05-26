@@ -165,6 +165,13 @@ function buildTipoOperacaoBadge(tipoOperacao,{small=false,emptyDash=true}={}){
   return emptyDash?'<span class="tag-sem">—</span>':'';
 }
 
+function buildPaletizacaoBadge(raw){
+  const tipo=normalizePaletizacaoLabel(raw);
+  if(tipo==='TORDESILHAS') return '<span class="tag-palet tag-tordesilhas">TORDESILHAS</span>';
+  if(tipo==='PALETIZADA') return '<span class="tag-palet tag-paletizada">PALETIZADA</span>';
+  return '<span class="tag-palet tag-estivada">ESTIVADA</span>';
+}
+
 let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, centroMap={}, tableData=[];
 let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={}, paletizacaoMap={};
 let preFatMode=false; // Ctrl+Ç ativa checkboxes de Pré-Fat nas DTs
@@ -1214,6 +1221,7 @@ async function enrichRowsWithPaletizacao(rows){
   if(!refs.length) return rows;
 
   const byDTRef={};
+  const byDT={};
   try{
     const mats=await sbGet('reporte_materiais',
       `data_ref=${sbIn(refs)}&select=dt,data_ref,paletizacao`
@@ -1224,14 +1232,33 @@ async function enrichRowsWithPaletizacao(rows){
       if(!dt||!dataRef) return;
       const key=dt+'__'+dataRef;
       byDTRef[key]=mergePaletizacaoLabel(byDTRef[key],m.paletizacao);
+      byDT[dt]=mergePaletizacaoLabel(byDT[dt],m.paletizacao);
     });
+
+    const missingDTs=[...new Set(rows
+      .filter(r=>{
+        const key=normalizeDT(r.dt)+'__'+String(r.data_ref||'');
+        return !byDTRef[key] && normalizeDT(r.dt);
+      })
+      .map(r=>normalizeDT(r.dt)))];
+    if(missingDTs.length){
+      const extra=await sbGet('reporte_materiais',
+        `dt=${sbIn(missingDTs)}&select=dt,paletizacao`
+      );
+      (extra||[]).forEach(m=>{
+        const dt=normalizeDT(m.dt);
+        if(!dt) return;
+        byDT[dt]=mergePaletizacaoLabel(byDT[dt],m.paletizacao);
+      });
+    }
   }catch(e){
     console.warn('Nao foi possivel carregar paletizacao dos materiais.',e);
   }
 
   rows.forEach(r=>{
-    const key=normalizeDT(r.dt)+'__'+String(r.data_ref||'');
-    r.paletizacao=byDTRef[key]||normalizePaletizacaoLabel(r.paletizacao);
+    const dt=normalizeDT(r.dt);
+    const key=dt+'__'+String(r.data_ref||'');
+    r.paletizacao=byDTRef[key]||byDT[dt]||normalizePaletizacaoLabel(r.paletizacao);
   });
   return rows;
 }
@@ -1363,6 +1390,7 @@ function renderRows(){
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
     const opTag=buildTipoOperacaoBadge(row.tipo_operacao,{small:false,emptyDash:true});
+    const paletTag=buildPaletizacaoBadge(row.paletizacao);
     const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
     const clock=clockEmoji(row);
     // Botão reagendamento — aparece nas finalizadas
@@ -1373,6 +1401,7 @@ function renderRows(){
       `<td>${diaTag}</td>`+
       `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${clock?` <span style="margin-left:4px;vertical-align:middle;">${clock}</span>`:''}${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}</td>` +
       `<td class="td-transp">${row.transportadora||'—'}</td>`+
+      `<td class="td-sm">${paletTag}</td>`+
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
       `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
       `<td><input type="time" value="${row.hora_chegada||''}" onchange="saveField('${row.dt}','${row.data_ref}','hora_chegada',this.value)"/></td>`+
@@ -1383,15 +1412,15 @@ function renderRows(){
 }</td>`+
       `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
-      `</select></div></td>`+
-      `<td class="td-sm"><div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">${opTag?opTag+' ':''}<span>${row.descricao_documento||'—'}</span></div></td>`+
+      `</select>${opTag?opTag:''}</div></td>`+
+      `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
       `<td class="td-sm">${fmtTon(row.peso_liquido||row.toneladas||0)}</td>`;
     tbody.appendChild(tr);
   });
 
   if(!rows.length){
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td colspan="9" style="text-align:center;padding:30px;color:#334155;font-size:13px;">
+    tr.innerHTML=`<td colspan="11" style="text-align:center;padding:30px;color:#334155;font-size:13px;">
       ${currentTableTab==='finalizadas'?'Nenhuma DT finalizada ainda.':'Todas as DTs do dia estão finalizadas.'}
     </td>`;
     tbody.appendChild(tr);
