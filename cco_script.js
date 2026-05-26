@@ -2434,14 +2434,109 @@ function exportReporteJPG(){
     text(fmtCargaCompact(p.ton||0),px+112,825,20,'#e2e8f0','800');
   });
 
+  downloadCanvasJPG(
+    canvas,
+    'reporte_status_'+String(rpLastReport.dataRef||'').replace(/\//g,'-')+'_'+String(rpLastReport.corteLabel||'').replace(':','h')+'.jpg',
+    0.92
+  );
+  exportGradeTodasDTsJPG();
+}
+
+function downloadCanvasJPG(canvas,filename,quality=0.92,delay=0){
   canvas.toBlob(blob=>{
     if(!blob){showErr('Nao foi possivel gerar a imagem.');return;}
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='reporte_status_'+String(rpLastReport.dataRef||'').replace(/\//g,'-')+'_'+String(rpLastReport.corteLabel||'').replace(':','h')+'.jpg';
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),1500);
-  },'image/jpeg',0.92);
+    setTimeout(()=>{
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=filename;
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    },delay);
+  },'image/jpeg',quality);
+}
+
+function exportGradeTodasDTsJPG(){
+  const rows=[...tableData]
+    .filter(r=>!STATUS_FINAIS.includes(r.status))
+    .sort(compareTableRows);
+  const visibleRows=rows.slice(0,54);
+  const W=1800;
+  const rowH=34;
+  const H=Math.max(820,150+visibleRows.length*rowH+70);
+  const canvas=document.createElement('canvas');
+  canvas.width=W; canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  const text=(s,x,y,size,color,weight='600',align='left',maxWidth=null)=>{
+    ctx.font=weight+' '+size+'px Segoe UI, Arial';
+    ctx.fillStyle=color;
+    ctx.textAlign=align;
+    const value=String(s||'');
+    if(maxWidth) ctx.fillText(value,x,y,maxWidth);
+    else ctx.fillText(value,x,y);
+  };
+  const rect=(x,y,w,h,fill,stroke=null)=>{
+    ctx.fillStyle=fill; ctx.fillRect(x,y,w,h);
+    if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.strokeRect(x,y,w,h);}
+  };
+  const ellipsis=(value,maxChars)=>{
+    const s=String(value||'');
+    return s.length>maxChars?s.slice(0,Math.max(0,maxChars-1))+'…':s;
+  };
+  const paletColor=(raw)=>{
+    const p=normalizePaletizacaoLabel(raw);
+    if(p==='PALETIZADA') return '#10b981';
+    if(p==='TORDESILHAS') return '#e879f9';
+    return '#818cf8';
+  };
+  const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
+  const cols=[
+    ['DIA',40,90],
+    ['DT',132,115],
+    ['TRANSPORTADORA',252,250],
+    ['PALETIZACAO',510,145],
+    ['GRADE',665,180],
+    ['FIM',852,180],
+    ['STATUS',1040,190],
+    ['OPERACAO',1238,170],
+    ['DESC. DOCUMENTO',1418,190],
+    ['PESO',1628,110],
+  ];
+
+  rect(0,0,W,H,'#0b1220');
+  text('Grade - Todas as DTs',40,54,30,'#e2e8f0','800');
+  text(new Date().toLocaleString('pt-BR'),W-40,54,15,'#64748b','600','right');
+  text(rows.length+' DTs abertas na grade atual',40,84,15,'#94a3b8','700');
+  if(rows.length>visibleRows.length) text('Mostrando primeiras '+visibleRows.length+' de '+rows.length+' DTs',W-40,84,13,'#f59e0b','700','right');
+
+  rect(32,110,W-64,34,'#162032','#334155');
+  cols.forEach(([label,x])=>text(label,x,132,12,'#94a3b8','800'));
+
+  visibleRows.forEach((r,i)=>{
+    const y=150+i*rowH;
+    rect(32,y-22,W-64,rowH,i%2?'#0f172a':'#111c2e','#1e293b');
+    const palet=normalizePaletizacaoLabel(r.paletizacao);
+    const status=String(r.status||'');
+    const op=String(r.tipo_operacao||'');
+    text(r.dia_ref||'',cols[0][1],y,12,r.dia_ref==='HOJE'?'#60a5fa':'#a78bfa','800');
+    text(r.dt||'',cols[1][1],y,14,'#93c5fd','800');
+    text(ellipsis(r.transportadora||'',30),cols[2][1],y,12,'#cbd5e1','700');
+    text(palet,cols[3][1],y,12,paletColor(palet),'800');
+    text(String(r.grade_carregamento||'—').replace(',',''),cols[4][1],y,12,'#e2e8f0','700');
+    text(String(r.fim_carregamento||'—').replace(',',''),cols[5][1],y,12,'#e2e8f0','700');
+    text(status,cols[6][1],y,12,statusColors[status]||'#94a3b8','800');
+    text(ellipsis(op||'—',18),cols[7][1],y,12,'#c4b5fd','800');
+    text(ellipsis(r.descricao_documento||'—',24),cols[8][1],y,12,'#94a3b8','700');
+    text(fmtTon(r.peso_liquido||r.toneladas||0),cols[9][1]+86,y,13,'#e2e8f0','800','right');
+  });
+
+  const footerY=H-28;
+  text('Gerado pelo dashboard de carga',40,footerY,12,'#475569','700');
+  downloadCanvasJPG(
+    canvas,
+    'grade_todas_dts_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.jpg',
+    0.92,
+    350
+  );
 }
 
 /* ═══════════════════════════════════════════════════════
