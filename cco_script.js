@@ -689,7 +689,9 @@ function processAgend(file){
           .replace(/[\u0300-\u036f]/g,'')
           .replace(/[\s\-]+/g,'_')
           .replace(/_+/g,'_');
-        if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
+        const isMogiOuAruja = loc.endsWith('1110') || loc.endsWith('1111');
+        const isTordesilhas = docaNorm.includes('tordesilhas') || docaNorm.includes('tord');
+        if(!isMogiOuAruja && !isTordesilhas) continue;
         // Exclui docas fab_mog sem _ifnt (DOCA_1_FAB_MOG, DOCA_2_FAB_MOG etc.),
         // mas mantém variantes com sufixo _ifnt (DOCA_9_FAB_MOG_IFNT, DOCA_12_FAB_MOG_IFNT_EXTRA etc.).
         const isFabMog = docaNorm.includes('fab_mog');
@@ -707,7 +709,7 @@ function processAgend(file){
           PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
         });
       }
-      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111 e DOCA _IFNT ou ARUJA encontrada.');
+      if(!agendRows.length)throw new Error('Nenhuma linha válida encontrada (LOCAL 1110/1111 ou DOCA de Tordesilhas, com regras de DOCA aplicadas).');
       hideInf();
       if(isInlineUpload){
         // Upload feito de dentro da tabela: pula passo 2/3 e vai direto para o banco
