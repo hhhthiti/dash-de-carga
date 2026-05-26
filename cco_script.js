@@ -1202,9 +1202,38 @@ async function reloadTable(){
     tableData=normalizeDiaRefRows(data||[]).sort((a,b)=>{
       return compareAgendaRows(a,b);
     });
+    await enrichRowsWithPaletizacao(tableData);
     await persistNormalizedDiaRefs(tableData);
     renderRows();
   }catch(e){showErr('Erro ao carregar tabela: '+e.message);}
+}
+
+async function enrichRowsWithPaletizacao(rows){
+  if(!rows||!rows.length) return rows;
+  const refs=[...new Set(rows.map(r=>String(r.data_ref||'')).filter(Boolean))];
+  if(!refs.length) return rows;
+
+  const byDTRef={};
+  try{
+    const mats=await sbGet('reporte_materiais',
+      `data_ref=${sbIn(refs)}&select=dt,data_ref,paletizacao`
+    );
+    (mats||[]).forEach(m=>{
+      const dt=normalizeDT(m.dt);
+      const dataRef=String(m.data_ref||'');
+      if(!dt||!dataRef) return;
+      const key=dt+'__'+dataRef;
+      byDTRef[key]=mergePaletizacaoLabel(byDTRef[key],m.paletizacao);
+    });
+  }catch(e){
+    console.warn('Nao foi possivel carregar paletizacao dos materiais.',e);
+  }
+
+  rows.forEach(r=>{
+    const key=normalizeDT(r.dt)+'__'+String(r.data_ref||'');
+    r.paletizacao=byDTRef[key]||normalizePaletizacaoLabel(r.paletizacao);
+  });
+  return rows;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1729,6 +1758,7 @@ async function tryLoadExisting(){
         const gb=parseBR(b.grade_carregamento)||new Date(9999,0);
         return ga-gb;
       });
+      await enrichRowsWithPaletizacao(tableData);
       await persistNormalizedDiaRefs(tableData);
       // Popula tipoOpMap a partir do banco para o painel funcionar sem ZLES002
       tableData.forEach(r=>{ if(r.dt&&r.tipo_operacao) tipoOpMap[r.dt]=r.tipo_operacao; });
@@ -1888,11 +1918,10 @@ function rpSetHoraCorte(v){
 }
 
 function rpGetCorteDate(){
-  const now=new Date();
   const selectedDate=parseBR(rpDataRef||'') || today();
   const corte=new Date(selectedDate);
   if(!rpHoraCorte || !/^\d{2}:\d{2}$/.test(rpHoraCorte)){
-    corte.setHours(now.getHours(),now.getMinutes(),59,999);
+    corte.setHours(23,59,59,999);
     return corte;
   }
   const [hh,mm]=rpHoraCorte.split(':').map(n=>parseInt(n,10));
