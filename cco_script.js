@@ -2146,6 +2146,7 @@ function renderReporte(){
       pendente:Math.max(0,(planejadoTon[tipo]||0)-(realizadoTon[tipo]||0)),
     })),
     statusCounts:{},
+    paletizacao:null,
     turnos:null,
   };
 
@@ -2196,6 +2197,35 @@ function renderReporte(){
         <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
           <span>${fmtCargaCompact(realTon)} realizadas</span><span style="color:${pct>=100?'#22c55e':c}">${pct}%</span>
         </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Divisao por paletizacao
+  const paletResumoEl=document.getElementById('rp-paletizacao-resumo');
+  const paletizacaoResumo={
+    PALETIZADA:{label:'PALETIZADA',count:0,ton:0,color:'#10b981'},
+    TORDESILHAS:{label:'TORDESILHAS',count:0,ton:0,color:'#e879f9'},
+    ESTIVADA:{label:'ESTIVADA',count:0,ton:0,color:'#818cf8'},
+  };
+  rows.forEach(r=>{
+    const grade=parseBR(r.grade_carregamento||'');
+    if(!grade || !sameDay(grade,parseBR(rpDataRef||'')||today())) return;
+    const key=normalizePaletizacaoLabel(r.paletizacao);
+    if(!paletizacaoResumo[key]) return;
+    paletizacaoResumo[key].count++;
+    paletizacaoResumo[key].ton+=rpParseToneladas(r);
+  });
+  if(rpLastReport) rpLastReport.paletizacao=paletizacaoResumo;
+  if(paletResumoEl){
+    paletResumoEl.innerHTML=['PALETIZADA','TORDESILHAS','ESTIVADA'].map(key=>{
+      const r=paletizacaoResumo[key];
+      return `<div class="rp-turno-card" style="border-color:${r.color}44;">
+        <div class="rp-turno-label" style="color:${r.color}">${r.label}</div>
+        <div class="rp-turno-num" style="color:${r.color}">${r.count}</div>
+        <div style="font-size:10px;color:#64748b;">DTs</div>
+        <div style="font-size:12px;color:#e2e8f0;margin-top:6px;font-weight:800;">${fmtCargaCompact(r.ton)}</div>
+        <div style="font-size:10px;color:#64748b;">planejados</div>
       </div>`;
     }).join('');
   }
@@ -2386,6 +2416,22 @@ function exportReporteJPG(){
       ctx.fillRect(bx+j*18,base-h,12,h);
     });
     text(r.tipo.replace('TRANSFERENCIA','TRANSF.'),bx+18,704,10,colors[r.tipo]||'#94a3b8','800','center');
+  });
+
+  rr(40,730,760,120,10,'#111c2e','#334155');
+  text('Divisao por Paletizacao',64,762,16,'#e2e8f0','800');
+  const paletJpg=rpLastReport.paletizacao||{};
+  [
+    ['PALETIZADA','#10b981'],
+    ['TORDESILHAS','#e879f9'],
+    ['ESTIVADA','#818cf8'],
+  ].forEach((row,idx)=>{
+    const p=paletJpg[row[0]]||{count:0,ton:0};
+    const px=74+idx*240;
+    text(row[0],px,794,13,row[1],'800');
+    text(String(p.count||0),px,825,28,row[1],'800');
+    text('DTs',px+42,825,12,'#64748b','700');
+    text(fmtCargaCompact(p.ton||0),px+112,825,20,'#e2e8f0','800');
   });
 
   canvas.toBlob(blob=>{
