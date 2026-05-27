@@ -2202,8 +2202,9 @@ function renderReporte(){
     ESTIVADA:{label:'ESTIVADA',count:0,ton:0,color:'#818cf8'},
   };
   rows.forEach(r=>{
-    const grade=parseBR(r.grade_carregamento||'');
-    if(!grade || !sameDay(grade,parseBR(rpDataRef||'')||today())) return;
+    const fim=rpRefDate(r);
+    if(!fim) return;
+    if(!rpRowDentroDoCorte(r,corte)) return;
     const key=normalizePaletizacaoLabel(r.paletizacao);
     if(!paletizacaoResumo[key]) return;
     paletizacaoResumo[key].count++;
