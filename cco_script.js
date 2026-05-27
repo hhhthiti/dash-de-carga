@@ -525,8 +525,16 @@ function diaRefAtualPorDataRef(dataRef){
   if(sameDay(d,tomorrow())) return 'AMANHÃ';
   return '';
 }
+function diaRefAtualPorRow(row){
+  const fim=parseBR(String((row&&row.fim_carregamento)||''));
+  if(fim){
+    if(sameDay(fim,today())) return 'HOJE';
+    if(sameDay(fim,tomorrow())) return 'AMANHÃ';
+  }
+  return diaRefAtualPorDataRef(row&&row.data_ref);
+}
 function normalizeDiaRefRow(row){
-  const diaAtual=diaRefAtualPorDataRef(row&&row.data_ref);
+  const diaAtual=diaRefAtualPorRow(row);
   if(!diaAtual) return row;
   return {...row,_stored_dia_ref:row.dia_ref,dia_ref:diaAtual};
 }
