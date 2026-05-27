@@ -1873,6 +1873,16 @@ function rpRefDate(row){
   return parseBR(row.fim_carregamento||'') || parseBR(row.fim_agenda||'');
 }
 
+function rpDateKey(row){
+  const fim=rpRefDate(row);
+  return fim?dKey(fim):String(row.data_ref||'');
+}
+
+function compareDateRefs(a,b){
+  const da=parseBR(a), db=parseBR(b);
+  return (da?da.getTime():0)-(db?db.getTime():0);
+}
+
 function isTransferencia(row){
   const d=String(row.descricao_documento||'').toUpperCase();
   return d.includes('TRANSFER') || d.includes('TNF') || d.includes('FILIAL') || d.includes('INTERCOMP') || d.includes('REMESSA');
@@ -2082,10 +2092,7 @@ function renderReporte(){
   const horaInput=document.getElementById('rp-hora-corte');
   if(horaInput && horaInput.value!==rpHoraCorte) horaInput.value=rpHoraCorte;
 
-  const refs=[...new Set(tableData.map(r=>String(r.data_ref||'')).filter(Boolean))].sort((a,b)=>{
-    const da=parseBR(a), db=parseBR(b);
-    return (da?da.getTime():0)-(db?db.getTime():0);
-  });
+  const refs=[...new Set(tableData.map(r=>rpDateKey(r)).filter(Boolean))].sort(compareDateRefs);
   if(!rpDataRef || (refs.length && !refs.includes(rpDataRef))) rpDataRef=refs[0]||dKey(today());
 
   const diaSelect=document.getElementById('rp-data-ref');
@@ -2094,7 +2101,7 @@ function renderReporte(){
     diaSelect.value=rpDataRef;
   }
 
-  const dayRows=tableData.filter(r=>String(r.data_ref||'')===rpDataRef);
+  const dayRows=tableData.filter(r=>rpDateKey(r)===rpDataRef);
   const rows=(rpTurnoFiltro==='todos'?[...dayRows]
     :dayRows.filter(r=>rpGetTurno(r)===rpTurnoFiltro)).sort(compareFimAgendaRows);
 
