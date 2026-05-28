@@ -1220,11 +1220,24 @@ function processRelatorioCSV(file) {
 }
 
 
-async function persistImportedMaterials(){
-  const dtsWithAgenda=new Map(dtsMescladas.map(r=>[String(r.DT), dKey(agendaRefDate(r)||today())]));
+async function persistImportedMaterials(cargaRows=null){
+  const dtsWithAgenda=new Map();
+  if(Array.isArray(cargaRows)){
+    cargaRows.forEach(r=>{
+      const dt=normalizeDT(r&&r.dt);
+      const ref=String((r&&r.data_ref)||'');
+      if(dt&&ref) dtsWithAgenda.set(dt,ref);
+    });
+  }else{
+    dtsMescladas.forEach(r=>{
+      const dt=normalizeDT(r&&r.DT);
+      const ref=dKey(agendaRefDate(r)||today());
+      if(dt&&ref) dtsWithAgenda.set(dt,ref);
+    });
+  }
   const inserts=[];
   for(const [dt,mats] of Object.entries(exportMap)){
-    const dataRef=dtsWithAgenda.get(String(dt));
+    const dataRef=dtsWithAgenda.get(normalizeDT(dt));
     if(!dataRef||!Array.isArray(mats)) continue;
     mats.forEach((m,i)=>{
       if(!m.material) return;
@@ -1330,6 +1343,13 @@ async function buildTable(){
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
     const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
     const logsStatusMap={};
+    const finalStatusSet=new Set(STATUS_FINAIS);
+    const finalizedDTs=new Set();
+    (existing||[]).forEach(r=>{
+      const dtEx=normalizeDT(r.dt);
+      const st=String(r.status||'').trim();
+      if(dtEx&&finalStatusSet.has(st)) finalizedDTs.add(dtEx);
+    });
     if(dtsUpload.length){
       let logRows=[];
       try{
@@ -1342,14 +1362,19 @@ async function buildTable(){
       (logRows||[]).forEach(l=>{
         const dtLog=normalizeDT(l.dt);
         const st=String(l.status||'').trim();
-        if(!dtLog||!st||logsStatusMap[dtLog]) return;
+        if(!dtLog||!st) return;
         if(st==='UPLOAD_AGENDA'||st==='REAGENDADA') return;
+        if(finalStatusSet.has(st)){
+          finalizedDTs.add(dtLog);
+          return;
+        }
+        if(logsStatusMap[dtLog]) return;
         logsStatusMap[dtLog]=st;
       });
     }
 
 
-    const rows=dedupeCargaRowsByDTRef(dtsMescladas.map(dt=>{
+    const rows=dedupeCargaRowsByDTRef(dtsMescladas.filter(dt=>!finalizedDTs.has(normalizeDT(dt.DT))).map(dt=>{
       const refDate=agendaRefDate(dt)||T;
       const ref=dKey(refDate);
       const ex=exMap[dt.DT+'_'+ref]||{};
@@ -1379,15 +1404,16 @@ async function buildTable(){
       };
     }));
 
-    const uploadedRefs=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))];
-    activeRefsOverride=uploadedRefs.slice(0,2);
+    const uploadedRefs=[...new Set(refsUpload.filter(Boolean))];
+    const activeRowRefs=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))];
+    activeRefsOverride=(activeRowRefs.length?activeRowRefs:uploadedRefs).slice(0,2);
     // Como não existe constraint única (dt,data_ref), fazemos replace por data_ref
     for(const ref of uploadedRefs){
       await sbDelete('reporte_carga',{data_ref:ref});
     }
-    await sbInsert('reporte_carga',rows);
+    if(rows.length) await sbInsert('reporte_carga',rows);
     await saveUploadSnapshot(rows);
-    const importedCount=await persistImportedMaterials();
+    const importedCount=await persistImportedMaterials(rows);
     hideInf();
     if(importedCount>0) showOk('Materiais sincronizados automaticamente para '+importedCount+' DT(s).');
     await reloadTable();
