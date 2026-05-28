@@ -661,7 +661,7 @@ function normalizeDiaRefRow(row){
   return {...row,_stored_dia_ref:row.dia_ref,dia_ref:diaAtual};
 }
 function normalizeDiaRefRows(rows){
-  return (rows||[]).map(normalizeDiaRefRow);
+  return dedupeCargaRowsByDTRef((rows||[]).map(normalizeDiaRefRow));
 }
 async function persistNormalizedDiaRefs(rows){
   for(const row of rows||[]){
@@ -742,6 +742,48 @@ function normalizeDT(raw){
   if(!v) return '';
   if(/^\d+$/.test(v)) return v.replace(/^0+(?=\d)/,'');
   return v;
+}
+
+function mergeAgendaDuplicateRows(base,incoming){
+  const merged={...base};
+  Object.keys(incoming||{}).forEach(k=>{
+    const current=merged[k];
+    const next=incoming[k];
+    if((current===undefined||current===null||current==='') && next!==undefined && next!==null && next!==''){
+      merged[k]=next;
+    }
+  });
+  return merged;
+}
+
+function dedupeAgendaRowsByDTRef(rows){
+  const byKey=new Map();
+  (rows||[]).forEach(row=>{
+    const dt=normalizeDT(row&&row.DT);
+    const refDate=agendaRefDate(row);
+    const key=dt+'__'+(refDate?dKey(refDate):'');
+    if(!dt||!refDate){
+      byKey.set(key+'__'+byKey.size,row);
+      return;
+    }
+    byKey.set(key,byKey.has(key)?mergeAgendaDuplicateRows(byKey.get(key),row):row);
+  });
+  return [...byKey.values()];
+}
+
+function dedupeCargaRowsByDTRef(rows){
+  const byKey=new Map();
+  (rows||[]).forEach(row=>{
+    const dt=normalizeDT(row&&row.dt);
+    const dataRef=String((row&&row.data_ref)||'').trim();
+    const key=dt+'__'+dataRef;
+    if(!dt||!dataRef){
+      byKey.set(key+'__'+byKey.size,row);
+      return;
+    }
+    byKey.set(key,byKey.has(key)?mergeAgendaDuplicateRows(byKey.get(key),row):row);
+  });
+  return [...byKey.values()];
 }
 
 function normalizeHora(raw){
@@ -865,6 +907,7 @@ function processAgend(file){
           PESO:diag.PESO,
         });
       }
+      agendRows=dedupeAgendaRowsByDTRef(agendRows);
       if(!agendRows.length)throw new Error('Nenhuma linha válida encontrada (LOCAL 1110/1111 ou DOCA de Tordesilhas, com regras de DOCA aplicadas).');
       hideInf();
       if(isInlineUpload){
@@ -872,7 +915,7 @@ function processAgend(file){
         const T=today(),AM=tomorrow();
         const dtsH=agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),T));
         const dtsA=agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),AM));
-        dtsMescladas=[...dtsH,...dtsA];
+        dtsMescladas=dedupeAgendaRowsByDTRef([...dtsH,...dtsA]);
         showOk('Agenda atualizada ('+agendRows.length+' linhas). Sincronizando banco…');
         await buildTable();
         releaseAutoSyncAfterSave();
@@ -887,7 +930,7 @@ function renderStep2(){
   const T=today(),AM=tomorrow();
   const dtsH=agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),T));
   const dtsA=agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),AM));
-  dtsMescladas=[...dtsH,...dtsA];
+  dtsMescladas=dedupeAgendaRowsByDTRef([...dtsH,...dtsA]);
   document.getElementById('p2info').innerHTML=
     '✅ <b style="color:#22c55e">'+agendRows.length+' linhas</b> encontradas · '+
     '<b style="color:#60a5fa">'+dtsH.length+'</b> hoje · <b style="color:#a78bfa">'+dtsA.length+'</b> amanhã'+
@@ -1252,7 +1295,7 @@ async function buildTable(){
     }
 
 
-    const rows=dtsMescladas.map(dt=>{
+    const rows=dedupeCargaRowsByDTRef(dtsMescladas.map(dt=>{
       const refDate=agendaRefDate(dt)||T;
       const ref=dKey(refDate);
       const ex=exMap[dt.DT+'_'+ref]||{};
@@ -1280,7 +1323,7 @@ async function buildTable(){
         tipo_operacao:String(tipoOp),
         reagendada: ex.reagendada || false,
       };
-    });
+    }));
 
     const uploadedRefs=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))];
     activeRefsOverride=uploadedRefs.slice(0,2);
