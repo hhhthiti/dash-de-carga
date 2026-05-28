@@ -628,6 +628,11 @@ function rowRefDate(row){
     parseBR(String((row&&row.agenda)||''));
 }
 
+function rowLoadingEndDate(row){
+  return parseBR(String((row&&row.fim_carregamento)||'')) ||
+    parseBR(String((row&&row.fim_agenda)||''));
+}
+
 function parseAgendaDateTime(row){
   const grade=parseBR(row.grade_carregamento||'');
   if(grade) return grade;
@@ -3206,17 +3211,19 @@ async function runImport(){
 
   try{
     const now=new Date();
-    const nowMinutes=now.getHours()*60+now.getMinutes();
 
-    // Filtrar só DTs de HOJE e AMANHÃ do dashboard
-    const dashHojeAmanha=tableData.filter(r=>r.dia_ref==='HOJE'||r.dia_ref==='AMANHÃ');
+    // Filtra DTs pelo FIM da agenda, nunca pelo inicio.
+    const dashHojeAmanha=tableData.filter(r=>{
+      const ref=rowRefDate(r);
+      return ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
+    });
 
     // Build a Set of DTs in the imported sheet
     const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
 
     let updated=0, fieldUpdated=0, expedited=0, skipped=0;
 
-    // 1) Update DTs present in imported sheet (só as que estão no dash de hoje/amanhã)
+    // 1) Update DTs present in imported sheet (so as que estao no dash de hoje/amanha pelo fim)
     for(const csvRow of importCsvData){
       const dt=String(csvRow.dt);
       const mappedStatus=csvRow.mappedStatus || normalizeStatus(csvRow.rawStatus) || normalizeFaturamentoStatus(csvRow.faturamento);
@@ -3237,7 +3244,7 @@ async function runImport(){
         if(!Object.keys(patch).length) skipped++;
         continue;
       }
-      if(dashRow.status===mappedStatus){continue;} // já correto
+      if(dashRow.status===mappedStatus){continue;} // ja correto
 
       try{
         await saveStatus(dt,dashRow.data_ref,mappedStatus);
@@ -3246,24 +3253,26 @@ async function runImport(){
       }catch(e){skipped++;}
     }
 
-    // 2) Marcar como EXPEDIDO: DTs de HOJE no dash, grade ≤ agora, ausentes da planilha
+    // 2) Marcar como EXPEDIDO: DTs de HOJE ausentes da planilha, apenas apos o FIM da agenda.
     const finalSet=new Set(STATUS_FINAIS);
     for(const dashRow of dashHojeAmanha){
-      if(dashRow.dia_ref!=='HOJE') continue;            // só HOJE
+      const ref=rowRefDate(dashRow);
+      if(!ref||!sameDay(ref,today())) continue;          // so HOJE pelo fim
       const dt=String(dashRow.dt);
-      if(csvDtSet.has(dt)) continue;                    // está na planilha, pular
-      if(finalSet.has(dashRow.status)) continue;         // já finalizada
+      if(csvDtSet.has(dt)) continue;                    // esta na planilha, pular
+      if(finalSet.has(dashRow.status)) continue;         // ja finalizada
 
-      // Checa se a grade já passou
-      const gradeStr=dashRow.grade_carregamento||'';
-      const gradeMatch=gradeStr.match(/(\d{1,2}):(\d{2})/);
-      if(gradeMatch){
-        const gradeMinutes=parseInt(gradeMatch[1])*60+parseInt(gradeMatch[2]);
-        if(gradeMinutes>nowMinutes) continue; // grade ainda no futuro
-      } else {
+      // Checa se o fim do carregamento ja passou. O inicio da grade nao dispara realizado.
+      const fim=rowLoadingEndDate(dashRow);
+      if(fim){
+        if(fim>now) continue;
+      }else{
         if(!dashRow.hora_chegada) continue;
         const [hh,mm]=(dashRow.hora_chegada||'').split(':').map(Number);
-        if(isNaN(hh)||hh*60+mm>nowMinutes) continue;
+        if(isNaN(hh)||isNaN(mm)) continue;
+        const chegadaHoje=new Date(now);
+        chegadaHoje.setHours(hh,mm,0,0);
+        if(chegadaHoje>now) continue;
       }
 
       try{
