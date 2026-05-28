@@ -2107,7 +2107,10 @@ function csvGradeValue(v){
 function exportCSV(){
   const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO','MATERIAL','PALETES','SOBRA (FARDOS)','QTD TOTAL (FARDOS)'];
   const rows=[];
-  const exportRows=dedupeCargaRowsByDTRef((tableData||[]).filter(isRowInActiveReportWindow)).sort(compareAgendaRows);
+  const exportRows=dedupeCargaRowsByDTRef((tableData||[])
+    .filter(isRowInActiveReportWindow)
+    .filter(rpRowContaNoReporte)
+  ).sort(compareAgendaRows);
   exportRows.forEach(r=>{
     const dtKey=String(r.dt||'').trim();
     const mats=exportMap[dtKey]||[];
@@ -3254,6 +3257,7 @@ function buildImportRows(parsed){
   const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
   const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
   const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP'));
+  const iPeso=headers.findIndex(h=>h==='TONELADAS'||h.includes('PESO LIQUIDO')||h==='PESO'||h.includes('TONEL'));
   const iFaturamento=headers.findIndex(h=>h==='FATURAMENTO'||h.includes('FATURAMENTO'));
   const statusIndexes=headers.map((h,i)=>({h,i})).filter(x=>x.h==='STATUS'||x.h.startsWith('STATUS.')).map(x=>x.i);
   const iStatusFinal=statusIndexes.length?statusIndexes[statusIndexes.length-1]:-1;
@@ -3261,19 +3265,32 @@ function buildImportRows(parsed){
   if(iDT===-1) throw new Error('Coluna DT não encontrada na planilha. Verifique o formato.');
 
   const data=[];
-  const seen=new Set();
+  const byDT=new Map();
   for(let i=1;i<rows.length;i++){
     const cols=rows[i].map(c=>String(c||'').trim().replace(/^"|"$/g,''));
     const dt=normalizeDT(String(cols[iDT]||'').replace(/\.0+$/,'').replace(/\D/g,''));
-    if(!dt||seen.has(dt)) continue;
-    seen.add(dt);
+    if(!dt) continue;
 
     const rawStatus=iStatusFinal!==-1?(cols[iStatusFinal]||''):'';
     const faturamento=iFaturamento!==-1?(cols[iFaturamento]||''):'';
     const mappedStatus=normalizeStatus(rawStatus) || normalizeFaturamentoStatus(faturamento);
     const hora=iHora!==-1?normalizeHora(cols[iHora]):'';
     const sap=iSap!==-1?normalizeSap(cols[iSap]):'';
-    data.push({dt, rawStatus, faturamento, mappedStatus, hora, sap});
+    const peso=iPeso!==-1?toTonInt(cols[iPeso]):0;
+    if(byDT.has(dt)){
+      const current=byDT.get(dt);
+      if(peso) current.peso_liquido=String(toTonInt(current.peso_liquido)+peso);
+      if(!current.rawStatus&&rawStatus) current.rawStatus=rawStatus;
+      if(!current.faturamento&&faturamento) current.faturamento=faturamento;
+      if(!current.mappedStatus&&mappedStatus) current.mappedStatus=mappedStatus;
+      if(!current.hora&&hora) current.hora=hora;
+      if(!current.sap&&sap) current.sap=sap;
+    }else{
+      const item={dt, rawStatus, faturamento, mappedStatus, hora, sap};
+      if(peso) item.peso_liquido=String(peso);
+      byDT.set(dt,item);
+      data.push(item);
+    }
   }
 
   if(!data.length) throw new Error('Nenhuma DT encontrada na planilha.');
@@ -3365,6 +3382,10 @@ async function runImport(){
       const patch={};
       if(csvRow.hora && dashRow.hora_chegada!==csvRow.hora) patch.hora_chegada=csvRow.hora;
       if(csvRow.sap && dashRow.n_portaria!==csvRow.sap) patch.n_portaria=csvRow.sap;
+      if(csvRow.peso_liquido && toTonInt(dashRow.peso_liquido||dashRow.toneladas)!==toTonInt(csvRow.peso_liquido)){
+        patch.peso_liquido=String(toTonInt(csvRow.peso_liquido));
+        patch.toneladas=String(toTonInt(csvRow.peso_liquido));
+      }
       if(Object.keys(patch).length){
         await sbPatch('reporte_carga',{...patch,updated_at:new Date().toISOString()},{dt,data_ref:dashRow.data_ref});
         Object.assign(dashRow,patch);
