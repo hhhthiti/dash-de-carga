@@ -2065,7 +2065,8 @@ let rpHoraCorte = localStorage.getItem('rp_hora_corte') || '';
 let rpDataRef = localStorage.getItem('rp_data_ref') || '';
 let rpLastReport = null;
 
-const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO','NO SHOW'];
+const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO'];
+const STATUS_FORA_REPORTE = ['NO SHOW','VEICULO RECUSADO'];
 
 function rpRefDate(row){
   // Usado apenas para classificação de turno e corte de horário.
@@ -2181,6 +2182,10 @@ function rpRowDentroDoCorte(row,corteDate){
   const fim=rpRefDate(row);
   if(!fim) return false;
   return fim.getTime()<=corteDate.getTime();
+}
+
+function rpRowContaNoReporte(row){
+  return !STATUS_FORA_REPORTE.includes(String((row&&row.status)||'').trim().toUpperCase());
 }
 
 
@@ -2308,6 +2313,8 @@ function renderReporte(){
   const dayRows=tableData.filter(r=>rpDateKey(r)===rpDataRef);
   const rows=(rpTurnoFiltro==='todos'?[...dayRows]
     :dayRows.filter(r=>rpGetTurno(r)===rpTurnoFiltro)).sort(compareFimAgendaRows);
+  const reportRows=rows.filter(rpRowContaNoReporte);
+  const excludedRows=rows.length-reportRows.length;
 
   const infoEl=document.getElementById('rp-turno-info');
 
@@ -2319,13 +2326,14 @@ function renderReporte(){
 
   const corte=rpGetCorteDate();
   const corteLabel=corte.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  if(infoEl) infoEl.textContent=rows.length+' DTs no filtro atual · corte até '+corteLabel;
+  if(infoEl) infoEl.textContent=reportRows.length+' DTs no filtro atual · corte até '+corteLabel+
+    (excludedRows?` · ${excludedRows} NO SHOW/RECUSADA fora do reporte`:'');
 
   const planejadoTon={};
   const realizadoTon={};
   RP_TIPOS.forEach(t=>{planejadoTon[t]=0;realizadoTon[t]=0;});
 
-  rows.forEach(r=>{
+  reportRows.forEach(r=>{
     const modalidade=rpModalidade(r);
     const ton=rpParseToneladas(r);
     if(!rpRowDentroDoCorte(r,corte)) return;
@@ -2412,7 +2420,7 @@ function renderReporte(){
     TORDESILHAS:{label:'TORDESILHAS',count:0,ton:0,color:'#e879f9'},
     ESTIVADA:{label:'ESTIVADA',count:0,ton:0,color:'#818cf8'},
   };
-  rows.forEach(r=>{
+  reportRows.forEach(r=>{
     const fim=rpRefDate(r);
     if(!fim) return;
     if(!rpRowDentroDoCorte(r,corte)) return;
@@ -2441,7 +2449,7 @@ function renderReporte(){
     const statusList=['AG CHEGADA','PATIO','CARREGANDO','EM FATURAMENTO','SEPARANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','FOI EMBORA'];
     const statusColors={'AG CHEGADA':'#f59e0b','PATIO':'#64748b','CARREGANDO':'#3b82f6','EM FATURAMENTO':'#06b6d4','SEPARANDO':'#8b5cf6','EXPEDIDO':'#22c55e','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','FOI EMBORA':'#6b7280'};
     const sCounts={};
-    rows.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
+    reportRows.forEach(r=>{ sCounts[r.status]=(sCounts[r.status]||0)+1; });
     if(rpLastReport) rpLastReport.statusCounts={...sCounts};
     statusCountEl.innerHTML=statusList
       .filter(s=>sCounts[s]>0)
@@ -2473,7 +2481,7 @@ function renderReporte(){
     const t3TurnoIni=new Date(hoje0); t3TurnoIni.setHours(23,0,0,0);
     const t3TurnoFim=new Date(amanha0); t3TurnoFim.setHours(6,59,59,999);
 
-    rows.forEach(r=>{
+    reportRows.forEach(r=>{
       const fim=rpRefDate(r);
       if(!fim) return;
 
