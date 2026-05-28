@@ -1876,14 +1876,17 @@ let rpLastReport = null;
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO','NO SHOW'];
 
 function rpRefDate(row){
-  // Reporte deve considerar o fim da agenda (não o início).
-  // Evita contabilizar toneladas antes da janela realmente encerrar.
+  // Usado apenas para classificação de turno e corte de horário.
+  // NÃO é mais usado como chave de dia (rpDateKey) — evita que DTs com
+  // fim_carregamento no dia seguinte desapareçam do reporte quando a
+  // agenda anterior é reenviada e essas DTs são excluídas.
   return parseBR(row.fim_carregamento||'') || parseBR(row.fim_agenda||'');
 }
 
 function rpDateKey(row){
-  const fim=rpRefDate(row);
-  return fim?dKey(fim):String(row.data_ref||'');
+  // A chave do dia usa sempre data_ref (data da agenda da DT).
+  // Garante que toneladas não somam do dia seguinte quando DTs são excluídas.
+  return String(row.data_ref||'');
 }
 
 function compareDateRefs(a,b){
