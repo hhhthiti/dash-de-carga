@@ -1164,7 +1164,7 @@ function processRelatorioCSV(file) {
 
         // peso liquido — soma por DT
         if (pesoRaw) {
-          const p = parseFloat(pesoRaw.replace(/\./g,'').replace(',','.')) || 0;
+          const p = parseCargaNumber(pesoRaw);
           pesoLiquidoMap[dt] = (pesoLiquidoMap[dt] || 0) + p;
         }
 
@@ -1297,12 +1297,18 @@ async function persistRelatorioFieldsForCurrentTable(){
     if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
     if(centroMap[dt]) patch.centro=String(centroMap[dt]);
     if(paletizacaoMap[dt]) patch.paletizacao=String(paletizacaoMap[dt]);
-    if(pesoLiquidoMap[dt]) patch.peso_liquido=String(pesoLiquidoMap[dt].toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}));
+    if(pesoLiquidoMap[dt]){
+      const peso=String(Math.floor(pesoLiquidoMap[dt]));
+      patch.peso_liquido=peso;
+      patch.toneladas=peso;
+    }
     if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
     if(sapNumMap[dt]) patch.n_portaria=String(sapNumMap[dt]);
     if(Object.keys(patch).length===1) continue;
     for(const dataRef of refs){
       await sbPatch('reporte_carga',patch,{dt,data_ref:dataRef});
+      const row=tableData.find(r=>normalizeDT(r.dt)===dt && String(r.data_ref||'')===String(dataRef));
+      if(row) Object.assign(row,patch);
     }
   }
 }
@@ -2301,6 +2307,22 @@ function toTonInt(raw){
   return Number.isFinite(n)?n:0;
 }
 
+function parseCargaNumber(raw){
+  let s=String(raw??'').trim();
+  if(!s) return 0;
+  s=s.replace(/\s/g,'');
+  if(s.includes(',') && s.includes('.')){
+    if(s.lastIndexOf(',')>s.lastIndexOf('.')) s=s.replace(/\./g,'').replace(',','.');
+    else s=s.replace(/,/g,'');
+  }else if(s.includes(',')){
+    s=s.replace(',', '.');
+  }else if(/^\d{1,3}(\.\d{3})+$/.test(s)){
+    s=s.replace(/\./g,'');
+  }
+  const n=parseFloat(s.replace(/[^\d.-]/g,''));
+  return Number.isFinite(n)?n:0;
+}
+
 function fmtTon(raw){
   return toTonInt(raw).toLocaleString('pt-BR');
 }
@@ -3257,7 +3279,6 @@ function buildImportRows(parsed){
   const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
   const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
   const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP'));
-  const iPeso=headers.findIndex(h=>h==='TONELADAS'||h.includes('PESO LIQUIDO')||h==='PESO'||h.includes('TONEL'));
   const iFaturamento=headers.findIndex(h=>h==='FATURAMENTO'||h.includes('FATURAMENTO'));
   const statusIndexes=headers.map((h,i)=>({h,i})).filter(x=>x.h==='STATUS'||x.h.startsWith('STATUS.')).map(x=>x.i);
   const iStatusFinal=statusIndexes.length?statusIndexes[statusIndexes.length-1]:-1;
@@ -3276,10 +3297,8 @@ function buildImportRows(parsed){
     const mappedStatus=normalizeStatus(rawStatus) || normalizeFaturamentoStatus(faturamento);
     const hora=iHora!==-1?normalizeHora(cols[iHora]):'';
     const sap=iSap!==-1?normalizeSap(cols[iSap]):'';
-    const peso=iPeso!==-1?toTonInt(cols[iPeso]):0;
     if(byDT.has(dt)){
       const current=byDT.get(dt);
-      if(peso) current.peso_liquido=String(toTonInt(current.peso_liquido)+peso);
       if(!current.rawStatus&&rawStatus) current.rawStatus=rawStatus;
       if(!current.faturamento&&faturamento) current.faturamento=faturamento;
       if(!current.mappedStatus&&mappedStatus) current.mappedStatus=mappedStatus;
@@ -3287,7 +3306,6 @@ function buildImportRows(parsed){
       if(!current.sap&&sap) current.sap=sap;
     }else{
       const item={dt, rawStatus, faturamento, mappedStatus, hora, sap};
-      if(peso) item.peso_liquido=String(peso);
       byDT.set(dt,item);
       data.push(item);
     }
@@ -3382,10 +3400,6 @@ async function runImport(){
       const patch={};
       if(csvRow.hora && dashRow.hora_chegada!==csvRow.hora) patch.hora_chegada=csvRow.hora;
       if(csvRow.sap && dashRow.n_portaria!==csvRow.sap) patch.n_portaria=csvRow.sap;
-      if(csvRow.peso_liquido && toTonInt(dashRow.peso_liquido||dashRow.toneladas)!==toTonInt(csvRow.peso_liquido)){
-        patch.peso_liquido=String(toTonInt(csvRow.peso_liquido));
-        patch.toneladas=String(toTonInt(csvRow.peso_liquido));
-      }
       if(Object.keys(patch).length){
         await sbPatch('reporte_carga',{...patch,updated_at:new Date().toISOString()},{dt,data_ref:dashRow.data_ref});
         Object.assign(dashRow,patch);
