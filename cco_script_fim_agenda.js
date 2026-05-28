@@ -633,6 +633,18 @@ function rowLoadingEndDate(row){
     parseBR(String((row&&row.fim_agenda)||''));
 }
 
+function rowReportRefDate(row){
+  return rowLoadingEndDate(row) ||
+    parseBR(String((row&&row.data_ref)||'')) ||
+    parseBR(String((row&&row.grade_carregamento)||'')) ||
+    parseBR(String((row&&row.agenda)||''));
+}
+
+function rowReportRefKey(row){
+  const ref=rowReportRefDate(row);
+  return ref?dKey(ref):String((row&&row.data_ref)||'').trim();
+}
+
 function parseAgendaDateTime(row){
   const grade=parseBR(row.grade_carregamento||'');
   if(grade) return grade;
@@ -662,6 +674,46 @@ function normalizeDiaRefRow(row){
 }
 function normalizeDiaRefRows(rows){
   return dedupeCargaRowsByDTRef((rows||[]).map(normalizeDiaRefRow));
+}
+
+function cleanCargaRowForInsert(row){
+  const refDate=rowReportRefDate(row);
+  const dataRef=refDate?dKey(refDate):String(row.data_ref||'');
+  const clean={...row};
+  delete clean.id;
+  delete clean._stored_dia_ref;
+  clean.dt=String(normalizeDT(clean.dt));
+  clean.data_ref=String(dataRef);
+  clean.dia_ref=sameDay(refDate,today())?'HOJE':(sameDay(refDate,tomorrow())?'AMANHÃ':'');
+  clean.updated_at=new Date().toISOString();
+  return clean;
+}
+
+function isRowInActiveReportWindow(row){
+  const ref=rowReportRefDate(row);
+  return !!ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
+}
+
+async function rewriteActiveCargaSnapshot(){
+  if(!tableData||!tableData.length) return 0;
+  const refsToDelete=[...new Set(tableData.flatMap(r=>{
+    const refs=[];
+    const stored=String(r.data_ref||'').trim();
+    const effective=rowReportRefKey(r);
+    if(stored) refs.push(stored);
+    if(effective) refs.push(effective);
+    return refs;
+  }).filter(Boolean))];
+  const rows=dedupeCargaRowsByDTRef(tableData.filter(isRowInActiveReportWindow))
+    .map(cleanCargaRowForInsert)
+    .filter(r=>r.dt&&r.data_ref);
+
+  for(const ref of refsToDelete){
+    await sbDelete('reporte_carga',{data_ref:ref});
+  }
+  if(rows.length) await sbInsert('reporte_carga',rows);
+  tableData=normalizeDiaRefRows(rows).sort(compareAgendaRows);
+  return rows.length;
 }
 async function persistNormalizedDiaRefs(rows){
   for(const row of rows||[]){
@@ -775,9 +827,9 @@ function dedupeCargaRowsByDTRef(rows){
   const byKey=new Map();
   (rows||[]).forEach(row=>{
     const dt=normalizeDT(row&&row.dt);
-    const dataRef=String((row&&row.data_ref)||'').trim();
-    const key=dt+'__'+dataRef;
-    if(!dt||!dataRef){
+    const refKey=rowReportRefKey(row);
+    const key=dt+'__'+refKey;
+    if(!dt||!refKey){
       byKey.set(key+'__'+byKey.size,row);
       return;
     }
@@ -1143,6 +1195,8 @@ function processRelatorioCSV(file) {
       if(isInlineUpload){
         const importedCount=await persistImportedMaterialsForCurrentTable();
         await persistRelatorioFieldsForCurrentTable();
+        await rewriteActiveCargaSnapshot();
+        await persistImportedMaterialsForCurrentTable();
         hideInf();
         showOk(`Relatório OK — ${totalDTs} transportes · ${linhasOk} linhas · materiais salvos para ${importedCount} DT(s)`);
         await reloadTable();
@@ -1364,10 +1418,10 @@ async function buildTable(){
 async function getActiveRefs(){
   if(activeRefsOverride.length) return activeRefsOverride;
   const ON=yesterday(),T=today(),AM=tomorrow();
-  const base=[dKey(ON),dKey(T),dKey(AM)];
+  const base=[dKey(T),dKey(AM)];
   try{
     // Hoje/amanhã têm prioridade quando já existe agenda atual no banco.
-    const todayRows=await sbGet('reporte_carga',`data_ref=eq.${base[1]}&select=dt&limit=1`);
+    const todayRows=await sbGet('reporte_carga',`data_ref=eq.${base[0]}&select=dt&limit=1`);
     if(todayRows&&todayRows.length) return base;
 
     // Depois de cada upload salvamos marcadores __AGENDA__; eles evitam reabrir uma grade antiga (ex.: 05/05).
@@ -2027,7 +2081,8 @@ function csvGradeValue(v){
 function exportCSV(){
   const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO','MATERIAL','PALETES','SOBRA (FARDOS)','QTD TOTAL (FARDOS)'];
   const rows=[];
-  tableData.forEach(r=>{
+  const exportRows=dedupeCargaRowsByDTRef((tableData||[]).filter(isRowInActiveReportWindow)).sort(compareAgendaRows);
+  exportRows.forEach(r=>{
     const dtKey=String(r.dt||'').trim();
     const mats=exportMap[dtKey]||[];
     const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',fmtTon(r.peso_liquido||r.toneladas||0),r.tipo_operacao||''];
@@ -2077,8 +2132,7 @@ function rpRefDate(row){
 }
 
 function rpDateKey(row){
-  const ref=rowRefDate(row);
-  return ref?dKey(ref):String(row.data_ref||'');
+  return rowReportRefKey(row);
 }
 
 function compareDateRefs(a,b){
@@ -3272,7 +3326,7 @@ async function runImport(){
     // Build a Set of DTs in the imported sheet
     const csvDtSet=new Set(importCsvData.map(r=>String(r.dt)));
 
-    let updated=0, fieldUpdated=0, expedited=0, skipped=0;
+    let updated=0, fieldUpdated=0, removed=0, skipped=0;
 
     // 1) Update DTs present in imported sheet (so as que estao no dash de hoje/amanha pelo fim)
     for(const csvRow of importCsvData){
@@ -3304,40 +3358,23 @@ async function runImport(){
       }catch(e){skipped++;}
     }
 
-    // 2) Marcar como EXPEDIDO: DTs de HOJE ausentes da planilha, apenas apos o FIM da agenda.
-    const finalSet=new Set(STATUS_FINAIS);
-    for(const dashRow of dashHojeAmanha){
-      const ref=rowRefDate(dashRow);
-      if(!ref||!sameDay(ref,today())) continue;          // so HOJE pelo fim
-      const dt=String(dashRow.dt);
-      if(csvDtSet.has(dt)) continue;                    // esta na planilha, pular
-      if(finalSet.has(dashRow.status)) continue;         // ja finalizada
+    // 2) DT ausente na planilha saiu da grade ativa: remove em vez de salvar como EXPEDIDO.
+    const beforePrune=tableData.length;
+    tableData=tableData.filter(r=>{
+      const ref=rowReportRefDate(r);
+      const inActiveWindow=ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
+      if(!inActiveWindow) return true;
+      return csvDtSet.has(String(r.dt));
+    });
+    removed=beforePrune-tableData.length;
 
-      // Checa se o fim do carregamento ja passou. O inicio da grade nao dispara realizado.
-      const fim=rowLoadingEndDate(dashRow);
-      if(fim){
-        if(fim>now) continue;
-      }else{
-        if(!dashRow.hora_chegada) continue;
-        const [hh,mm]=(dashRow.hora_chegada||'').split(':').map(Number);
-        if(isNaN(hh)||isNaN(mm)) continue;
-        const chegadaHoje=new Date(now);
-        chegadaHoje.setHours(hh,mm,0,0);
-        if(chegadaHoje>now) continue;
-      }
-
-      try{
-        await saveStatus(dt,dashRow.data_ref,'EXPEDIDO');
-        dashRow.status='EXPEDIDO';
-        expedited++;
-      }catch(e){}
-    }
+    await rewriteActiveCargaSnapshot();
 
     // Atualiza tela
     renderRows();
     renderReporte();
 
-    const msg=`✅ Concluído! Status atualizados: ${updated} | Hora/SAP preenchidos: ${fieldUpdated} | Expedidas automáticas: ${expedited} | Ignoradas: ${skipped}`;
+    const msg=`✅ Concluído! Status atualizados: ${updated} | Hora/SAP preenchidos: ${fieldUpdated} | Removidas da grade: ${removed} | Ignoradas: ${skipped}`;
     document.getElementById('import-result').textContent=msg;
     document.getElementById('import-result').style.display='block';
 
