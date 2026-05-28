@@ -616,6 +616,24 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
   </div>
 </div>
 
+<!-- BUSCA NA AGENDA (Ctrl+Q) -->
+<div id="agenda-search-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:430;display:none;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:2px solid #38bdf855;border-radius:14px;width:94%;max-width:900px;max-height:84vh;display:flex;flex-direction:column;box-shadow:0 20px 60px #000a;">
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #334155;">
+      <span style="font-size:20px;">??</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;">Buscar DT na agenda</div>
+        <div id="agenda-search-meta" style="font-size:11px;color:#64748b;">Ctrl+Q</div>
+      </div>
+      <button onclick="closeAgendaSearchModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">?</button>
+    </div>
+    <div style="padding:14px 18px;border-bottom:1px solid #334155;">
+      <input id="agenda-search-input" placeholder="Digite a DT, transportadora ou doca" oninput="renderAgendaSearch()" onkeydown="if(event.key==='Escape')closeAgendaSearchModal()" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:14px;outline:none;"/>
+    </div>
+    <div id="agenda-search-body" style="padding:14px 18px;overflow-y:auto;flex:1;"></div>
+  </div>
+</div>
+
 <div id="spinner">⏳ Salvando…</div>
 
 <script src="cco_script_fim_agenda.js"></script>

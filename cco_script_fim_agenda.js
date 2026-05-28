@@ -172,7 +172,7 @@ function buildPaletizacaoBadge(raw){
   return '<span class="tag-palet tag-estivada">ESTIVADA</span>';
 }
 
-let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, centroMap={}, infoAgendaMap={}, tableData=[];
+let agendRows=[], agendaDiagRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, centroMap={}, infoAgendaMap={}, tableData=[];
 let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={}, paletizacaoMap={};
 let preFatMode=false; // Ctrl+Ç ativa checkboxes de Pré-Fat nas DTs
 let panelDT=null;
@@ -212,6 +212,11 @@ function shouldSkipAutoSync(){
 ═══════════════════════════════════════════════════════ */
 // Ctrl+Ç — ativa/desativa modo Pré-Fat
 document.addEventListener('keydown', async e=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='q'){
+    e.preventDefault();
+    openAgendaSearchModal();
+    return;
+  }
   if(e.ctrlKey && (e.key==='ç'||e.key==='Ç'||e.keyCode===231||e.keyCode===199)){
     e.preventDefault();
     preFatMode=!preFatMode;
@@ -294,6 +299,105 @@ function showOk(m) {const e=document.getElementById('aok'); e.textContent='✅ '
 function showInf(m){const e=document.getElementById('ainf');e.textContent='⏳ '+m;e.style.display='block';}
 function hideInf(){document.getElementById('ainf').style.display='none';}
 function spin(on){document.getElementById('spinner').style.display=on?'block':'none';}
+
+function escHtml(v){
+  return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function openAgendaSearchModal(){
+  const ov=document.getElementById('agenda-search-overlay');
+  if(!ov) return;
+  ov.style.display='flex';
+  const input=document.getElementById('agenda-search-input');
+  if(input){
+    input.focus();
+    input.select();
+  }
+  renderAgendaSearch();
+}
+
+function closeAgendaSearchModal(){
+  const ov=document.getElementById('agenda-search-overlay');
+  if(ov) ov.style.display='none';
+}
+
+function agendaDiagnosticRowsForTerm(term){
+  const q=normalizeDT(term).toLowerCase();
+  if(!q) return [];
+  return (agendaDiagRows||[]).filter(r=>
+    String(r.DT||'').toLowerCase().includes(q) ||
+    String(r.TRANSPORTADORA||'').toLowerCase().includes(q) ||
+    String(r.DOCA||'').toLowerCase().includes(q)
+  );
+}
+
+function renderAgendaSearch(){
+  const input=document.getElementById('agenda-search-input');
+  const body=document.getElementById('agenda-search-body');
+  const meta=document.getElementById('agenda-search-meta');
+  if(!body) return;
+  const term=(input&&input.value||'').trim();
+  if(meta){
+    meta.textContent=(agendaDiagRows&&agendaDiagRows.length)
+      ? agendaDiagRows.length+' linhas da ultima agenda lida em memoria'
+      : 'Nenhuma agenda carregada nesta sessao';
+  }
+  if(!term){
+    body.innerHTML='<div style="color:#64748b;padding:18px;text-align:center;">Digite a DT, transportadora ou doca para investigar.</div>';
+    return;
+  }
+  const diagRows=agendaDiagnosticRowsForTerm(term);
+  const dtTerm=normalizeDT(term);
+  const dashRows=tableData.filter(r=>String(r.dt||'')===dtTerm || String(r.dt||'').includes(dtTerm));
+  const foundDTs=new Set([...diagRows.map(r=>String(r.DT)),...dashRows.map(r=>String(r.dt))].filter(Boolean));
+
+  if(!foundDTs.size){
+    body.innerHTML='<div style="color:#fca5a5;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:12px;">Nao achei essa DT na ultima agenda lida nem na tabela atual. Se a agenda foi carregada antes de abrir esta tela, importe o arquivo de agenda novamente e pesquise de novo.</div>';
+    return;
+  }
+
+  body.innerHTML=[...foundDTs].map(dt=>{
+    const rows=diagRows.filter(r=>String(r.DT)===dt);
+    const inDash=dashRows.filter(r=>String(r.dt)===dt);
+    const anyIncluded=rows.some(r=>r.included);
+    const refLabels=[...new Set(rows.map(r=>agendaRefDate(r)).filter(Boolean).map(dKey))];
+    const statusColor=inDash.length?'#22c55e':anyIncluded?'#f59e0b':'#ef4444';
+    const statusText=inDash.length
+      ? 'Entrou no dashboard atual'
+      : anyIncluded
+        ? 'Entrou na agenda filtrada, mas nao esta na tabela atual'
+        : 'Apareceu no arquivo, mas foi descartada pelos filtros';
+    const rowHtml=rows.length?rows.map(r=>{
+      const ref=agendaRefDate(r);
+      return `<div style="display:grid;grid-template-columns:90px 1fr;gap:8px;padding:8px 0;border-top:1px solid #334155;">
+        <div style="color:#64748b;font-size:10px;">Linha ${escHtml(r.linha)}</div>
+        <div style="font-size:12px;line-height:1.6;">
+          <b style="color:${r.included?'#86efac':'#fca5a5'};">${r.included?'Incluida':'Fora'}</b>
+          <span style="color:#94a3b8;"> · ${escHtml(r.motivo||'')}</span><br>
+          <span style="color:#64748b;">Inicio:</span> ${escHtml(fmtDT(r.AGENDA,true)||'-')}
+          <span style="color:#64748b;margin-left:10px;">Fim:</span> ${escHtml(fmtDT(r.FIM_AGENDA,true)||'-')}
+          <span style="color:#64748b;margin-left:10px;">Dia usado:</span> ${escHtml(ref?dKey(ref):'-')}<br>
+          <span style="color:#64748b;">Local:</span> ${escHtml(r.LOCAL||'-')}
+          <span style="color:#64748b;margin-left:10px;">Doca:</span> ${escHtml(r.DOCA||'-')}<br>
+          <span style="color:#64748b;">Transp.:</span> ${escHtml(r.TRANSPORTADORA||'-')}
+          <span style="color:#64748b;margin-left:10px;">Peso:</span> ${escHtml(r.PESO||'-')}
+        </div>
+      </div>`;
+    }).join(''):'<div style="padding:8px 0;color:#64748b;">Nao apareceu na ultima agenda lida, mas existe na tabela atual.</div>';
+    const dashHtml=inDash.length?inDash.map(r=>`<div style="margin-top:8px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:8px 10px;font-size:12px;">
+      Tabela atual: <b>${escHtml(r.dia_ref||'-')}</b> · data_ref ${escHtml(r.data_ref||'-')} · status ${escHtml(r.status||'-')} · fim ${escHtml(r.fim_carregamento||'-')}
+    </div>`).join(''):'';
+    return `<div style="background:#0f172a;border:1px solid #334155;border-left:3px solid ${statusColor};border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;">
+        <div style="font-size:15px;font-weight:900;color:#93c5fd;">DT ${escHtml(dt)}</div>
+        <div style="font-size:11px;color:${statusColor};font-weight:800;">${statusText}</div>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-top:3px;">Referencia pelo fim da agenda: ${escHtml(refLabels.join(', ')||'-')}</div>
+      ${rowHtml}
+      ${dashHtml}
+    </div>`;
+  }).join('');
+}
 
 function setStep(n){
   // Passos: 1,2,3,4 (removemos o passo 5, agora é 4)
@@ -699,9 +803,11 @@ function processAgend(file){
       const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO'),iDoca=ci('DOCA');
       if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
       agendRows=[];
+      agendaDiagRows=[];
       for(let i=1;i<lines.length;i++){
-        const c=lines[i].split('\t');
+        const c=lines[i].split('	');
         if(!c[iDT]?.trim())continue;
+        const dtNorm=normalizeDT(c[iDT]);
         const loc=(c[iLoc]||'').trim();
         const doca=iDoca!==-1?(c[iDoca]||'').trim():'';
         const docaNorm=doca
@@ -712,22 +818,46 @@ function processAgend(file){
           .replace(/_+/g,'_');
         const isMogiOuAruja = loc.endsWith('1110') || loc.endsWith('1111');
         const isTordesilhas = docaNorm.includes('tordesilhas') || docaNorm.includes('tord');
-        if(!isMogiOuAruja && !isTordesilhas) continue;
-        // Exclui docas fab_mog sem _ifnt (DOCA_1_FAB_MOG, DOCA_2_FAB_MOG etc.),
-        // mas mantém variantes com sufixo _ifnt (DOCA_9_FAB_MOG_IFNT, DOCA_12_FAB_MOG_IFNT_EXTRA etc.).
-        const isFabMog = docaNorm.includes('fab_mog');
-        const isIfnt = docaNorm.includes('_ifnt');
-        if(isFabMog && !isIfnt) continue;
-        // Usa AGENDA TRANSPORTADOR como data de referência
         const agendaRaw=parseBR((c[iAg]||'').trim());
-        if(!agendaRaw) continue; // sem agenda, ignora
-        agendRows.push({
-          DT:normalizeDT(c[iDT]),LOCAL:loc,DOCA:doca,
+        const fimAgendaRaw=parseBR((c[iFim]||'').trim());
+        const diag={
+          DT:dtNorm,LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:(c[iTransp]||'').trim(),
           AGENDA:agendaRaw,
-          FIM_AGENDA:parseBR((c[iFim]||'').trim()),
+          FIM_AGENDA:fimAgendaRaw,
           TIPO:iTipo!==-1?(c[iTipo]||'').trim():'',
           PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
+          included:false,
+          motivo:'',
+          linha:i+1,
+        };
+        if(!isMogiOuAruja && !isTordesilhas){
+          diag.motivo='Fora do escopo: LOCAL nao termina em 1110/1111 e DOCA nao e Tordesilhas.';
+          agendaDiagRows.push(diag);
+          continue;
+        }
+        const isFabMog = docaNorm.includes('fab_mog');
+        const isIfnt = docaNorm.includes('_ifnt');
+        if(isFabMog && !isIfnt){
+          diag.motivo='Descartada pela regra de DOCA FAB_MOG sem sufixo IFNT.';
+          agendaDiagRows.push(diag);
+          continue;
+        }
+        if(!agendaRaw){
+          diag.motivo='Sem AGENDA TRANSPORTADOR valida.';
+          agendaDiagRows.push(diag);
+          continue;
+        }
+        diag.included=true;
+        diag.motivo='Entrou na agenda filtrada.';
+        agendaDiagRows.push(diag);
+        agendRows.push({
+          DT:dtNorm,LOCAL:loc,DOCA:doca,
+          TRANSPORTADORA:diag.TRANSPORTADORA,
+          AGENDA:agendaRaw,
+          FIM_AGENDA:fimAgendaRaw,
+          TIPO:diag.TIPO,
+          PESO:diag.PESO,
         });
       }
       if(!agendRows.length)throw new Error('Nenhuma linha válida encontrada (LOCAL 1110/1111 ou DOCA de Tordesilhas, com regras de DOCA aplicadas).');
