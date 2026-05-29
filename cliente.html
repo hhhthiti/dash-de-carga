@@ -161,21 +161,31 @@
 /* ═══════════════════════════════════════════════════════
    SUPABASE REST
 ═══════════════════════════════════════════════════════ */
-const SB_URL = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
-const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
+const SB_URL_DEFAULT = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
+const SB_KEY_DEFAULT = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
+const SB_URL = localStorage.getItem('sb_url') || SB_URL_DEFAULT;
+const SB_KEY = localStorage.getItem('sb_key') || SB_KEY_DEFAULT;
 const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 
+function sbValidateConfig(){
+  if(!SB_KEY) throw new Error('Supabase sem chave: defina localStorage sb_key com ANON KEY JWT (eyJ...).');
+  if(!SB_URL.includes('/rest/v1')) throw new Error('Supabase URL inválida: use ...supabase.co/rest/v1');
+}
+
 async function sbGet(table,qs=''){
+  sbValidateConfig();
   const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
   if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
   return r.json();
 }
 async function sbPatch(table,data,filters){
+  sbValidateConfig();
   const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${v.includes('/')?'"'+v+'"':encodeURIComponent(v)}`).join('&');
   const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
   if(!r.ok) throw new Error(`PATCH ${table}: `+await r.text());
 }
 async function sbUpsert(table,rows){
+  sbValidateConfig();
   for(let i=0;i<rows.length;i+=30){
     const r=await fetch(`${SB_URL}/${table}`,{
       method:'POST',
@@ -186,6 +196,7 @@ async function sbUpsert(table,rows){
   }
 }
 async function sbDelete(table,filters){
+  sbValidateConfig();
   const q=Object.entries(filters).map(([k,v])=>{
     const vs=String(v);return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
   }).join('&');
@@ -193,6 +204,7 @@ async function sbDelete(table,filters){
   if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
 }
 async function sbInsert(table,rows){
+  sbValidateConfig();
   const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
   if(!r.ok) throw new Error(`INSERT ${table}: `+await r.text());
 }
@@ -230,6 +242,19 @@ function parseAgendaDateTime(row){
   const agenda=parseBR(row.agenda||'');
   if(agenda) return agenda;
   return new Date(9999,0,1);
+}
+function diaRefAtualPorDataRef(dataRef){
+  const d=parseBR(String(dataRef||''));
+  if(!d) return '';
+  if(sameDay(d,today())) return 'HOJE';
+  if(sameDay(d,tomorrow())) return 'AMANHÃ';
+  return '';
+}
+function normalizeDiaRefRows(rows){
+  return (rows||[]).map(row=>{
+    const diaAtual=diaRefAtualPorDataRef(row&&row.data_ref);
+    return diaAtual?{...row,dia_ref:diaAtual}:row;
+  });
 }
 
 function showErr(m){const e=document.getElementById('aerr');e.textContent='⚠️ '+m;e.style.display='block';setTimeout(()=>e.style.display='none',5000);}
@@ -271,7 +296,7 @@ async function reloadTable(){
     const data=await sbGet('reporte_carga',
       `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
     );
-    tableData=(data||[]).sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b));
+    tableData=normalizeDiaRefRows(data||[]).sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b));
     renderRows();
   }catch(e){showErr('Erro ao carregar: '+e.message);}
 }

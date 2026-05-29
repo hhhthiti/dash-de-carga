@@ -71,6 +71,8 @@ input,select,button,textarea{font-family:inherit;}
 table{width:100%;border-collapse:collapse;font-size:12px;}
 th{padding:9px 12px;text-align:left;color:#475569;font-size:9px;letter-spacing:1.5px;font-weight:700;border-bottom:2px solid #334155;white-space:nowrap;background:#162032;}
 td{padding:7px 12px;border-bottom:1px solid #1e293b;vertical-align:middle;}
+
+.prefat-mode body::before{content:'✏️ MODO PRÉ-FAT ATIVO — Ctrl+Ç para sair';position:fixed;top:0;left:0;right:0;background:#a78bfa;color:#1e1b4b;text-align:center;font-size:11px;font-weight:800;padding:4px;z-index:9999;letter-spacing:1px;}
 tr.row-hoje td{background:#0f172a;}
 tr.row-amanha td{background:#0d1117;}
 tr.row-reagendada td{background:#431407 !important;}
@@ -84,9 +86,16 @@ tr:hover td{background:#1a2540!important;}
 .tag-hoje  {background:#1e3a8a33;border:1px solid #3b82f655;border-radius:4px;padding:1px 7px;font-size:9px;color:#60a5fa;font-weight:700;letter-spacing:1px;}
 .tag-amanha{background:#2e1065aa;border:1px solid #7c3aed55;border-radius:4px;padding:1px 7px;font-size:9px;color:#a78bfa;font-weight:700;letter-spacing:1px;}
 .tag-venda {background:#052e1688;border:1px solid #22c55e55;border-radius:4px;padding:2px 9px;font-size:10px;color:#4ade80;font-weight:700;}
+.tag-mogi {background:#06b6d41a;border:1px solid #06b6d455;border-radius:4px;padding:2px 9px;font-size:10px;color:#22d3ee;font-weight:700;}
 .tag-transf{background:#431407aa;border:1px solid #f9731655;border-radius:4px;padding:2px 9px;font-size:10px;color:#fb923c;font-weight:700;}
+.tag-prefat{background:#1e1b4baa;border:1px solid #818cf855;border-radius:4px;padding:2px 9px;font-size:10px;color:#a5b4fc;font-weight:700;}
+.tag-grade {background:#14532daa;border:1px solid #4ade8055;border-radius:4px;padding:2px 9px;font-size:10px;color:#86efac;font-weight:700;}
 .tag-sem   {color:#334155;font-size:10px;}
 .tag-sem-grade{background:#78350f44;border:1px solid #f59e0b55;border-radius:4px;padding:1px 7px;font-size:9px;color:#f59e0b;font-weight:700;letter-spacing:1px;}
+.tag-palet{border-radius:4px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.4px;white-space:nowrap;display:inline-block;}
+.tag-paletizada{background:#064e3b99;border:1px solid #10b98166;color:#6ee7b7;}
+.tag-estivada{background:#312e8199;border:1px solid #818cf866;color:#c4b5fd;}
+.tag-tordesilhas{background:#701a7599;border:1px solid #e879f966;color:#f0abfc;}
 input[type=time]{background:#1e293b;border:1px solid #334155;border-radius:5px;color:#f1f5f9;padding:3px 7px;font-size:12px;width:90px;}
 select.ss{border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;min-width:148px;}
 .debug-box{background:#1a0a00;border:1px solid #92400e;border-radius:7px;padding:10px 14px;margin-top:10px;font-size:11px;color:#fbbf24;line-height:1.7;white-space:pre-wrap;display:none;}
@@ -98,13 +107,15 @@ select.ss{border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;curso
 #ptitle{font-weight:800;font-size:13px;color:#f1f5f9;flex:1;}
 #pbody{flex:1;overflow-y:auto;padding:16px;}
 #pfoot{padding:12px 18px;border-top:1px solid #334155;display:flex;gap:8px;}
-.mat-row{display:grid;grid-template-columns:1fr 100px 32px;gap:7px;margin-bottom:7px;align-items:center;}
+.mat-row{display:grid;grid-template-columns:1fr 190px 32px;gap:7px;margin-bottom:7px;align-items:start;}
 .mat-input{background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:6px 10px;font-size:12px;width:100%;}
 .mat-input:focus{outline:none;border-color:#3b82f6;}
 .mat-del{background:transparent;border:1px solid #334155;border-radius:5px;color:#64748b;padding:0;cursor:pointer;font-size:13px;height:32px;width:32px;}
 .mat-del:hover{border-color:#ef4444;color:#ef4444;}
-.mat-hdr{display:grid;grid-template-columns:1fr 100px 32px;gap:7px;margin-bottom:5px;}
+.mat-hdr{display:grid;grid-template-columns:1fr 190px 32px;gap:7px;margin-bottom:5px;}
 .mat-hdr span{font-size:9px;letter-spacing:1.5px;color:#64748b;font-weight:700;}
+.mat-qty-cell{display:flex;flex-direction:column;gap:3px;}
+.mat-palete-preview{color:#a7f3d0;font-size:10px;font-weight:700;line-height:1.25;}
 .sec-lbl{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:8px;margin-top:14px;display:block;}
 .obs-area{width:100%;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:8px 10px;font-size:12px;resize:vertical;min-height:60px;}
 .obs-area:focus{outline:none;border-color:#3b82f6;}
@@ -112,6 +123,50 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 .sl{font-size:10px;letter-spacing:2px;color:#64748b;margin-bottom:6px;display:block;}
 .chips-wrap{display:flex;flex-wrap:wrap;margin-bottom:20px;}
 #spinner{display:none;position:fixed;bottom:20px;right:20px;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-size:12px;color:#94a3b8;z-index:500;}
+
+@media print{
+  @page{size:landscape;margin:8mm;}
+  body *{visibility:hidden !important;}
+  body.print-panel-mode #print-panel-area,
+  body.print-panel-mode #print-panel-area *{visibility:visible !important;}
+  body.print-panel-mode #print-panel-area{
+    position:fixed;inset:0;z-index:9999;
+    background:#fff;color:#111;padding:10mm;
+    display:flex;flex-direction:column;
+    font-family:'Segoe UI',Arial,sans-serif;
+  }
+  .print-mat-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .print-mat-table th{background:#1e3a5f;color:#fff;padding:6px 10px;text-align:left;border:1px solid #ccc;}
+  .print-mat-table td{padding:5px 10px;border:1px solid #e2e8f0;}
+  .print-mat-table tr:nth-child(even) td{background:#f8fafc;}
+  .print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:2px solid #334155;padding-bottom:8px;}
+  .print-header h2{font-size:15px;font-weight:800;color:#1e293b;}
+  .print-header .print-meta{font-size:11px;color:#475569;text-align:right;line-height:1.8;}
+}
+
+/* ── Reporte de Status ── */
+.rp-tipo-card{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;text-align:center;}
+.rp-tipo-title{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;}
+.rp-num-plan{font-size:17px;font-weight:800;color:#3b82f6;white-space:nowrap;}
+.rp-num-real{font-size:17px;font-weight:800;color:#22c55e;white-space:nowrap;}
+.rp-num-pend{font-size:17px;font-weight:800;color:#f59e0b;white-space:nowrap;}
+.rp-num-label{font-size:9px;color:#64748b;letter-spacing:1px;}
+.rp-bar-group{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:60px;}
+.rp-bar-wrap{display:flex;gap:3px;align-items:flex-end;height:140px;}
+.rp-bar{border-radius:4px 4px 0 0;min-width:16px;transition:height .3s;}
+.rp-bar-label{font-size:9px;color:#64748b;font-weight:700;letter-spacing:1px;margin-top:4px;}
+.active-turno{background:#1e3a5f!important;border-color:#3b82f6!important;color:#93c5fd!important;}
+.rp-turno-card{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;text-align:center;}
+.rp-turno-label{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:6px;}
+.rp-turno-num{font-size:26px;font-weight:800;color:#a78bfa;}
+#status-reminder{display:none;border:1px solid #f59e0b55;background:#f59e0b18;color:#fbbf24;border-radius:7px;padding:4px 9px;font-size:10px;font-weight:800;letter-spacing:.6px;}
+.rp-meta-input{background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:6px 10px;font-size:13px;width:100%;font-family:inherit;text-align:center;}
+.rp-meta-input:focus{outline:none;border-color:#3b82f6;}
+/* ── DT sem grade ── */
+.sg-item{background:#162032;border:1px solid #334155;border-radius:8px;padding:10px 14px;display:grid;grid-template-columns:100px 1fr 1fr auto;gap:10px;align-items:center;font-size:12px;}
+@media(max-width:700px){.sg-form-grid,.sg-item{grid-template-columns:1fr!important;}}
+/* ── NF lista ── */
+.nf-item{background:#0f172a;border:1px solid #334155;border-radius:7px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;}
 
 /* MODAL DE LOGS */
 #log-overlay{position:fixed;inset:0;background:#000000cc;z-index:300;display:none;align-items:center;justify-content:center;}
@@ -141,6 +196,10 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
 .dt-clock{margin-right:4px;animation:blink .8s step-start infinite;}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
 .dt-atrasado{color:#ef4444 !important;}
+@media(max-width:700px){
+  .sg-form-grid{grid-template-columns:1fr!important;}
+  .rp-chart{flex-wrap:wrap;}
+}
 </style>
 </head>
 <body>
@@ -172,8 +231,8 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="ch"><span>📁</span><span class="ct">PASSO 1 — ARQUIVO DE AGENDAMENTO</span></div>
     <div class="cb">
       <p class="desc">Suba o arquivo de agendamento exportado do sistema.<br/>
-        Filtra automaticamente os locais <b style="color:#f59e0b">1110</b> e <b style="color:#f59e0b">1111</b>
-        e monta a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#a78bfa">Amanhã</b> juntos.<br/>
+        Filtra automaticamente os locais <b style="color:#f59e0b">1110</b> e <b style="color:#f59e0b">1111</b> e, quando existir, exige <b style="color:#f59e0b">DOCA</b> preenchida
+        para montar a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#a78bfa">Amanhã</b> juntos.<br/>
         <span style="color:#64748b;font-size:12px;">⚡ Ao subir uma nova planilha, o banco é atualizado preservando status (Expedido, No Show, Veículo Recusado) e hora chegada já registrados.</span>
       </p>
       <div class="dz" id="dz1" onclick="document.getElementById('f1').click()">
@@ -207,63 +266,24 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     </div>
   </div>
 
-  <!-- PASSO 3 — ZLES002 (ex-passo3 + ex-passo4 unificados) -->
+  <!-- PASSO 3 — Relatório de Expedição CSV -->
   <div class="card" id="passo3" style="display:none">
-    <div class="ch"><span>📦</span><span class="ct">PASSO 3 — MATERIAIS / QUANTIDADES (SAP ZLES002)</span></div>
+    <div class="ch"><span>📦</span><span class="ct">PASSO 3 — RELATÓRIO DE EXPEDIÇÃO (CSV)</span></div>
     <div class="cb">
       <p class="desc">
-        Carregue os dados da <b style="color:#f59e0b">ZLES002</b> ou cole direto do SAP.<br/>
-        O sistema detecta automaticamente as colunas: <b style="color:#60a5fa">Nr. Remessa/Recebimento</b> = DT · <b style="color:#60a5fa">Material</b> = Código · <b style="color:#60a5fa">Qtde Remessa</b> = Quantidade · <b style="color:#60a5fa">Denominação / Setor de atividade</b> = Tipo de operação.
+        Carregue o CSV exportado do <b style="color:#f59e0b">Relatório de Expedição</b>.<br/>
+        O sistema lê automaticamente: <b style="color:#60a5fa">Nº transporte</b> · <b style="color:#60a5fa">Descrição de Documento</b> · <b style="color:#60a5fa">Peso líquido</b> · <b style="color:#60a5fa">Nr. Remessa/Recebimento</b> · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b>.
         <span id="p3-mat-hint" style="display:none;color:#4ade80;font-weight:700;margin-left:6px;"></span>
       </p>
-
-      <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid #334155;border-radius:8px;overflow:hidden;">
-        <button id="tab-file" onclick="switchTab('file')"
-          style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#3b82f6;color:#fff;border:none;cursor:pointer;">
-          📂 Subir arquivo CSV
-        </button>
-        <button id="tab-paste" onclick="switchTab('paste')"
-          style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#1e293b;color:#94a3b8;border:none;cursor:pointer;border-left:1px solid #334155;">
-          📋 Colar do SAP
-        </button>
-        <button id="tab-xlsx" onclick="switchTab('xlsx')"
-          style="flex:1;padding:9px;font-size:12px;font-weight:700;background:#1e293b;color:#94a3b8;border:none;cursor:pointer;border-left:1px solid #334155;">
-          📊 Planilha XLSX extra
-        </button>
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#64748b;">
+        <b style="color:#93c5fd;">📋 Upload de status:</b>
+        <span id="upload-status-p3">Nenhum arquivo carregado</span>
       </div>
-
-      <div id="tab-file-body">
-        <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
-          <div class="dz-icon">📂</div>
-          <div class="dz-label" id="dz2l">Arraste o arquivo ZLES002 aqui (CSV separado por ponto-e-vírgula)</div>
-        </div>
-        <input type="file" id="f2" accept=".csv,.txt,.tsv" style="display:none" onchange="processZles(this.files[0])"/>
+      <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
+        <div class="dz-icon">📂</div>
+        <div class="dz-label" id="dz2l">Arraste o CSV do Relatório de Expedição aqui ou clique para selecionar</div>
       </div>
-
-      <div id="tab-paste-body" style="display:none;">
-        <p style="font-size:12px;color:#64748b;margin-bottom:8px;">
-          No SAP, selecione todas as linhas da ZLES002 (Ctrl+A), copie (Ctrl+C) e cole aqui abaixo (Ctrl+V):
-        </p>
-        <textarea id="zles-paste"
-          style="width:100%;height:160px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:10px;font-size:12px;font-family:monospace;resize:vertical;"
-          placeholder="Cole aqui o conteúdo copiado do SAP..."></textarea>
-        <button class="bp" style="margin-top:8px;width:100%;" onclick="processZlesPaste()">▶ Processar texto colado</button>
-      </div>
-
-      <div id="tab-xlsx-body" style="display:none;">
-        <p style="font-size:12px;color:#64748b;margin-bottom:8px;">
-          <b style="color:#f59e0b">⚠️ NÃO é para o ZLES002!</b> Este campo é para uma planilha auxiliar personalizada.<br/>
-          Precisa ter exatamente estas colunas: <b style="color:#f59e0b">Nº transporte</b> · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b>.<br/>
-          Para o ZLES002 do SAP, use as abas acima: <b style="color:#4ade80">📂 Subir arquivo CSV</b> ou <b style="color:#4ade80">📋 Colar do SAP</b>.
-        </p>
-        <div class="dz" id="dz3" onclick="document.getElementById('f3').click()">
-          <div class="dz-icon">📂</div>
-          <div class="dz-label" id="dz3l">Arraste a planilha XLSX aqui</div>
-        </div>
-        <input type="file" id="f3" accept=".xlsx,.xls" style="display:none" onchange="processExtra(this.files[0])"/>
-        <div id="dbgExtra" class="debug-box"></div>
-      </div>
-
+      <input type="file" id="f2" accept=".csv" style="display:none" onchange="processRelatorioCSV(this.files[0])"/>
       <div id="dbgZles" class="debug-box"></div>
       <div style="margin-top:12px;display:flex;gap:8px;">
         <button class="bg" onclick="buildTable()">Pular → ir para a tabela</button>
@@ -277,13 +297,22 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div id="tbar">
       <span style="font-weight:800;font-size:10px;letter-spacing:2px;color:#94a3b8">📋 TABELA OPERACIONAL</span>
       <span id="tinfo"></span>
+      <span id="status-reminder"></span>
       <div id="tstatus"></div>
       <div id="tactions">
         <input id="dt-search" type="text" placeholder="🔎 Buscar DT" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:11px;min-width:130px;" oninput="onSearchDT(this.value)"/>
+        <select id="table-sort-mode" onchange="setTableSortMode(this.value)" title="Ordenar tabela pela grade" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:11px;">
+          <option value="inicio">Início da grade</option>
+          <option value="fim">Fim da agenda</option>
+        </select>
         <button class="bexp" onclick="exportCSV()">⬇ CSV</button>
         <button class="blog" onclick="openLogs()">📋 Logs</button>
         <button class="bg"   onclick="reloadTable()">↻ Atualizar</button>
-        <button class="bg"   onclick="setStep(1)">← Recarregar arquivo</button>
+        <button class="bg" style="color:#f59e0b;border-color:#f59e0b44;" onclick="document.getElementById('f1-inline').click()" title="Subir nova agenda (substitui a atual no banco)">↑ Agenda</button>
+        <button class="bg" style="color:#60a5fa;border-color:#60a5fa44;" onclick="document.getElementById('f2-inline').click()" title="Subir relatório de expedição (materiais)">↑ Materiais</button>
+        <input type="file" id="f1-inline" accept=".xls,.xlsx,.txt,.tsv,.csv" style="display:none" onchange="processAgend(this.files[0])"/>
+        <input type="file" id="f2-inline" accept=".csv" style="display:none" onchange="processRelatorioCSV(this.files[0])"/>
+        <span id="ctrl-s-hint" style="font-size:9px;color:#475569;letter-spacing:1px;">Ctrl+S salva grade · Ctrl+P importa portaria (PDF)</span>
       </div>
     </div>
 
@@ -291,16 +320,18 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="tab-bar">
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
-      <button class="tab-btn mat-tab" id="tab-materiais" onclick="switchTableTab('materiais')">📦 MATERIAIS POR DT</button>
+      <button class="tab-btn" id="tab-reporte" onclick="switchTableTab('reporte')" style="color:#a78bfa;">📊 REPORTE DE STATUS</button>
+      <button class="tab-btn" id="tab-semgrade" onclick="switchTableTab('semgrade')" style="color:#f59e0b;">➕ ADICIONAR DT</button>
+      <button class="tab-btn" id="tab-dtfake" onclick="switchTableTab('dtfake')" style="color:#fb923c;">🔄 DT FAKE</button>
+      <button class="tab-btn" id="tab-nf" onclick="switchTableTab('nf')" style="color:#34d399;">📎 JUNTAR NFs</button>
     </div>
 
     <div id="twrap">
       <table>
         <thead><tr>
-          <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th>
-          <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th>
-          <th>STATUS / OPERAÇÃO</th><th>DESC. DOCUMENTO</th><th>TONELADAS</th>
-          <th>OPERAÇÃO</th><th>AGENDA</th><th>AÇÕES</th>
+          <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th><th>PALETIZAÇÃO</th>
+          <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th><th>N° PORTARIA</th>
+          <th>STATUS / OPERAÇÃO</th><th>DESC. DOCUMENTO</th><th>PESO LÍQUIDO</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -310,7 +341,8 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div style="padding:12px 18px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">FILTRO:</span>
         <button class="bg" id="mfilt-todos" onclick="filtrarMateriais('todos')" style="font-size:10px;padding:3px 10px;border-color:#3b82f655;color:#93c5fd;">TODOS</button>
-        <button class="bg" id="mfilt-venda" onclick="filtrarMateriais('venda')" style="font-size:10px;padding:3px 10px;border-color:#22c55e55;color:#4ade80;">🛒 VENDA NORMAL</button>
+        <button class="bg" id="mfilt-venda" onclick="filtrarMateriais('venda')" style="font-size:10px;padding:3px 10px;border-color:#22c55e55;color:#4ade80;">🏭 VENDA ARUJA</button>
+        <button class="bg" id="mfilt-mogi" onclick="filtrarMateriais('mogi')" style="font-size:10px;padding:3px 10px;border-color:#06b6d455;color:#22d3ee;">🏙️ VENDA MOGI</button>
         <button class="bg" id="mfilt-transf" onclick="filtrarMateriais('transf')" style="font-size:10px;padding:3px 10px;border-color:#f9731655;color:#fb923c;">🔄 TRANSFERÊNCIA</button>
         <span id="mfilt-resumo" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
       </div>
@@ -319,6 +351,132 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div style="padding:8px 18px;font-size:10px;color:#334155;">
       💡 Clique em qualquer <b style="color:#93c5fd">DT</b> para abrir o mapa de separação com os materiais. · 🕐 = Carreta deve chegar em até 1h.
     </div>
+
+    <!-- ══════ ABA: REPORTE DE STATUS ══════ -->
+    <div id="reporte-wrap" style="display:none;padding:16px 18px;">
+      <!-- Turnos -->
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <label for="rp-data-ref" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">DIA:</label>
+        <select id="rp-data-ref" onchange="rpSetDataRef(this.value)"
+          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"></select>
+        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">TURNO:</span>
+        <button class="bg rp-turno active-turno" id="rp-t0" onclick="rpSetTurno('todos')" style="font-size:10px;padding:4px 12px;">📅 TODOS</button>
+        <button class="bg rp-turno" id="rp-t1" onclick="rpSetTurno('T1')" style="font-size:10px;padding:4px 12px;">🌅 T1 · 07-14h</button>
+        <button class="bg rp-turno" id="rp-t2" onclick="rpSetTurno('T2')" style="font-size:10px;padding:4px 12px;">☀️ T2 · 15-22h</button>
+        <button class="bg rp-turno" id="rp-t3" onclick="rpSetTurno('T3')" style="font-size:10px;padding:4px 12px;">🌙 T3 · 23-06h</button>
+        <label for="rp-hora-corte" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">⏱️ CORTE ATÉ:</label>
+        <input id="rp-hora-corte" type="time" step="60" oninput="rpSetHoraCorte(this.value)" onchange="rpSetHoraCorte(this.value)"
+          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"/>
+        <button class="bg" onclick="rpSetHoraCorte('')" style="font-size:10px;padding:4px 10px;">Agora</button>
+        <button class="bexp" onclick="exportReporteJPG()" style="font-size:10px;padding:4px 10px;">Salvar JPG</button>
+        <span id="rp-turno-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <!-- Metas configuráveis -->
+      <div style="display:none;background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📋 PLANEJADO AUTOMÁTICO DO DIA</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;" id="rp-metas-inputs"></div>
+      </div>
+      <!-- Gráfico -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:14px;">📊 PLANEJADO vs REALIZADO</div>
+        <div id="rp-chart" style="display:flex;align-items:flex-end;gap:12px;height:160px;overflow-x:auto;"></div>
+        <div id="rp-legenda" style="display:flex;gap:16px;margin-top:10px;font-size:11px;flex-wrap:wrap;">
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#3b82f6;border-radius:2px;display:inline-block;"></span>Planejado</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#22c55e;border-radius:2px;display:inline-block;"></span>Realizado</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#f59e0b;border-radius:2px;display:inline-block;"></span>Pendente</span>
+        </div>
+      </div>
+      <!-- Números consolidados -->
+      <div id="rp-numeros" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
+      <!-- Divisao por paletizacao -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">DIVISAO POR PALETIZACAO</div>
+        <div id="rp-paletizacao-resumo" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;"></div>
+      </div>
+      <!-- Contagem por Status -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📍 STATUS ATUAL DAS DTs</div>
+        <div id="rp-status-counts" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;"></div>
+      </div>
+      <!-- Separações por turno -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">🔢 SEPARAÇÕES POR TURNO</div>
+        <div id="rp-turnos-resumo" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: ADICIONAR DT ══════ -->
+    <div id="semgrade-wrap" style="display:none;padding:16px 18px;">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">ADICIONAR DT (COM OU SEM GRADE)</span>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="display:grid;grid-template-columns:120px 1fr 1fr 150px 150px auto;gap:10px;align-items:end;" class="sg-form-grid">
+          <div><label class="sl">Nº DT</label><input id="sg-dt" class="mat-input" placeholder="Ex: 23166206" style="width:100%;"/></div>
+          <div><label class="sl">TRANSPORTADORA</label><input id="sg-transp" class="mat-input" placeholder="Nome" style="width:100%;"/></div>
+          <div><label class="sl">MOTIVO</label><input id="sg-motivo" class="mat-input" placeholder="Ex: Aguardando nota, erro sistema..." style="width:100%;"/></div>
+          <div><label class="sl">GRADE INÍCIO (opcional)</label><input id="sg-grade" type="datetime-local" class="mat-input" style="width:100%;"/></div>
+          <div><label class="sl">GRADE FIM (opcional)</label><input id="sg-fim" type="datetime-local" class="mat-input" style="width:100%;"/></div>
+          <button class="bp" onclick="registrarSemGrade()" style="height:34px;white-space:nowrap;">+ Adicionar DT</button>
+        </div>
+        <div style="margin-top:10px;"><label class="sl">OBSERVAÇÕES</label><textarea id="sg-obs" class="obs-area" placeholder="Detalhes adicionais..." style="min-height:48px;width:100%;"></textarea></div>
+      </div>
+      <div id="sg-lista" style="display:grid;gap:8px;"></div>
+    </div>
+
+    <!-- ══════ ABA: DT FAKE ══════ -->
+    <div id="dtfake-wrap" style="display:none;padding:16px 18px;">
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#f59e0b;font-weight:700;margin-bottom:12px;">🔄 SUBSTITUIÇÃO DE DT FAKE</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:14px;line-height:1.7;">Informe a DT fake (criada para reservar espaço) e a DT original. O sistema irá substituir o número e os materiais, mantendo a agenda intacta.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+          <div>
+            <label class="sl">Nº DT FAKE (a substituir)</label>
+            <input id="fake-dt-from" class="mat-input" placeholder="Ex: 99999999" style="width:100%;"/>
+          </div>
+          <div>
+            <label class="sl">Nº DT ORIGINAL (substituta)</label>
+            <input id="fake-dt-to" class="mat-input" placeholder="Ex: 23166206" style="width:100%;"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="bp" onclick="substituirDTFake()" style="background:#f59e0b;color:#000;">🔄 Substituir DT</button>
+          <span id="fake-status" style="font-size:12px;color:#64748b;align-self:center;"></span>
+        </div>
+      </div>
+      <div id="fake-preview" style="display:none;background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;">
+        <div style="font-size:10px;letter-spacing:1.5px;color:#64748b;font-weight:700;margin-bottom:8px;">PRÉVIA DA SUBSTITUIÇÃO</div>
+        <div id="fake-preview-body" style="font-size:12px;color:#e2e8f0;"></div>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+          <button class="bp" onclick="confirmarSubstituicao()" style="flex:1;">✅ Confirmar substituição</button>
+          <button class="bg" onclick="cancelarSubstituicao()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: JUNTAR NFs ══════ -->
+    <div id="nf-wrap" style="display:none;padding:16px 18px;">
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#34d399;font-weight:700;margin-bottom:6px;">📎 JUNTAR NFs + ESPELHO</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Selecione os PDFs das NFs e o espelho da nota. O sistema junta tudo em um único PDF nomeado com o número da DT.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <div>
+            <label class="sl">Nº DA DT (para nomear o PDF)</label>
+            <input id="nf-dt-num" class="mat-input" placeholder="Ex: 23166206" style="width:160px;"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="bp" onclick="document.getElementById('nf-files').click()" style="background:#1e3a5f;border:1px solid #3b82f655;">📂 Subir NFs / Espelho</button>
+          <input id="nf-files" type="file" multiple accept="application/pdf" style="display:none" onchange="nfAddFiles(this.files)"/>
+          <button class="bp" onclick="nfGerar()" style="background:#059669;">⬇ Gerar PDF único</button>
+          <button class="bp" onclick="nfImprimir()" style="background:#1d4ed8;">🖨️ Imprimir</button>
+          <button class="bg" onclick="nfLimpar()">🗑 Limpar</button>
+        </div>
+        <div id="nf-lista" style="display:grid;gap:6px;margin-top:6px;"></div>
+        <div id="nf-msg" style="margin-top:8px;font-size:12px;display:none;"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -330,10 +488,16 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <button class="bg" onclick="closePanel()" style="padding:4px 10px;">✕</button>
   </div>
   <div id="pbody">
-    <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
-    <span class="sec-lbl">MATERIAIS / QUANTIDADES</span>
-    <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE</span><span></span></div>
-    <div id="mat-list"></div>
+    <div id="print-panel-area">
+      <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <span class="sec-lbl" style="margin:0;">MATERIAIS / QUANTIDADES</span>
+        <button class="bg no-print" onclick="printPanelMapa()" style="padding:4px 10px;font-size:11px;">🖨️ Imprimir mapa</button>
+      </div>
+      <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE (PALETES / SOBRA)</span><span></span></div>
+      <div id="mat-list"></div>
+      <div id="mat-total" style="margin-top:8px;text-align:right;color:#a7f3d0;font-weight:800;font-size:13px;">Total: 0</div>
+    </div>
     <button class="bg" onclick="addMatRow()" style="width:100%;margin-top:6px;font-size:12px;">+ Adicionar material</button>
     <span class="sec-lbl" style="margin-top:18px;">OBSERVAÇÕES</span>
     <textarea class="obs-area" id="pobs" placeholder="Anotações gerais desta DT..."></textarea>
@@ -387,1147 +551,91 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
   </div>
 </div>
 
+<!-- ═══ MODAL IMPORTAR PLANILHA (Ctrl+B) ═══ -->
+<div id="import-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:400;display:none;align-items:center;justify-content:center;">
+  <div id="import-modal" style="background:#1e293b;border:2px solid #3b82f655;border-radius:16px;width:94%;max-width:560px;padding:28px;box-shadow:0 20px 60px #000a;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+      <span style="font-size:22px;">📋</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;letter-spacing:.5px;">Importar Relatório de Expedição</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Atualiza status, hora de chegada e SAP/portaria com base na planilha</div>
+      </div>
+      <button onclick="closeImportModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+
+    <div id="import-dropzone" style="border:2px dashed #334155;border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;background:#0f172a;transition:all .2s;margin-bottom:16px;"
+      onclick="document.getElementById('import-file-input').click()"
+      ondragover="event.preventDefault();this.style.borderColor='#3b82f6';this.style.background='#1e3a5f';"
+      ondragleave="this.style.borderColor='#334155';this.style.background='#0f172a';"
+      ondrop="event.preventDefault();this.style.borderColor='#334155';this.style.background='#0f172a';handleImportFile(event.dataTransfer.files[0])">
+      <div style="font-size:30px;margin-bottom:6px;">📄</div>
+      <div id="import-drop-label" style="color:#64748b;font-size:13px;">Clique ou arraste a planilha aqui</div>
+      <div style="font-size:11px;color:#334155;margin-top:4px;">Formato: CSV/XLSX com colunas DT, HORA, FATURAMENTO, SAP e STATUS</div>
+    </div>
+    <input type="file" id="import-file-input" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handleImportFile(this.files[0])"/>
+
+    <div id="import-preview" style="display:none;margin-bottom:14px;">
+      <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:8px;">PRÉ-VISUALIZAÇÃO</div>
+      <div id="import-preview-body" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;font-size:11px;max-height:180px;overflow-y:auto;"></div>
+    </div>
+
+    <div id="import-result" style="display:none;margin-bottom:14px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:10px 14px;font-size:12px;color:#86efac;"></div>
+    <div id="import-err" style="display:none;margin-bottom:14px;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:10px 14px;font-size:12px;color:#fca5a5;"></div>
+
+    <div style="display:flex;gap:8px;">
+      <button id="import-btn" class="bp" style="flex:1;" onclick="runImport()" disabled>⚡ Atualizar Dashboard</button>
+      <button class="bg" onclick="closeImportModal()">Cancelar</button>
+    </div>
+    <div style="margin-top:12px;padding:8px 12px;background:#1a2540;border-radius:7px;font-size:10px;color:#64748b;line-height:1.7;">
+      💡 <b style="color:#94a3b8;">Regras aplicadas:</b><br>
+      • DT presente na planilha → status, hora e SAP/portaria atualizados<br>
+      • DT no dash com horário ≤ agora e ausente da planilha → marcada como <b style="color:#22c55e">EXPEDIDO</b><br>
+      • FATURAMENTO com custo de frete/problema de DT/problema JSL → tratado como <b style="color:#06b6d4">EM FATURAMENTO</b> quando STATUS estiver vazio
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL PORTARIA PDF (Ctrl+P) ═══ -->
+<div id="portaria-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:420;display:none;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:2px solid #f9731655;border-radius:16px;width:94%;max-width:520px;padding:24px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:22px;">🚛</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;">Importar Portaria PDF</div>
+        <div style="font-size:11px;color:#64748b;">Lê DTs do PDF e muda AG CHEGADA → PATIO</div>
+      </div>
+      <button onclick="closePortariaPdfModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+    <input type="file" id="portaria-file" accept="application/pdf" style="margin-bottom:12px;color:#cbd5e1;"/>
+    <div id="portaria-result" style="display:none;margin-bottom:10px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:10px;font-size:12px;color:#86efac;"></div>
+    <div id="portaria-err" style="display:none;margin-bottom:10px;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:10px;font-size:12px;color:#fca5a5;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="bp" style="flex:1;background:#ea580c;" onclick="runPortariaPdfImport(document.getElementById('portaria-file').files[0])">⚡ Processar PDF</button>
+      <button class="bg" onclick="closePortariaPdfModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- BUSCA NA AGENDA (Ctrl+Q) -->
+<div id="agenda-search-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:430;display:none;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:2px solid #38bdf855;border-radius:14px;width:94%;max-width:900px;max-height:84vh;display:flex;flex-direction:column;box-shadow:0 20px 60px #000a;">
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #334155;">
+      <span style="font-size:20px;">??</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;">Buscar DT na agenda</div>
+        <div id="agenda-search-meta" style="font-size:11px;color:#64748b;">Ctrl+Q</div>
+      </div>
+      <button onclick="closeAgendaSearchModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">?</button>
+    </div>
+    <div style="padding:14px 18px;border-bottom:1px solid #334155;">
+      <input id="agenda-search-input" placeholder="Digite a DT, transportadora ou doca" oninput="renderAgendaSearch()" onkeydown="if(event.key==='Escape')closeAgendaSearchModal()" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:14px;outline:none;"/>
+    </div>
+    <div id="agenda-search-body" style="padding:14px 18px;overflow-y:auto;flex:1;"></div>
+  </div>
+</div>
+
 <div id="spinner">⏳ Salvando…</div>
 
-<script>
-/* ═══════════════════════════════════════════════════════
-   SUPABASE REST
-═══════════════════════════════════════════════════════ */
-const SB_URL = 'https://pwjatxqtkvwcmzmjjvbi.supabase.co/rest/v1';
-const SB_KEY = 'sb_publishable_bUPTDkrOzc0_I3xwNw15aA_lk76gg4w';
-const HDR = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
-
-async function sbGet(table, qs=''){
-  const r=await fetch(`${SB_URL}/${table}?${qs}`,{headers:HDR});
-  if(!r.ok) throw new Error(`GET ${table}: `+await r.text());
-  return r.json();
-}
-async function sbUpsert(table, rows){
-  for(let i=0;i<rows.length;i+=30){
-    const r=await fetch(`${SB_URL}/${table}`,{
-      method:'POST',
-      headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body:JSON.stringify(rows.slice(i,i+30))
-    });
-    if(!r.ok) throw new Error(`UPSERT ${table} lote ${i/30+1}: `+await r.text());
-  }
-}
-async function sbPatch(table, data, filters){
-  const q=Object.entries(filters).map(([k,v])=>`${k}=eq.${v.includes('/')?'"'+v+'"':encodeURIComponent(v)}`).join('&');
-  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'PATCH',headers:HDR,body:JSON.stringify(data)});
-  if(!r.ok) throw new Error(`PATCH ${table}: `+await r.text());
-}
-async function sbDelete(table, filters){
-  const q=Object.entries(filters).map(([k,v])=>{
-    const vs=String(v); return `${k}=eq.${vs.includes('/')?'"'+vs+'"':encodeURIComponent(vs)}`;
-  }).join('&');
-  const r=await fetch(`${SB_URL}/${table}?${q}`,{method:'DELETE',headers:HDR});
-  if(!r.ok) throw new Error(`DELETE ${table}: `+await r.text());
-}
-async function sbInsert(table, rows){
-  const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(rows)});
-  if(!r.ok) throw new Error(`INSERT ${table}: `+await r.text());
-}
-
-/* ═══════════════════════════════════════════════════════
-   ESTADO
-═══════════════════════════════════════════════════════ */
-const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','SEPARANDO','EM FATURAMENTO','PATIO','DT EXCLUIDA','FOI EMBORA'];
-const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
-const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
-
-let agendRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, tableData=[];
-let panelDT=null;
-let currentTableTab='todas';
-let reagendDT=null;
-let dtSearchTerm='';
-let activeRefsOverride=[];
-
-/* ═══════════════════════════════════════════════════════
-   INIT
-═══════════════════════════════════════════════════════ */
-window.addEventListener('DOMContentLoaded', async ()=>{
-  document.getElementById('sync-txt').textContent='ONLINE';
-  await tryLoadExisting();
-  // Ticker para atualizar emojis de relógio a cada minuto
-  setInterval(()=>{ if(tableData.length) renderRows(); }, 60000);
-});
-
-/* ═══════════════════════════════════════════════════════
-   UI
-═══════════════════════════════════════════════════════ */
-function showErr(m){const e=document.getElementById('aerr');e.textContent='⚠️ '+m;e.style.display='block';}
-function showOk(m) {const e=document.getElementById('aok'); e.textContent='✅ '+m;e.style.display='block';setTimeout(()=>e.style.display='none',4500);}
-function showInf(m){const e=document.getElementById('ainf');e.textContent='⏳ '+m;e.style.display='block';}
-function hideInf(){document.getElementById('ainf').style.display='none';}
-function spin(on){document.getElementById('spinner').style.display=on?'block':'none';}
-
-function setStep(n){
-  // Passos: 1,2,3,4 (removemos o passo 5, agora é 4)
-  [1,2,3,4].forEach(i=>{
-    document.getElementById('passo'+i).style.display=i===n?'block':'none';
-    const d=document.getElementById('dot'+i);
-    if(!d)return;
-    d.className='sdot'+(i<n?' done':i===n?' active':'');
-    d.textContent=i<n?'✓':i;
-  });
-  document.getElementById('aerr').style.display='none';
-  // Quando entrar no passo 3, mostra dica de materiais já importados
-  if(n===1) activeRefsOverride=[];
-  if(n===3){
-    const hint=document.getElementById('p3-mat-hint');
-    const nDTs=Object.keys(exportMap).length;
-    if(hint){
-      if(nDTs>0){
-        hint.textContent='✨ '+nDTs+' DTs já com materiais importados do arquivo de agendamento! Você pode pular este passo.';
-        hint.style.display='inline';
-      }else{
-        hint.style.display='none';
-      }
-    }
-  }
-}
-
-function switchTab(tab){
-  ['file','paste','xlsx'].forEach(t=>{
-    document.getElementById('tab-'+t+'-body').style.display=t===tab?'block':'none';
-    const btn=document.getElementById('tab-'+t);
-    btn.style.background=t===tab?'#3b82f6':'#1e293b';
-    btn.style.color=t===tab?'#fff':'#94a3b8';
-  });
-}
-
-let matFiltro='todos';
-
-function switchTableTab(tab){
-  currentTableTab=tab;
-  ['todas','finalizadas','materiais'].forEach(t=>{
-    const el=document.getElementById('tab-'+t);
-    if(el) el.classList.toggle('active',t===tab);
-  });
-  const board=document.getElementById('mat-board');
-  const twrap=document.getElementById('twrap');
-  const mwrap=document.getElementById('materiais-wrap');
-  if(board)  board.style.display='none';
-  if(tab==='materiais'){
-    if(twrap)  twrap.style.display='none';
-    if(mwrap)  mwrap.style.display='block';
-    renderMateriaisAba();
-  } else {
-    if(twrap)  twrap.style.display='block';
-    if(mwrap)  mwrap.style.display='none';
-    renderRows();
-  }
-}
-
-function filtrarMateriais(f){
-  matFiltro=f;
-  ['todos','venda','transf'].forEach(id=>{
-    const btn=document.getElementById('mfilt-'+id);
-    if(!btn) return;
-    btn.style.background=f===id?'#1e3a5f':'transparent';
-    btn.style.fontWeight=f===id?'800':'400';
-  });
-  renderMateriaisAba();
-}
-
-async function renderMateriaisAba(){
-  const board=document.getElementById('materiais-board');
-  const resumo=document.getElementById('mfilt-resumo');
-  if(!board) return;
-  board.innerHTML='<div style="color:#64748b;padding:20px;">Carregando materiais…</div>';
-  try{
-    const refs=[...new Set(tableData.map(r=>r.data_ref).filter(Boolean))];
-    if(!refs.length){
-      board.innerHTML='<div style="color:#334155;padding:20px;">Sem DTs carregadas. Suba o arquivo de agendamento primeiro.</div>';
-      return;
-    }
-    const q='data_ref=in.("'+refs.join('","')+'")&order=dt.asc,ordem.asc';
-    const mats=await sbGet('reporte_materiais',q);
-
-    // Agrupa por DT
-    const byDT={};
-    (mats||[]).forEach(m=>{
-      const key=String(m.dt||'').trim();
-      if(!key) return;
-      if(!byDT[key]) byDT[key]=[];
-      const mat=String(m.material||'').trim();
-      if(!mat) return;
-      const qtd=Number(String(m.quantidade||'0').replace(',','.'))||0;
-      const ex=byDT[key].find(x=>x.mat===mat);
-      if(ex) ex.qtd+=qtd;
-      else byDT[key].push({mat,qtd});
-    });
-
-    // Ordem das DTs conforme grade
-    const ordem=[...tableData]
-      .sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b))
-      .map(r=>String(r.dt));
-    const uniq=[]; ordem.forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
-    // Adiciona DTs que têm material mas não estão na ordem (edge case)
-    Object.keys(byDT).forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
-
-    // Aplica filtro de tipo
-    const dtsFiltradas=uniq.filter(dt=>{
-      const row=tableData.find(r=>r.dt===dt)||{};
-      const op=(row.tipo_operacao||tipoOpMap[dt]||'').toUpperCase();
-      if(matFiltro==='venda')  return !op.includes('TRANSFER');
-      if(matFiltro==='transf') return op.includes('TRANSFER');
-      return true;
-    });
-
-    let totalDTs=0, totalItens=0, totalQtd=0;
-    let html='';
-    dtsFiltradas.forEach(dt=>{
-      const itens=byDT[dt]; if(!itens||!itens.length) return;
-      totalDTs++;
-      const row=tableData.find(r=>r.dt===dt)||{};
-      const op=(row.tipo_operacao||tipoOpMap[dt]||'').toUpperCase();
-      const isTransf=op.includes('TRANSFER');
-      const opBadge=isTransf
-        ?'<span class="tag-transf" style="padding:2px 8px;font-size:10px;">🔄 TRANSFERÊNCIA</span>'
-        :'<span class="tag-venda"  style="padding:2px 8px;font-size:10px;">🛒 VENDA NORMAL</span>';
-      const diaTag=row.dia_ref==='HOJE'
-        ?'<span class="tag-hoje" style="padding:1px 6px;font-size:9px;">HOJE</span>'
-        :(row.dia_ref==='AMANHÃ'?'<span class="tag-amanha" style="padding:1px 6px;font-size:9px;">AMANHÃ</span>':'');
-      const transp=row.transportadora||'—';
-      const grade=row.grade_carregamento||'—';
-      const status=row.status||'';
-      const sc=SC[status]||'#334155';
-      const qtdTotal=itens.reduce((s,x)=>s+x.qtd,0);
-      totalItens+=itens.length;
-      totalQtd+=qtdTotal;
-
-      html+=`<div class="mat-group" style="margin-bottom:14px;">`;
-      html+=`<div class="mat-group-h" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:10px 14px;">`;
-      html+=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
-      html+=`<span style="color:#93c5fd;font-size:14px;font-weight:900;">DT ${dt}</span>`;
-      html+=`${diaTag} ${opBadge}`;
-      html+=`<span style="color:#64748b;font-size:10px;">| ${transp}</span>`;
-      html+=`<span style="color:#a5b4fc;font-size:10px;">| ⏱ ${grade}</span>`;
-      html+=`<span style="background:${sc}22;border:1px solid ${sc}55;color:${sc};border-radius:4px;padding:1px 7px;font-size:9px;font-weight:700;">${status}</span>`;
-      html+=`</div>`;
-      html+=`<span style="color:#64748b;font-size:10px;text-align:right;">${itens.length} materiais · <b style="color:#a7f3d0;">${Math.round(qtdTotal)} un.</b></span>`;
-      html+=`</div>`;
-      // Tabela de itens
-      html+=`<div style="padding:0 14px 10px;">`;
-      html+=`<div style="display:grid;grid-template-columns:1fr 90px;gap:4px;padding:4px 0;border-bottom:1px solid #334155;margin-bottom:4px;">`;
-      html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;">MATERIAL</span>`;
-      html+=`<span style="font-size:9px;letter-spacing:1.5px;color:#475569;font-weight:700;text-align:right;">QUANTIDADE</span>`;
-      html+=`</div>`;
-      itens.forEach(({mat,qtd})=>{
-        html+=`<div style="display:grid;grid-template-columns:1fr 90px;gap:4px;padding:3px 0;border-bottom:1px solid #1e293b;font-size:12px;">`;
-        html+=`<span style="color:#cbd5e1;">${mat}</span>`;
-        html+=`<span style="text-align:right;color:#a7f3d0;font-weight:700;">${Math.round(qtd)}</span>`;
-        html+=`</div>`;
-      });
-      html+=`</div></div>`;
-    });
-
-    if(resumo) resumo.textContent=`${totalDTs} DTs · ${totalItens} materiais · ${Math.round(totalQtd)} unidades total`;
-    board.innerHTML=html||'<div style="color:#334155;padding:20px;">Nenhum material encontrado'+
-      (matFiltro!=='todos'?' para o filtro selecionado.':'. Cole a ZLES002 no Passo 3 para importar.')+'</div>';
-  }catch(e){
-    board.innerHTML='<div style="color:#ef4444;padding:20px;">Erro ao carregar: '+e.message+'</div>';
-  }
-}
-
-function onSearchDT(v){
-  dtSearchTerm=(v||'').replace(/\D/g,'');
-  renderRows();
-}
-
-/* ═══════════════════════════════════════════════════════
-   DATAS
-═══════════════════════════════════════════════════════ */
-function today()   {const d=new Date();d.setHours(0,0,0,0);return d;}
-function tomorrow(){const d=today();d.setDate(d.getDate()+1);return d;}
-function sameDay(a,b){return a&&b&&a.getDate()===b.getDate()&&a.getMonth()===b.getMonth()&&a.getFullYear()===b.getFullYear();}
-function dKey(d){return d.toLocaleDateString('pt-BR');}
-function fmtDT(d,t){
-  if(!d)return '';
-  return t?d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('pt-BR');
-}
-function parseBR(s){
-  if(!s||!s.trim())return null;
-  const m=s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[T\s](\d{2}):(\d{2}))?/);
-  return m?new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)):null;
-}
-
-function parseAgendaDateTime(row){
-  const grade=parseBR(row.grade_carregamento||'');
-  if(grade) return grade;
-  const agenda=parseBR(row.agenda||'');
-  if(agenda) return agenda;
-  return new Date(9999,0,1);
-}
-
-/* ═══════════════════════════════════════════════════════
-   DECODE BUFFER
-═══════════════════════════════════════════════════════ */
-function decodeBuf(buf){
-  const b=new Uint8Array(buf);
-  if(b[0]===0xFF&&b[1]===0xFE)return new TextDecoder('utf-16le').decode(buf);
-  if(b[0]===0xFE&&b[1]===0xFF)return new TextDecoder('utf-16be').decode(buf);
-  let nulls=0;for(let i=1;i<Math.min(200,b.length);i+=2)if(b[i]===0)nulls++;
-  if(nulls>15)return new TextDecoder('utf-16le').decode(buf);
-  try{return new TextDecoder('utf-8').decode(buf);}catch(e){}
-  return new TextDecoder('latin1').decode(buf);
-}
-
-/* ═══════════════════════════════════════════════════════
-   PASSO 1 — AGENDAMENTO
-═══════════════════════════════════════════════════════ */
-function processAgend(file){
-  if(!file)return;
-  showInf('Lendo agendamento…');
-  document.getElementById('dz1l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
-  file.arrayBuffer().then(buf=>{
-    try{
-      // Tenta importar materiais automaticamente se o arquivo tiver as colunas certas (XLSX)
-      exportMap={};
-      const matCnt=tryImportMaterialsFromAgend(buf);
-      if(matCnt>0) showOk('✨ '+matCnt+' linhas de materiais importadas automaticamente do arquivo de agendamento!');
-      const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
-      const h=lines[0].split('\t').map(s=>s.trim());
-      const ci=n=>h.indexOf(n);
-      const iDT=ci('DT'),iLoc=ci('LOCAL'),iTransp=ci('NOME TRANSPORTADORA');
-      const iAg=ci('AGENDA TRANSPORTADOR'),iFim=ci('FIM AGENDA TRANSPORTADOR');
-      const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO');
-      if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
-      agendRows=[];
-      for(let i=1;i<lines.length;i++){
-        const c=lines[i].split('\t');
-        if(!c[iDT]?.trim())continue;
-        const loc=(c[iLoc]||'').trim();
-        if(!loc.endsWith('1110')&&!loc.endsWith('1111'))continue;
-        agendRows.push({
-          DT:(c[iDT]||'').trim(),LOCAL:loc,
-          TRANSPORTADORA:(c[iTransp]||'').trim(),
-          AGENDA:parseBR((c[iAg]||'').trim()),
-          FIM_AGENDA:parseBR((c[iFim]||'').trim()),
-          TIPO:iTipo!==-1?(c[iTipo]||'').trim():'',
-          PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
-        });
-      }
-      if(!agendRows.length)throw new Error('Nenhuma linha com LOCAL 1110/1111 encontrada.');
-      hideInf();
-      renderStep2();
-    }catch(e){hideInf();showErr(e.message);}
-  });
-}
-
-function renderStep2(){
-  const T=today(),AM=tomorrow();
-  const dtsH=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,T));
-  const dtsA=agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,AM));
-  dtsMescladas=[...dtsH,...dtsA];
-  document.getElementById('p2info').innerHTML=
-    '✅ <b style="color:#22c55e">'+agendRows.length+' linhas</b> encontradas · '+
-    '<b style="color:#60a5fa">'+dtsH.length+'</b> hoje · <b style="color:#a78bfa">'+dtsA.length+'</b> amanhã'+
-    (Object.keys(exportMap).length>0?
-      ' · <b style="color:#4ade80">✨ '+Object.keys(exportMap).length+' DTs com materiais já importados</b>':
-      '');
-  const mk=(arr,id,cls)=>{
-    const w=document.getElementById(id);w.innerHTML='';
-    if(!arr.length){w.innerHTML='<span style="font-size:11px;color:#334155">Nenhuma</span>';return;}
-    arr.forEach(r=>{const s=document.createElement('span');s.className='chip'+cls;s.textContent=r.DT;w.appendChild(s);});
-  };
-  mk(dtsH,'chipsHoje','');
-  mk(dtsA,'chipsAmanha',' old');
-  setStep(2);
-}
-
-/* Copia DTs em coluna para colar no SAP */
-function copyDTs(dia){
-  const arr = dia==='hoje'
-    ? agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,today()))
-    : agendRows.filter(r=>r.AGENDA&&sameDay(r.AGENDA,tomorrow()));
-  const texto = arr.map(r=>r.DT).join('\n');
-  navigator.clipboard.writeText(texto).then(()=>{
-    const btn=document.getElementById('copy-'+dia+'-btn');
-    btn.textContent='✅ Copiado!';
-    btn.classList.add('copied');
-    setTimeout(()=>{btn.textContent='📋 Copiar DTs em coluna';btn.classList.remove('copied');},2000);
-  }).catch(()=>showErr('Não foi possível copiar. Use Ctrl+C manualmente.'));
-}
-
-/* ═══════════════════════════════════════════════════════
-   AUTO-IMPORT DE MATERIAIS DO ARQUIVO DO PASSO 1 (XLSX)
-   Detecta colunas: Nº transporte | Material | Qtde Remessa
-═══════════════════════════════════════════════════════ */
-function tryImportMaterialsFromAgend(buf){
-  try{
-    const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
-    if(!rows.length) return 0;
-    const keys=Object.keys(rows[0]);
-    const fc=(...ts)=>{for(const t of ts){const k=keys.find(k=>k.toUpperCase().includes(t.toUpperCase()));if(k)return k;}return null;};
-    const kDT=fc('Nº TRANSPORTE','N TRANSPORTE','TRANSPORTE','NR. TRANSPORTE');
-    const kMat=fc('MATERIAL');
-    const kQtd=fc('QTDE REMESSA','QTD REMESSA','QTDE');
-    if(!kDT||!kMat) return 0; // não tem colunas de materiais, ignora silenciosamente
-    let cnt=0;
-    for(const row of rows){
-      const rawDT=row[kDT];
-      const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
-      const rawMat=row[kMat];
-      const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
-      const qtdRaw=kQtd?String(row[kQtd]||''):'';
-      const qtd=qtdRaw.replace(/\./g,'').replace(',','.');
-      const qtdFmt=qtd?String(Math.round(Number(qtd)||0)):'';
-      if(!dt||!mat||dt==='NaN'||mat==='NaN') continue;
-      cnt++;
-      if(!exportMap[dt])exportMap[dt]=[];
-      const existing=exportMap[dt].find(m=>m.material===mat);
-      if(existing){
-        const q1=Number(existing.quantidade)||0;
-        const q2=Number(qtdFmt)||0;
-        existing.quantidade=String(q1+q2);
-      }else{
-        exportMap[dt].push({material:mat,quantidade:qtdFmt});
-      }
-    }
-    return cnt;
-  }catch(e){return 0;}
-}
-
-/* ═══════════════════════════════════════════════════════
-   PASSO 3 — ZLES002
-═══════════════════════════════════════════════════════ */
-function processZles(file){
-  if(!file)return;
-  showInf('Lendo ZLES002…');
-  document.getElementById('dz2l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
-  file.arrayBuffer().then(buf=>{
-    const text=decodeBuf(buf);
-    parseZlesText(text);
-  });
-}
-
-function processZlesPaste(){
-  const text=document.getElementById('zles-paste').value.trim();
-  if(!text){showErr('Cole o conteúdo do SAP no campo de texto primeiro.');return;}
-  showInf('Processando texto colado…');
-  setTimeout(()=>parseZlesText(text),50);
-}
-
-function parseZlesText(text){
-  const dbg=document.getElementById('dbgZles');
-  dbg.textContent='';dbg.classList.add('show');
-  try{
-    const lines=text.split(/\r?\n/).filter(l=>l.trim());
-    if(!lines.length)throw new Error('Conteúdo vazio.');
-    const L0=lines[0];
-    const sep=(L0.match(/;/g)||[]).length>=(L0.match(/\t/g)||[]).length?';':'\t';
-    dbg.textContent+=`Separador: "${sep===';'?'ponto-e-vírgula (;)':'tab (\\t)'}"\n`;
-    dbg.textContent+=`Total de linhas: ${lines.length}\n`;
-    const strip=s=>(s||'').trim().replace(/^"|"$/g,'');
-    const h=lines[0].split(sep).map(strip);
-    dbg.textContent+=`Colunas (${h.length}): ${h.slice(0,10).join(' | ')}…\n`;
-    const findIdx=(...termos)=>{
-      for(const t of termos){
-        const i=h.findIndex(v=>v.toUpperCase().includes(t.toUpperCase()));
-        if(i!==-1)return i;
-      }
-      return -1;
-    };
-    // DT padrão ZLES002: col 6 tem cabeçalho ";" mas contém o número de transporte (ex: 23166206)
-    let iDT=6;
-    if(lines.length>1){
-      const primeiraLinha=lines[1].split(sep).map(strip);
-      const valG=(primeiraLinha[6]||'').replace(/\D/g,'');
-      if(valG.length<5){
-        // col6 não tem número de DT → tenta achar coluna com nome de transporte
-        const alt=h.findIndex(v=>{
-          const u=v.toUpperCase();
-          return (u.includes('TRANSPORTE')||u.includes('NR TRANSP')||u.includes('Nº TRANSP'))
-                 && !u.includes('NOME') && !u.includes('COD') && !u.includes('CÓD');
-        });
-        if(alt!==-1) iDT=alt;
-      }
-    }
-    // Tipo: col 9 = "Descrição de Documento" (tem "Venda Normal", "Remessa p/ transf." etc.)
-    const iTipo=findIdx('TIPO','OPERAÇÃO','OPERACAO')!==-1?findIdx('TIPO','OPERAÇÃO','OPERACAO'):9;
-    const iDesc=findIdx('DESCRI')!==-1?findIdx('DESCRI'):9;
-    const iMat =findIdx('MATERIAL')!==-1?findIdx('MATERIAL'):11;
-    const iQtd =findIdx('QTDE REMESSA','QTD REMESSA')!==-1?findIdx('QTDE REMESSA','QTD REMESSA'):12;
-    dbg.textContent+=`Usando: DT=col${iDT}(${h[iDT]||'?'}) | Tipo=col${iTipo}(${h[iTipo]||'?'}) | Mat=col${iMat}(${h[iMat]||'?'}) | Qtd=col${iQtd}(${h[iQtd]||'?'})\n`;
-    exportMap={};tipoOpMap={};descDocMap={};
-    let linhasOk=0,linhasIgnoradas=0;
-    for(let i=1;i<lines.length;i++){
-      const c=lines[i].split(sep).map(strip);
-      if(c.every(v=>!v)){linhasIgnoradas++;continue;}
-      const dtRaw=(c[iDT]||'').replace(/\.0+$/,'').trim();
-      const dt=dtRaw.replace(/\D/g,'');
-      if(!dt||dt.length<5){linhasIgnoradas++;continue;}
-      const matRaw=(c[iMat]||'').replace(/\.0+$/,'').trim();
-      const mat=matRaw.replace(/\D/g,'');
-      const qtdRaw=(c[iQtd]||'').replace(/\./g,'').replace(',','.').trim();
-      const qtd=qtdRaw?String(Math.round(Number(qtdRaw)||0)):'';
-      if(!tipoOpMap[dt]){
-        // Prioriza "Descrição de Documento" (ex: "Venda Normal", "Transf.Abast.Filial")
-        const descDoc=(iDesc!==-1?c[iDesc]||'':'').trim();
-        const tipoCol=(iTipo!==-1?c[iTipo]||'':'').trim();
-        const tipoRaw=(descDoc||tipoCol).toUpperCase();
-        const isTransf=tipoRaw.includes('TRANSFER')||tipoRaw.includes('FILIAL')||tipoRaw.includes('INTERCOMP')||tipoRaw.includes('REMESSA P/')||tipoRaw.includes('TNF')||tipoRaw.includes('ABAST');
-        tipoOpMap[dt]=isTransf?'TRANSFERÊNCIA':'VENDA NORMAL';
-        if(descDocMap&&!descDocMap[dt]) descDocMap[dt]=descDoc||tipoCol;
-      }
-      if(!descDocMap[dt]){
-        const desc=(iDesc!==-1?String(c[iDesc]||'').trim():'') || (iTipo!==-1?String(c[iTipo]||'').trim():'');
-        descDocMap[dt]=desc;
-      }
-      if(mat){
-        if(!exportMap[dt])exportMap[dt]=[];
-        const existing=exportMap[dt].find(m=>m.material===mat);
-        if(existing){
-          // soma quantidades da mesma DT+material (ex: multi-remessa)
-          const q1=Number(existing.quantidade)||0;
-          const q2=Number(qtd)||0;
-          existing.quantidade=String(q1+q2);
-        }else{
-          exportMap[dt].push({material:mat,quantidade:qtd});
-        }
-      }
-      linhasOk++;
-    }
-    const totalDTs=Object.keys(exportMap).length;
-    const tipos=[...new Set(Object.values(tipoOpMap))];
-    dbg.textContent+=`\n✅ Linhas processadas: ${linhasOk} | Ignoradas: ${linhasIgnoradas}\n`;
-    dbg.textContent+=`DTs com materiais: ${totalDTs}\n`;
-    Object.keys(exportMap).slice(0,3).forEach(dt=>{
-      const mats=exportMap[dt].slice(0,4).map(m=>`${m.material}(${m.quantidade})`).join(', ');
-      dbg.textContent+=`  DT ${dt}: ${mats}${exportMap[dt].length>4?'…':''}\n`;
-    });
-    hideInf();
-    showOk(`ZLES002 OK — ${totalDTs} DTs · ${linhasOk} linhas · tipos: ${tipos.join(', ')}`);
-    buildTable();
-  }catch(e){
-    hideInf();
-    dbg.textContent+='\n❌ ERRO: '+e.message;
-    showErr('Erro ZLES002: '+e.message);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
-   PLANILHA EXTRA XLSX
-═══════════════════════════════════════════════════════ */
-function processExtra(file){
-  if(!file)return;
-  showInf('Lendo planilha extra…');
-  document.getElementById('dz3l').innerHTML='<span class="dz-ok">✓ '+file.name+'</span>';
-  const dbg=document.getElementById('dbgExtra');
-  dbg.textContent='';dbg.classList.add('show');
-  file.arrayBuffer().then(buf=>{
-    try{
-      const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
-      if(!rows.length)throw new Error('Planilha vazia.');
-      const keys=Object.keys(rows[0]);
-      dbg.textContent='Colunas: '+keys.join(' | ')+'\n';
-      const fc=(...ts)=>{for(const t of ts){const k=keys.find(k=>k.toUpperCase().includes(t.toUpperCase()));if(k)return k;}return null;};
-      const kDT=fc('Nº TRANSPORTE','N TRANSPORTE','TRANSPORTE');
-      const kMat=fc('MATERIAL');
-      const kQtd=fc('QTDE REMESSA','QTD REMESSA','QTDE');
-      dbg.textContent+=`Col DT: ${kDT||'NÃO ACHADA'} | Mat: ${kMat||'NÃO ACHADA'} | Qtd: ${kQtd||'NÃO ACHADA'}\n`;
-      if(!kDT||!kMat)throw new Error(
-        '⚠️ Este campo é para uma planilha auxiliar com colunas: "Nº transporte", "Material" e "Qtde Remessa".\n\n'+
-        'Para a ZLES002 do SAP, use as abas "📂 Subir arquivo CSV" ou "📋 Colar do SAP" acima.\n\n'+
-        'Colunas encontradas neste arquivo: '+keys.join(', ')
-      );
-      let cnt=0;
-      for(const row of rows){
-        const rawDT=row[kDT];
-        const dt=(rawDT===''||rawDT===null||rawDT===undefined)?'':String(Math.round(Number(rawDT)));
-        const rawMat=row[kMat];
-        const mat=(rawMat===''||rawMat===null||rawMat===undefined)?'':String(Math.round(Number(rawMat)));
-        const qtd=kQtd?String(row[kQtd]||''):'';
-        if(!dt||!mat||dt==='NaN'||mat==='NaN')continue;
-        cnt++;
-        if(!exportMap[dt])exportMap[dt]=[];
-        if(!exportMap[dt].some(m=>m.material===mat))exportMap[dt].push({material:mat,quantidade:qtd});
-      }
-      dbg.textContent+=`Linhas mescladas: ${cnt} | Total DTs com materiais: ${Object.keys(exportMap).length}\n`;
-      hideInf();
-      showOk('Planilha extra OK: '+cnt+' linhas mescladas em '+Object.keys(exportMap).length+' DTs.');
-      buildTable();
-    }catch(e){hideInf();dbg.textContent+='\n❌ ERRO: '+e.message;showErr('Erro planilha extra: '+e.message);}
-  });
-}
-
-async function persistImportedMaterials(){
-  const dtsWithAgenda=new Map(dtsMescladas.map(r=>[String(r.DT), dKey(r.AGENDA||today())]));
-  const inserts=[];
-  for(const [dt,mats] of Object.entries(exportMap)){
-    const dataRef=dtsWithAgenda.get(String(dt));
-    if(!dataRef||!Array.isArray(mats)) continue;
-    mats.forEach((m,i)=>{
-      if(!m.material) return;
-      inserts.push({dt:String(dt),data_ref:String(dataRef),material:String(m.material),quantidade:String(m.quantidade||''),observacao:'',ordem:i});
-    });
-  }
-  if(!inserts.length) return 0;
-  const pares=[...new Set(inserts.map(m=>`${m.dt}__${m.data_ref}`))];
-  for(const p of pares){
-    const [dt,data_ref]=p.split('__');
-    await sbDelete('reporte_materiais',{dt,data_ref});
-  }
-  await sbInsert('reporte_materiais',inserts);
-  return pares.length;
-}
-
-async function saveUploadSnapshot(rows){
-  try{
-    const logs=rows.map(r=>({
-      dt:String(r.dt||''),
-      data_ref:String(r.data_ref||''),
-      status:'UPLOAD_AGENDA',
-      transportadora:String(r.transportadora||''),
-      created_at:new Date().toISOString(),
-    })).filter(r=>r.dt&&r.data_ref);
-    if(logs.length) await sbInsert('reporte_logs',logs);
-  }catch(e){}
-}
-
-/* ═══════════════════════════════════════════════════════
-   BUILD TABLE — Upsert preservando status/hora_chegada
-═══════════════════════════════════════════════════════ */
-async function buildTable(){
-  showInf('Sincronizando com o banco…');
-  const T=today(),AM=tomorrow();
-  const kT=dKey(T), kAM=dKey(AM);
-  try{
-    // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
-    const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(r.AGENDA||T)))];
-    const existing=await sbGet('reporte_carga',
-      `data_ref=in.("${refsUpload.join('\",\"')}")&select=dt,data_ref,status,hora_chegada,tipo_operacao,descricao_documento,reagendada`
-    );
-    const exMap={};
-    (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
-
-
-    const rows=dtsMescladas.map(dt=>{
-      const ref=dKey(dt.AGENDA||T);
-      const ex=exMap[dt.DT+'_'+ref]||{};
-      const diaRef=sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ';
-      const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
-      // Preserva status e hora_chegada existentes!
-      const statusAtual = ex.status && ex.status !== '' ? ex.status : 'AG CHEGADA';
-      const horaAtual   = ex.hora_chegada || '';
-      return {
-        dt:String(dt.DT),
-        transportadora:String(dt.TRANSPORTADORA||''),
-        grade_carregamento:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
-        fim_carregamento:String(dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):''),
-        hora_chegada:horaAtual,
-        status:statusAtual,
-        descricao_documento:String(descDocMap[dt.DT]||ex.descricao_documento||''),
-        toneladas:String(dt.PESO||''),
-        agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
-        local_cd:String(dt.LOCAL||''),
-        dia_ref:diaRef,
-        data_ref:String(ref),
-        tipo_operacao:String(tipoOp),
-        reagendada: ex.reagendada || false,
-      };
-    });
-
-    const uploadedRefs=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))];
-    activeRefsOverride=uploadedRefs.slice(0,2);
-    // Como não existe constraint única (dt,data_ref), fazemos replace por data_ref
-    for(const ref of uploadedRefs){
-      await sbDelete('reporte_carga',{data_ref:ref});
-    }
-    await sbInsert('reporte_carga',rows);
-    await saveUploadSnapshot(rows);
-    const importedCount=await persistImportedMaterials();
-    hideInf();
-    if(importedCount>0) showOk('Materiais sincronizados automaticamente para '+importedCount+' DT(s).');
-    await reloadTable();
-    setStep(4);
-  }catch(e){
-    hideInf();
-    showErr('Erro banco (tabela ainda aparece): '+e.message);
-    tableData=dtsMescladas.map(dt=>({
-      dt:dt.DT,transportadora:dt.TRANSPORTADORA,
-      grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
-      fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',toneladas:dt.PESO,
-      agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
-      dia_ref:sameDay(dt.AGENDA,T)?'HOJE':'AMANHÃ',
-      data_ref:dKey(dt.AGENDA||T),
-      tipo_operacao:tipoOpMap[dt.DT]||'',
-      reagendada:false,
-    }));
-    renderRows();
-    setStep(4);
-  }
-}
-
-
-async function getActiveRefs(){
-  if(activeRefsOverride.length) return activeRefsOverride;
-  const T=today(),AM=tomorrow();
-  const base=[dKey(T),dKey(AM)];
-  try{
-    const todayRows=await sbGet('reporte_carga',`data_ref=in.("${base[0]}","${base[1]}")&select=dt&limit=1`);
-    if(todayRows&&todayRows.length) return base;
-
-    // Regra principal: usar o último upload de agenda registrado em log
-    const lastUpload=await sbGet('reporte_logs',`status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=300`);
-    const byUpload=[];
-    (lastUpload||[]).forEach(r=>{
-      const k=String(r.data_ref||'');
-      if(k && !byUpload.includes(k)) byUpload.push(k);
-    });
-    if(byUpload.length) return byUpload.slice(0,2);
-
-    // Fallback robusto: ordena por data_ref real (dd/mm/aaaa), não por texto
-    const rec=await sbGet('reporte_carga','select=data_ref,updated_at&order=updated_at.desc&limit=1000');
-    const uniq=[...new Set((rec||[]).map(r=>String(r.data_ref||'')).filter(Boolean))];
-    const toDate=(k)=>{const m=String(k).match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?new Date(+m[3],+m[2]-1,+m[1]):new Date(0);};
-    uniq.sort((a,b)=>toDate(b)-toDate(a));
-    return uniq.slice(0,2);
-  }catch(e){return base;}
-}
-
-async function reloadTable(){
-  try{
-    const refs=await getActiveRefs();
-    if(!refs.length){tableData=[];renderRows();return;}
-    const data=await sbGet('reporte_carga',
-      `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
-    );
-    tableData=(data||[]).sort((a,b)=>{
-      return parseAgendaDateTime(a)-parseAgendaDateTime(b);
-    });
-    renderRows();
-  }catch(e){showErr('Erro ao carregar tabela: '+e.message);}
-}
-
-/* ═══════════════════════════════════════════════════════
-   RELÓGIO — verifica se deve mostrar emoji
-   Regra: se hoje e status não é final e grade definida,
-   mostra 🕐 se falta ≤1h para o início da grade
-═══════════════════════════════════════════════════════ */
-function clockEmoji(row){
-  if(row.dia_ref!=='HOJE') return '';
-  if(STATUS_FINAIS.includes(row.status)) return '';
-  if(!row.grade_carregamento) return '';
-  const grade=parseBR(row.grade_carregamento);
-  if(!grade) return '';
-  const agora=new Date();
-  const diffMin=(grade - agora)/60000; // positivo = grade ainda no futuro
-  // Carreta deve chegar 1h antes = diffMin entre 0 e 60 => alerta
-  if(diffMin>=0 && diffMin<=60) return '<span class="dt-clock" title="Carreta deve chegar até '+new Date(grade-3600000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'">🕐</span>';
-  if(diffMin<0 && diffMin>-120) return '<span style="font-size:11px;opacity:.6" title="Grade iniciada">⏰</span>';
-  return '';
-}
-
-
-async function renderMaterialsBoard(){
-  const board=document.getElementById('mat-board');
-  const twrap=document.getElementById('twrap');
-  if(!board||!twrap) return;
-  twrap.style.display='none';
-  board.style.display='block';
-  board.innerHTML='<div style="color:#64748b;">Carregando materiais…</div>';
-  try{
-    const refs=[...new Set(tableData.map(r=>r.data_ref).filter(Boolean))];
-    if(!refs.length){board.innerHTML='<div style="color:#334155;">Sem DTs carregadas.</div>';return;}
-    const q='data_ref=in.("'+refs.join('","')+'")&order=dt.asc,ordem.asc';
-    const mats=await sbGet('reporte_materiais',q);
-    if(!mats||!mats.length){board.innerHTML='<div style="color:#334155;">Nenhum material salvo para as DTs atuais.</div>';return;}
-    const byDT={};
-    mats.forEach(m=>{
-      const key=String(m.dt||'');
-      if(!key) return;
-      if(!byDT[key]) byDT[key]={};
-      const mat=String(m.material||'').trim();
-      if(!mat) return;
-      const qtd=Number(String(m.quantidade||'0').replace(',','.'))||0;
-      byDT[key][mat]=(byDT[key][mat]||0)+qtd;
-    });
-    const ordem=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b)).map(r=>String(r.dt));
-    const uniq=[]; ordem.forEach(dt=>{if(!uniq.includes(dt)) uniq.push(dt);});
-    let html='';
-    uniq.forEach(dt=>{
-      const itens=byDT[dt]; if(!itens) return;
-      const pairs=Object.entries(itens);
-      const total=pairs.reduce((s,[,v])=>s+v,0);
-      html+='<div class="mat-group"><div class="mat-group-h"><span>DT '+dt+'</span><span>'+pairs.length+' materiais · Qtd total '+Math.round(total)+'</span></div><div class="mat-group-b">';
-      pairs.forEach(([mat,q])=>{html+='<div class="mat-item"><span>'+mat+'</span><span style="text-align:right;color:#a7f3d0;font-weight:700;">'+Math.round(q)+'</span></div>';});
-      html+='</div></div>';
-    });
-    board.innerHTML=html||'<div style="color:#334155;">Nenhum material encontrado para as DTs listadas.</div>';
-  }catch(e){
-    board.innerHTML='<div style="color:#ef4444;">Erro ao carregar materiais: '+e.message+'</div>';
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
-   RENDERIZAR
-═══════════════════════════════════════════════════════ */
-function renderRows(){
-  const board=document.getElementById('mat-board');
-  const twrap=document.getElementById('twrap');
-  if(board) board.style.display='none';
-  if(twrap) twrap.style.display='block';
-  // Resumo de status
-  const sum={};
-  tableData.forEach(r=>{sum[r.status]=(sum[r.status]||0)+1;});
-  const sw=document.getElementById('tstatus');sw.innerHTML='';
-  Object.entries(sum).forEach(([s,n])=>{
-    const c=SC[s]||'#334155';
-    const sp=document.createElement('span');sp.className='sbadge';
-    sp.style.cssText=`background:${c}22;border:1px solid ${c}55;color:${c}`;
-    sp.textContent=s+': '+n;sw.appendChild(sp);
-  });
-  const cH=tableData.filter(r=>r.dia_ref==='HOJE').length;
-  const cA=tableData.filter(r=>r.dia_ref==='AMANHÃ').length;
-  document.getElementById('tinfo').innerHTML=
-    `<span style="color:#60a5fa">${cH} hoje</span> · <span style="color:#a78bfa">${cA} amanhã</span>`;
-
-  // Filtro de aba
-  let rows=[...tableData].sort((a,b)=>parseAgendaDateTime(a)-parseAgendaDateTime(b));
-  if(currentTableTab==='finalizadas'){
-    rows=rows.filter(r=>STATUS_FINAIS.includes(r.status));
-  }else{
-    rows=rows.filter(r=>!STATUS_FINAIS.includes(r.status));
-  }
-  if(dtSearchTerm){
-    rows=rows.filter(r=>String(r.dt||'').includes(dtSearchTerm));
-  }
-
-  const tbody=document.getElementById('tbody');tbody.innerHTML='';
-
-  // Atualiza badge da aba finalizadas
-  const nFin=tableData.filter(r=>STATUS_FINAIS.includes(r.status)).length;
-  document.getElementById('tab-finalizadas').textContent=`🏁 EXPEDIDAS / NO SHOW / RECUSADAS (${nFin})`;
-
-  rows.forEach(row=>{
-    const isH=row.dia_ref==='HOJE';
-    const c=SC[row.status]||'#334155';
-    const tr=document.createElement('tr');
-    const isFinal=STATUS_FINAIS.includes(row.status);
-    const isReagend=row.reagendada;
-    if(isReagend) tr.className='row-reagendada-flag';
-    else tr.className=isH?'row-hoje':'row-amanha';
-    const op=(row.tipo_operacao||'').toUpperCase();
-    const opTag=op.includes('TRANSFER')
-      ?'<span class="tag-transf">🔄 TRANSFERÊNCIA</span>'
-      :op.includes('VENDA')
-      ?'<span class="tag-venda">🛒 VENDA NORMAL</span>'
-      :'<span class="tag-sem">—</span>';
-    const diaTag=isH?'<span class="tag-hoje">HOJE</span>':'<span class="tag-amanha">AMANHÃ</span>';
-    const clock=clockEmoji(row);
-    // Botão reagendamento — aparece nas finalizadas
-    const reagBtn=isFinal
-      ? `<button class="bg" style="font-size:10px;padding:3px 9px;border-color:#f59e0b55;color:#f59e0b;" onclick="openReagend('${row.dt}','${row.data_ref}')">🔄 Reagendar</button>`
-      : '';
-    tr.innerHTML=
-      `<td>${diaTag}</td>`+
-      `<td><span class="td-dt" onclick="openPanel('${row.dt}','${row.data_ref}')">${clock}${row.dt}</span></td>`+
-      `<td class="td-transp">${row.transportadora||'—'}</td>`+
-      `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
-      `<td class="td-time">${row.fim_carregamento||'—'}</td>`+
-      `<td><input type="time" value="${row.hora_chegada||''}" onchange="saveField('${row.dt}','${row.data_ref}','hora_chegada',this.value)"/></td>`+
-      `<td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><select class="ss" style="background:${c}22;border:1.5px solid ${c}99;color:${c}" onchange="saveStatus('${row.dt}','${row.data_ref}',this.value)">`+
-        STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
-      `</select>${opTag}</div></td>`+
-      `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
-      `<td class="td-sm">${row.toneladas||'—'}</td>`+
-      `<td>${opTag}</td>`+
-      `<td class="td-ag">${row.agenda||'—'}</td>`+
-      `<td>${reagBtn}</td>`;
-    tbody.appendChild(tr);
-  });
-
-  if(!rows.length){
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td colspan="12" style="text-align:center;padding:30px;color:#334155;font-size:13px;">
-      ${currentTableTab==='finalizadas'?'Nenhuma DT finalizada ainda.':'Todas as DTs do dia estão finalizadas.'}
-    </td>`;
-    tbody.appendChild(tr);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
-   SALVAR CAMPO GENÉRICO
-═══════════════════════════════════════════════════════ */
-async function saveField(dt,dataRef,field,value){
-  spin(true);
-  try{
-    await sbPatch('reporte_carga',{[field]:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
-    const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    if(row){row[field]=value;renderRows();}
-  }catch(e){showErr('Erro ao salvar: '+e.message);}
-  spin(false);
-}
-
-/* SALVAR STATUS + gravar no log */
-async function saveStatus(dt,dataRef,value){
-  spin(true);
-  try{
-    await sbPatch('reporte_carga',{status:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
-    const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    // Grava log
-    await sbInsert('reporte_logs',[{
-      dt:String(dt),
-      data_ref:String(dataRef),
-      status:String(value),
-      transportadora:row?String(row.transportadora||''):'',
-      created_at:new Date().toISOString(),
-    }]);
-    if(row){row.status=value;renderRows();}
-  }catch(e){showErr('Erro ao salvar status: '+e.message);}
-  spin(false);
-}
-
-/* ═══════════════════════════════════════════════════════
-   LOGS
-═══════════════════════════════════════════════════════ */
-function openLogs(){
-  document.getElementById('log-overlay').classList.add('open');
-  loadLogs();
-}
-function closeLogs(){
-  document.getElementById('log-overlay').classList.remove('open');
-}
-async function loadLogs(searchDT=""){
-  const list=document.getElementById('log-list');
-  list.innerHTML='<div style="color:#64748b;padding:12px;">Carregando…</div>';
-  try{
-    const logs=await sbGet('reporte_logs','order=created_at.desc&limit=200');
-    let rows=logs||[];
-    const filtro=String(searchDT||'').replace(/\D/g,'');
-    if(filtro) rows=rows.filter(l=>String(l.dt||'').includes(filtro));
-    if(!rows.length){list.innerHTML='<div style="color:#334155;padding:12px;">Nenhum log para o filtro informado.</div>';return;}
-    list.innerHTML='';
-    rows.forEach(l=>{
-      const sc=SC[l.status]||'#64748b';
-      const div=document.createElement('div');
-      div.className='log-entry';
-      div.innerHTML=
-        `<span style="color:#64748b">${l.created_at?new Date(l.created_at).toLocaleString('pt-BR'):'-'}</span>`+
-        `<span style="color:#93c5fd;font-weight:700">${l.dt||'-'}</span>`+
-        `<span style="background:${sc}22;border:1px solid ${sc}55;color:${sc};border-radius:4px;padding:2px 8px;font-weight:700;">${l.status||'-'}</span>`+
-        `<span style="color:#94a3b8">${l.transportadora||'—'}</span>`;
-      list.appendChild(div);
-    });
-  }catch(e){
-    list.innerHTML='<div style="color:#ef4444;padding:12px;">Erro ao carregar logs: '+e.message+'<br/><small style="color:#64748b">Verifique se a tabela reporte_logs existe no Supabase.</small></div>';
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
-   REAGENDAMENTO
-═══════════════════════════════════════════════════════ */
-function openReagend(dt,dataRef){
-  reagendDT={dt,dataRef};
-  const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef)||{};
-  document.getElementById('reagend-dt-num').textContent=dt;
-  document.getElementById('reagend-obs').value='';
-  // Pré-preenche com grade atual
-  if(row.grade_carregamento){
-    const g=parseBR(row.grade_carregamento);
-    if(g) document.getElementById('reagend-grade').value=g.toISOString().slice(0,16);
-  }
-  if(row.fim_carregamento){
-    const f=parseBR(row.fim_carregamento);
-    if(f) document.getElementById('reagend-fim').value=f.toISOString().slice(0,16);
-  }
-  document.getElementById('reagend-overlay').classList.add('open');
-}
-function closeReagend(){
-  document.getElementById('reagend-overlay').classList.remove('open');
-  reagendDT=null;
-}
-async function confirmarReagendamento(){
-  if(!reagendDT)return;
-  const {dt,dataRef}=reagendDT;
-  const gradeVal=document.getElementById('reagend-grade').value;
-  const fimVal=document.getElementById('reagend-fim').value;
-  const obs=document.getElementById('reagend-obs').value.trim();
-  if(!gradeVal){showErr('Informe a nova grade.');return;}
-  // Converte datetime-local para formato do sistema
-  const fmtLocal=v=>{
-    if(!v)return '';
-    const d=new Date(v);
-    return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-  };
-  spin(true);
-  try{
-    await sbPatch('reporte_carga',{
-      grade_carregamento:fmtLocal(gradeVal),
-      fim_carregamento:fimVal?fmtLocal(fimVal):'',
-      status:'AG CHEGADA',
-      reagendada:true,
-      updated_at:new Date().toISOString(),
-    },{dt,data_ref:dataRef});
-    // Log do reagendamento
-    await sbInsert('reporte_logs',[{
-      dt:String(dt),
-      data_ref:String(dataRef),
-      status:'REAGENDADA',
-      transportadora:obs||'Reagendamento via sistema',
-      created_at:new Date().toISOString(),
-    }]);
-    const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    if(row){
-      row.grade_carregamento=fmtLocal(gradeVal);
-      row.fim_carregamento=fimVal?fmtLocal(fimVal):'';
-      row.status='AG CHEGADA';
-      row.reagendada=true;
-    }
-    showOk('DT '+dt+' reagendada! Aparece em destaque laranja.');
-    closeReagend();
-    renderRows();
-  }catch(e){showErr('Erro ao reagendar: '+e.message);}
-  spin(false);
-}
-
-/* ═══════════════════════════════════════════════════════
-   PAINEL — MAPA DE SEPARAÇÃO
-═══════════════════════════════════════════════════════ */
-async function openPanel(dt,dataRef){
-  panelDT={dt,dataRef};
-  const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef)||{};
-  document.getElementById('ptitle').textContent='📦  DT '+dt;
-  const op=(row.tipo_operacao||'').toUpperCase();
-  const opBadge=op.includes('TRANSFER')
-    ?'<span class="tag-transf" style="padding:3px 10px;font-size:11px;">🔄 TRANSFERÊNCIA</span>'
-    :op.includes('VENDA')
-    ?'<span class="tag-venda"  style="padding:3px 10px;font-size:11px;">🛒 VENDA NORMAL</span>'
-    :'';
-  document.getElementById('pdt-info').innerHTML=
-    `<b style="color:#93c5fd;font-size:15px">${dt}</b>  ${opBadge}<br/>`+
-    `<span style="color:#64748b">Transportadora:</span> <b style="color:#e2e8f0">${row.transportadora||'—'}</b><br/>`+
-    `<span style="color:#64748b">Grade:</span> <b style="color:#a5b4fc">${row.grade_carregamento||'—'}</b>  →  <b style="color:#a5b4fc">${row.fim_carregamento||'—'}</b>`;
-
-  let listaMats=[];
-  try{
-    const saved=await sbGet('reporte_materiais',`dt=eq.${encodeURIComponent(dt)}&data_ref=eq.${encodeURIComponent(dataRef)}&order=ordem.asc`);
-    listaMats=saved||[];
-  }catch(e){}
-
-  if(!listaMats.length){
-    const dtKey=String(dt);
-    const mapa=exportMap[dtKey]||[];
-    listaMats=mapa.map((m,i)=>({material:String(m.material),quantidade:String(m.quantidade),ordem:i}));
-  }
-
-  document.getElementById('pobs').value='';
-  renderMatList(listaMats);
-  document.getElementById('panel-overlay').style.display='block';
-  document.getElementById('panel').classList.add('open');
-}
-
-function closePanel(){
-  document.getElementById('panel-overlay').style.display='none';
-  document.getElementById('panel').classList.remove('open');
-  panelDT=null;
-}
-
-function renderMatList(mats){
-  const list=document.getElementById('mat-list');list.innerHTML='';
-  (mats||[]).forEach(m=>{
-    const row=document.createElement('div');row.className='mat-row';
-    row.innerHTML=
-      `<input class="mat-input" placeholder="Material" value="${m.material||''}" data-f="material"/>`+
-      `<input class="mat-input" placeholder="Qtd"      value="${m.quantidade||''}" data-f="quantidade"/>`+
-      `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
-    list.appendChild(row);
-  });
-}
-
-function addMatRow(){
-  const row=document.createElement('div');row.className='mat-row';
-  row.innerHTML=
-    `<input class="mat-input" placeholder="Material" data-f="material"/>`+
-    `<input class="mat-input" placeholder="Qtd"      data-f="quantidade"/>`+
-    `<button class="mat-del" onclick="this.parentElement.remove()">🗑</button>`;
-  document.getElementById('mat-list').appendChild(row);
-  row.querySelector('input').focus();
-}
-
-async function saveMateriais(){
-  if(!panelDT)return;
-  const {dt,dataRef}=panelDT;
-  const rows=[...document.getElementById('mat-list').querySelectorAll('.mat-row')];
-  const mats=rows.map((r,i)=>({
-    dt,data_ref:dataRef,
-    material:r.querySelector('[data-f=material]').value.trim(),
-    quantidade:r.querySelector('[data-f=quantidade]').value.trim(),
-    observacao:document.getElementById('pobs').value.trim(),
-    ordem:i
-  })).filter(m=>m.material);
-  spin(true);
-  try{
-    await sbDelete('reporte_materiais',{dt,data_ref:dataRef});
-    if(mats.length)await sbInsert('reporte_materiais',mats);
-    showOk('Materiais da DT '+dt+' salvos!');
-    closePanel();
-  }catch(e){showErr('Erro ao salvar materiais: '+e.message);}
-  spin(false);
-}
-
-/* ═══════════════════════════════════════════════════════
-   CARREGAR AO ABRIR
-═══════════════════════════════════════════════════════ */
-async function tryLoadExisting(){
-  try{
-    const refs=await getActiveRefs();
-    if(!refs.length){tableData=[];renderRows();return;}
-    const data=await sbGet('reporte_carga',
-      `data_ref=in.("${refs.join('\",\"')}")&order=dia_ref.asc,agenda.asc`
-    );
-    if(data&&data.length){
-      tableData=data.sort((a,b)=>{
-        const ga=parseBR(a.grade_carregamento)||new Date(9999,0);
-        const gb=parseBR(b.grade_carregamento)||new Date(9999,0);
-        return ga-gb;
-      });
-      // Popula tipoOpMap a partir do banco para o painel funcionar sem ZLES002
-      tableData.forEach(r=>{ if(r.dt&&r.tipo_operacao) tipoOpMap[r.dt]=r.tipo_operacao; });
-      renderRows();
-      setStep(4);
-      showOk('Tabela carregada do banco com a agenda mais recente salva.');
-    }
-  }catch(e){/*sem dados, fica no passo 1*/}
-}
-
-/* ═══════════════════════════════════════════════════════
-   DRAG & DROP
-═══════════════════════════════════════════════════════ */
-['dz1','dz2','dz3'].forEach(id=>{
-  const el=document.getElementById(id);if(!el)return;
-  el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drag');});
-  el.addEventListener('dragleave',()=>el.classList.remove('drag'));
-  el.addEventListener('drop',e=>{
-    e.preventDefault();el.classList.remove('drag');
-    const f=e.dataTransfer.files[0];if(!f)return;
-    if(id==='dz1')processAgend(f);
-    else if(id==='dz2')processZles(f);
-    else processExtra(f);
-  });
-});
-
-/* ═══════════════════════════════════════════════════════
-   EXPORT CSV
-═══════════════════════════════════════════════════════ */
-function exportCSV(){
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','STATUS','DESC. DOCUMENTO','TONELADAS','OPERAÇÃO','AGENDA'];
-  const rows=tableData.map(r=>[r.dia_ref,r.dt,r.transportadora,r.grade_carregamento,r.fim_carregamento,r.hora_chegada,r.status,r.descricao_documento||'',r.toneladas,r.tipo_operacao||'',r.agenda]);
-  const csv=[cols,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(';')).join('\n');
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
-  a.download='reporte_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';
-  a.click();
-}
-</script>
+<script src="cco_script_fim_agenda.js"></script>
 </body>
 </html>
