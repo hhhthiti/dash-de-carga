@@ -897,6 +897,10 @@ function parseAnyDate(v){
   }
   const raw=String(v||'').trim();
   if(!raw) return null;
+  if(/^\d{4,6}(?:[,.]\d+)?$/.test(raw) && typeof XLSX!=='undefined'){
+    const d=XLSX.SSF.parse_date_code(Number(raw.replace(',','.')));
+    if(d) return new Date(d.y,d.m-1,d.d,d.H||0,d.M||0,Math.floor(d.S||0));
+  }
   const br=parseBR(raw);
   if(br) return br;
   const iso=raw.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2}))?/);
@@ -926,8 +930,22 @@ function isEmptyDoca(v){
 
 function isLocalFinal1110Or1111(v){
   const s=String(v||'').trim().replace(/\.0+$/,'');
-  const m=s.match(/(\d+)\s*$/);
-  return !!(m && /(?:1110|1111)$/.test(m[1]));
+  const nums=s.match(/\d+/g)||[];
+  const last=nums.length?nums[nums.length-1].replace(/^0+(?=\d)/,''):'';
+  return /(?:1110|1111)$/.test(last);
+}
+
+function agendaInvalidSummary(totalRows){
+  const counts=new Map();
+  (agendaDiagRows||[]).forEach(r=>counts.set(r.motivo||'Sem motivo', (counts.get(r.motivo||'Sem motivo')||0)+1));
+  const parts=[...counts.entries()]
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,4)
+    .map(([motivo,total])=>`${total} ${motivo}`);
+  const sample=(agendaDiagRows||[]).slice(0,3)
+    .map(r=>`linha ${r.linha||'?'}: LOCAL="${r.LOCAL||'-'}", DOCA="${r.DOCA||'-'}", AGENDA="${fmtDT(r.AGENDA,true)||'-'}"`)
+    .join(' | ');
+  return `Nenhuma linha válida encontrada. Lidas ${totalRows||0} linhas. Motivos: ${parts.join('; ')||'sem diagnostico'}.${sample?' Amostras: '+sample:''}`;
 }
 
 function isDocaFabMogSemIfnt(docaNorm){
@@ -1064,7 +1082,7 @@ function processAgend(file){
         });
       }
       agendRows=dedupeAgendaRowsByDTRef(agendRows);
-      if(!agendRows.length)throw new Error('Nenhuma linha válida encontrada (LOCAL terminando em 1110/1111, DOCA preenchida e sem FAB_MOG sem IFNT).');
+      if(!agendRows.length)throw new Error(agendaInvalidSummary(records.length));
       hideInf();
       if(isInlineUpload){
         // Upload feito de dentro da tabela: pula passo 2/3 e vai direto para o banco
