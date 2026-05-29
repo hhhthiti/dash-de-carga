@@ -884,9 +884,69 @@ function normHeader(v){
 }
 
 function pickHeader(keys,...names){
-  const wanted=names.map(normHeader);
-  return keys.find(k=>wanted.includes(normHeader(k))) ||
-    keys.find(k=>wanted.some(w=>normHeader(k).includes(w)||w.includes(normHeader(k)))) || '';
+  const normalizedKeys=(keys||[]).map(k=>({raw:k,norm:normHeader(k)})).filter(k=>k.norm);
+  const wanted=(names||[]).map(normHeader).filter(Boolean);
+  for(const w of wanted){
+    const exact=normalizedKeys.find(k=>k.norm===w);
+    if(exact) return exact.raw;
+  }
+  for(const w of wanted){
+    const starts=normalizedKeys.find(k=>k.norm.startsWith(w+' ')||k.norm.endsWith(' '+w));
+    if(starts) return starts.raw;
+  }
+  for(const w of wanted){
+    const contains=normalizedKeys.find(k=>k.norm.includes(w)||w.includes(k.norm));
+    if(contains) return contains.raw;
+  }
+  return '';
+}
+
+
+function pickAgendaStartHeader(keys,...names){
+  const withoutEnd=(keys||[]).filter(k=>{
+    const n=normHeader(k);
+    return !/^(FIM|TERMINO|TÉRMINO)\b/.test(n) && !/\b(FIM|TERMINO|TÉRMINO)$/.test(n);
+  });
+  return pickHeader(withoutEnd,...names);
+}
+
+function getAgendaHeaderNames(){
+  return {
+    dt:['DT','Nº TRANSPORTE','N TRANSPORTE','NUMERO TRANSPORTE','NÚMERO TRANSPORTE','TRANSPORTE','NR TRANSPORTE','NR. TRANSPORTE'],
+    agenda:['AGENDA TRANSPORTADOR','INICIO AGENDA TRANSPORTADOR','INÍCIO AGENDA TRANSPORTADOR','DATA/HORA AGENDA TRANSPORTADOR','DATA AGENDA TRANSPORTADOR','AGENDA'],
+    local:['LOCAL','LOCAL CARREGAMENTO','LOCAL DE CARREGAMENTO','CENTRO','CENTRO CD','CD','PLANTA'],
+    transportadora:['NOME TRANSPORTADORA','TRANSPORTADORA','NOME TRANSP','TRANSP.','TRANSP'],
+    fim:['FIM AGENDA TRANSPORTADOR','FIM DA AGENDA TRANSPORTADOR','DATA/HORA FIM AGENDA TRANSPORTADOR','FIM AGENDA','AGENDA FIM','FIM'],
+    peso:['PESO','PESO LIQUIDO','PESO LÍQUIDO'],
+    tipo:['TIPO VEICULO','TIPO VEÍCULO','TIPO DE VEICULO','TIPO DE VEÍCULO','TIPO'],
+    doca:['DOCA','DOCA CARREGAMENTO','DOCA DE CARREGAMENTO'],
+  };
+}
+
+function getAgendaHeaderMap(keys){
+  const h=getAgendaHeaderNames();
+  return {
+    DT:pickHeader(keys,...h.dt),
+    LOCAL:pickHeader(keys,...h.local),
+    TRANSPORTADORA:pickHeader(keys,...h.transportadora),
+    AGENDA:pickAgendaStartHeader(keys,...h.agenda),
+    FIM_AGENDA:pickHeader(keys,...h.fim),
+    PESO:pickHeader(keys,...h.peso),
+    TIPO:pickHeader(keys,...h.tipo),
+    DOCA:pickHeader(keys,...h.doca),
+  };
+}
+
+function agendaHeaderScore(keys){
+  const map=getAgendaHeaderMap(keys);
+  let score=0;
+  if(map.DT) score+=4;
+  if(map.AGENDA) score+=4;
+  if(map.LOCAL) score+=2;
+  if(map.DOCA) score+=2;
+  if(map.FIM_AGENDA) score+=1;
+  if(map.TRANSPORTADORA) score+=1;
+  return score;
 }
 
 function parseAnyDate(v){
@@ -957,46 +1017,65 @@ function getAgendaRecordsFromWorkbook(buf){
     if(typeof XLSX==='undefined') return [];
     const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
-    if(!rows.length) return [];
-    const keys=Object.keys(rows[0]);
-    const kDT=pickHeader(keys,'DT','Nº TRANSPORTE','N TRANSPORTE','TRANSPORTE','NR TRANSPORTE');
-    const kAg=pickHeader(keys,'AGENDA TRANSPORTADOR','AGENDA','INICIO AGENDA TRANSPORTADOR','INICIO AGENDA');
-    if(!kDT||!kAg) return [];
-    return rows.map((row,i)=>({
-      linha:i+2,
-      DT:row[kDT],
-      LOCAL:row[pickHeader(keys,'LOCAL','CENTRO','CD')]||'',
-      TRANSPORTADORA:row[pickHeader(keys,'NOME TRANSPORTADORA','TRANSPORTADORA','NOME TRANSP')]||'',
-      AGENDA:row[kAg],
-      FIM_AGENDA:row[pickHeader(keys,'FIM AGENDA TRANSPORTADOR','FIM AGENDA','AGENDA FIM','FIM')]||'',
-      PESO:row[pickHeader(keys,'PESO','PESO LIQUIDO')]||'',
-      TIPO:row[pickHeader(keys,'TIPO VEICULO','TIPO VEÍCULO','TIPO')]||'',
-      DOCA:row[pickHeader(keys,'DOCA','DOCA CARREGAMENTO')]||'',
+    const table=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true,blankrows:false});
+    if(!table.length) return [];
+    let headerIdx=-1, header=[], bestScore=0;
+    table.slice(0,50).forEach((row,i)=>{
+      const keys=(row||[]).map(v=>String(v||'').trim());
+      const score=agendaHeaderScore(keys);
+      if(score>bestScore){bestScore=score;headerIdx=i;header=keys;}
+    });
+    const map=getAgendaHeaderMap(header);
+    if(headerIdx<0||!map.DT||!map.AGENDA) return [];
+    const idx=k=>k?header.indexOf(k):-1;
+    const get=(cols,k)=>{const i=idx(k);return i>=0?cols[i]:'';};
+    return table.slice(headerIdx+1).map((cols,i)=>({
+      linha:headerIdx+i+2,
+      DT:get(cols,map.DT),
+      LOCAL:get(cols,map.LOCAL),
+      TRANSPORTADORA:get(cols,map.TRANSPORTADORA),
+      AGENDA:get(cols,map.AGENDA),
+      FIM_AGENDA:get(cols,map.FIM_AGENDA),
+      PESO:get(cols,map.PESO),
+      TIPO:get(cols,map.TIPO),
+      DOCA:get(cols,map.DOCA),
     })).filter(r=>String(r.DT||'').trim());
   }catch(e){return [];}
+}
+
+function splitAgendaLine(line,sep){
+  const cols=[];
+  let cur='', inQ=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"'){
+      if(inQ&&line[i+1]==='"'){cur+='"';i++;}
+      else inQ=!inQ;
+    }else if(c===sep&&!inQ){
+      cols.push(cur);cur='';
+    }else cur+=c;
+  }
+  cols.push(cur);
+  return cols.map(s=>String(s||'').trim().replace(/^"|"$/g,''));
 }
 
 function getAgendaRecordsFromText(buf){
   const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
   if(!lines.length) return [];
-  const sep=lines[0].includes('\t')?'\t':(lines[0].includes(';')?';':',');
-  const h=lines[0].split(sep).map(s=>s.trim());
-  const keys=h;
-  const kDT=pickHeader(keys,'DT');
-  const kAg=pickHeader(keys,'AGENDA TRANSPORTADOR','AGENDA');
-  if(!kDT||!kAg) throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
-  const idx=k=>h.indexOf(k);
-  const get=(cols,k)=>k?cols[idx(k)]||'':'';
-  const kLoc=pickHeader(keys,'LOCAL','CENTRO','CD');
-  const kTransp=pickHeader(keys,'NOME TRANSPORTADORA','TRANSPORTADORA','NOME TRANSP');
-  const kFim=pickHeader(keys,'FIM AGENDA TRANSPORTADOR','FIM AGENDA','AGENDA FIM','FIM');
-  const kPeso=pickHeader(keys,'PESO','PESO LIQUIDO');
-  const kTipo=pickHeader(keys,'TIPO VEICULO','TIPO VEÍCULO','TIPO');
-  const kDoca=pickHeader(keys,'DOCA','DOCA CARREGAMENTO');
-  return lines.slice(1).map((line,i)=>{
-    const c=line.split(sep);
-    return {linha:i+2,DT:get(c,kDT),LOCAL:get(c,kLoc),TRANSPORTADORA:get(c,kTransp),AGENDA:get(c,kAg),FIM_AGENDA:get(c,kFim),PESO:get(c,kPeso),TIPO:get(c,kTipo),DOCA:get(c,kDoca)};
+  const sep=lines.find(l=>l.includes('\t'))?'\t':(lines.find(l=>l.includes(';'))?';':',');
+  let headerIdx=-1, h=[], bestScore=0;
+  lines.slice(0,50).forEach((line,i)=>{
+    const keys=splitAgendaLine(line,sep);
+    const score=agendaHeaderScore(keys);
+    if(score>bestScore){bestScore=score;headerIdx=i;h=keys;}
+  });
+  const map=getAgendaHeaderMap(h);
+  if(headerIdx<0||!map.DT||!map.AGENDA) throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+(h.length?h.join(' | '):'nenhuma linha de cabeçalho reconhecida'));
+  const idx=k=>k?h.indexOf(k):-1;
+  const get=(cols,k)=>{const i=idx(k);return i>=0?cols[i]||'':'';};
+  return lines.slice(headerIdx+1).map((line,i)=>{
+    const c=splitAgendaLine(line,sep);
+    return {linha:headerIdx+i+2,DT:get(c,map.DT),LOCAL:get(c,map.LOCAL),TRANSPORTADORA:get(c,map.TRANSPORTADORA),AGENDA:get(c,map.AGENDA),FIM_AGENDA:get(c,map.FIM_AGENDA),PESO:get(c,map.PESO),TIPO:get(c,map.TIPO),DOCA:get(c,map.DOCA)};
   }).filter(r=>String(r.DT||'').trim());
 }
 
