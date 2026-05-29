@@ -679,7 +679,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <div><label class="sl">SERVIÇO DE E-MAIL</label><select id="cfg-email-provider" class="mat-input"><option value="">Não configurado</option><option value="resend">Resend</option><option value="sendgrid">SendGrid</option><option value="brevo">Brevo</option><option value="smtp">SMTP/Nodemailer</option></select></div>
         <div><label class="sl">REMETENTE</label><input id="cfg-email-from" class="mat-input" placeholder="operacao@suaempresa.com"/></div>
       </div>
-      <div><label class="sl">URL DA AUTOMAÇÃO DE ENVIO (OPCIONAL)</label><input id="cfg-email-endpoint" class="mat-input" placeholder="https://.../send-report"/></div>
+      <div><label class="sl">URL DA AUTOMAÇÃO DE ENVIO (OPCIONAL)</label><input id="cfg-email-endpoint" class="mat-input" placeholder="http://localhost:8787/send-report"/></div>
       <div><label class="sl">DESTINATÁRIOS</label><textarea id="cfg-email-to" class="obs-area" placeholder="gestor@empresa.com; operacao@empresa.com"></textarea></div>
       <div><label class="sl">CÓPIA (CC)</label><input id="cfg-email-cc" class="mat-input" placeholder="opcional"/></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="sg-form-grid">
@@ -688,7 +688,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       </div>
       <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;color:#94a3b8;font-size:12px;line-height:1.7;">
         <b style="color:#e2e8f0;">Como funciona:</b><br>
-        Serviço de e-mail é quem dispara o envio, remetente é o endereço que aparece como origem, destinatários são quem recebe, CC recebe em cópia e os horários definem o automático. Se a URL da automação não estiver configurada, o envio manual abre um e-mail pronto no seu programa de e-mail; para enviar sozinho, precisa de backend/Edge Function/Cron com chave protegida.
+        Serviço de e-mail é quem dispara o envio, remetente é o endereço que aparece como origem, destinatários são quem recebe, CC recebe em cópia e os horários definem o automático. Para Brevo, deixe o servidor local de e-mail aberto e use http://localhost:8787/send-report.
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="bexp" onclick="rpEnviarEmailAgora()" style="background:#0e7490;border-color:#06b6d4;">Enviar e-mail agora</button>

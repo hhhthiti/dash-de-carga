@@ -2415,10 +2415,11 @@ function closeConfigModal(){
 
 function saveConfigModal(){
   const val=id=>document.getElementById(id)?.value || '';
+  const provider=val('cfg-email-provider');
   appConfig={
-    emailProvider:val('cfg-email-provider'),
+    emailProvider:provider,
     emailFrom:val('cfg-email-from').trim(),
-    emailEndpoint:val('cfg-email-endpoint').trim(),
+    emailEndpoint:val('cfg-email-endpoint').trim() || (provider==='brevo'?'http://localhost:8787/send-report':''),
     emailTo:getEmailList(val('cfg-email-to')),
     emailCc:getEmailList(val('cfg-email-cc')),
     reportInicial:val('cfg-report-inicial') || '00:00',
@@ -2434,10 +2435,11 @@ function syncConfigFromOpenModal(){
   const ov=document.getElementById('config-overlay');
   if(!ov || ov.style.display==='none') return;
   const val=id=>document.getElementById(id)?.value || '';
+  const provider=val('cfg-email-provider');
   appConfig={
-    emailProvider:val('cfg-email-provider'),
+    emailProvider:provider,
     emailFrom:val('cfg-email-from').trim(),
-    emailEndpoint:val('cfg-email-endpoint').trim(),
+    emailEndpoint:val('cfg-email-endpoint').trim() || (provider==='brevo'?'http://localhost:8787/send-report':''),
     emailTo:getEmailList(val('cfg-email-to')),
     emailCc:getEmailList(val('cfg-email-cc')),
     reportInicial:val('cfg-report-inicial') || '00:00',
