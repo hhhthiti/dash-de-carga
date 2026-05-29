@@ -442,13 +442,13 @@ let matFiltro='todos';
 function switchTableTab(tab){
   if(tab==='materiais') tab='todas';
   currentTableTab=tab;
-  const allTabs=['todas','finalizadas','reporte','planejamento','semgrade','dtfake','nf'];
+  const allTabs=['todas','finalizadas','reporte','planejamento','mudancas','semgrade','dtfake','nf'];
   allTabs.forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el) el.classList.toggle('active',t===tab);
   });
   // Hide all content areas first
-  ['mat-board','twrap','materiais-wrap','reporte-wrap','planejamento-wrap','semgrade-wrap','dtfake-wrap','nf-wrap'].forEach(id=>{
+  ['mat-board','twrap','materiais-wrap','reporte-wrap','planejamento-wrap','mudancas-wrap','semgrade-wrap','dtfake-wrap','nf-wrap'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.style.display='none';
   });
@@ -459,6 +459,9 @@ function switchTableTab(tab){
     document.getElementById('planejamento-wrap').style.display='block';
     renderReporte();
     renderPlanejamento();
+  } else if(tab==='mudancas'){
+    document.getElementById('mudancas-wrap').style.display='block';
+    renderMudancasGrade();
   } else if(tab==='semgrade'){
     document.getElementById('semgrade-wrap').style.display='block';
     renderSemGrade();
@@ -872,6 +875,86 @@ function decodeBuf(buf){
   return new TextDecoder('latin1').decode(buf);
 }
 
+
+function normHeader(v){
+  return String(v||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^A-Z0-9]+/gi,' ')
+    .trim().toUpperCase();
+}
+
+function pickHeader(keys,...names){
+  const wanted=names.map(normHeader);
+  return keys.find(k=>wanted.includes(normHeader(k))) ||
+    keys.find(k=>wanted.some(w=>normHeader(k).includes(w)||w.includes(normHeader(k)))) || '';
+}
+
+function parseAnyDate(v){
+  if(v instanceof Date && !Number.isNaN(v.getTime())) return v;
+  if(typeof v==='number' && Number.isFinite(v) && typeof XLSX!=='undefined'){
+    const d=XLSX.SSF.parse_date_code(v);
+    if(d) return new Date(d.y,d.m-1,d.d,d.H||0,d.M||0,Math.floor(d.S||0));
+  }
+  return parseBR(String(v||''));
+}
+
+function getAgendaRecordsFromWorkbook(buf){
+  try{
+    if(typeof XLSX==='undefined') return [];
+    const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
+    if(!rows.length) return [];
+    const keys=Object.keys(rows[0]);
+    const kDT=pickHeader(keys,'DT','Nº TRANSPORTE','N TRANSPORTE','TRANSPORTE','NR TRANSPORTE');
+    const kAg=pickHeader(keys,'AGENDA TRANSPORTADOR','AGENDA','INICIO AGENDA TRANSPORTADOR','INICIO AGENDA');
+    if(!kDT||!kAg) return [];
+    return rows.map((row,i)=>({
+      linha:i+2,
+      DT:row[kDT],
+      LOCAL:row[pickHeader(keys,'LOCAL','CENTRO','CD')]||'',
+      TRANSPORTADORA:row[pickHeader(keys,'NOME TRANSPORTADORA','TRANSPORTADORA','NOME TRANSP')]||'',
+      AGENDA:row[kAg],
+      FIM_AGENDA:row[pickHeader(keys,'FIM AGENDA TRANSPORTADOR','FIM AGENDA','AGENDA FIM','FIM')]||'',
+      PESO:row[pickHeader(keys,'PESO','PESO LIQUIDO')]||'',
+      TIPO:row[pickHeader(keys,'TIPO VEICULO','TIPO VEÍCULO','TIPO')]||'',
+      DOCA:row[pickHeader(keys,'DOCA','DOCA CARREGAMENTO')]||'',
+    })).filter(r=>String(r.DT||'').trim());
+  }catch(e){return [];}
+}
+
+function getAgendaRecordsFromText(buf){
+  const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length) return [];
+  const sep=lines[0].includes('\t')?'\t':(lines[0].includes(';')?';':',');
+  const h=lines[0].split(sep).map(s=>s.trim());
+  const keys=h;
+  const kDT=pickHeader(keys,'DT');
+  const kAg=pickHeader(keys,'AGENDA TRANSPORTADOR','AGENDA');
+  if(!kDT||!kAg) throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
+  const idx=k=>h.indexOf(k);
+  const get=(cols,k)=>k?cols[idx(k)]||'':'';
+  const kLoc=pickHeader(keys,'LOCAL','CENTRO','CD');
+  const kTransp=pickHeader(keys,'NOME TRANSPORTADORA','TRANSPORTADORA','NOME TRANSP');
+  const kFim=pickHeader(keys,'FIM AGENDA TRANSPORTADOR','FIM AGENDA','AGENDA FIM','FIM');
+  const kPeso=pickHeader(keys,'PESO','PESO LIQUIDO');
+  const kTipo=pickHeader(keys,'TIPO VEICULO','TIPO VEÍCULO','TIPO');
+  const kDoca=pickHeader(keys,'DOCA','DOCA CARREGAMENTO');
+  return lines.slice(1).map((line,i)=>{
+    const c=line.split(sep);
+    return {linha:i+2,DT:get(c,kDT),LOCAL:get(c,kLoc),TRANSPORTADORA:get(c,kTransp),AGENDA:get(c,kAg),FIM_AGENDA:get(c,kFim),PESO:get(c,kPeso),TIPO:get(c,kTipo),DOCA:get(c,kDoca)};
+  }).filter(r=>String(r.DT||'').trim());
+}
+
+function getAgendaRecords(buf){
+  const workbookRows=getAgendaRecordsFromWorkbook(buf);
+  return workbookRows.length?workbookRows:getAgendaRecordsFromText(buf);
+}
+
+function agendaRowsForDia(dia){
+  return agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),dia));
+}
+
 /* ═══════════════════════════════════════════════════════
    PASSO 1 — AGENDAMENTO
 ═══════════════════════════════════════════════════════ */
@@ -888,56 +971,51 @@ function processAgend(file){
       exportMap={};remessaMap={};pesoLiquidoMap={};
       const matCnt=tryImportMaterialsFromAgend(buf);
       if(matCnt>0) showOk('✨ '+matCnt+' linhas de materiais importadas automaticamente do arquivo de agendamento!');
-      const lines=decodeBuf(buf).split(/\r?\n/).filter(l=>l.trim());
-      const h=lines[0].split('\t').map(s=>s.trim());
-      const ci=n=>h.findIndex(x=>String(x||'').trim().toUpperCase()===String(n||'').toUpperCase());
-      const iDT=ci('DT'),iLoc=ci('LOCAL'),iTransp=ci('NOME TRANSPORTADORA');
-      const iAg=ci('AGENDA TRANSPORTADOR'),iFim=ci('FIM AGENDA TRANSPORTADOR');
-      const iPeso=ci('PESO'),iTipo=ci('TIPO VEICULO'),iDoca=ci('DOCA');
-      if(iDT===-1||iAg===-1)throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+h.join(' | '));
+      const records=getAgendaRecords(buf);
+      if(!records.length) throw new Error('Nenhuma linha encontrada no arquivo de agendamento.');
       agendRows=[];
       agendaDiagRows=[];
-      for(let i=1;i<lines.length;i++){
-        const c=lines[i].split('	');
-        if(!c[iDT]?.trim())continue;
-        const dtNorm=normalizeDT(c[iDT]);
-        const loc=(c[iLoc]||'').trim();
-        const doca=iDoca!==-1?(c[iDoca]||'').trim():'';
+      for(const rec of records){
+        const dtNorm=normalizeDT(rec.DT);
+        if(!dtNorm) continue;
+        const loc=String(rec.LOCAL||'').trim();
+        const doca=String(rec.DOCA||'').trim();
         const docaNorm=doca
           .toLowerCase()
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g,'')
           .replace(/[\s\-]+/g,'_')
           .replace(/_+/g,'_');
-        const isMogiOuAruja = loc.endsWith('1110') || loc.endsWith('1111');
+        const agendaRaw=parseAnyDate(rec.AGENDA);
+        const fimAgendaRaw=parseAnyDate(rec.FIM_AGENDA);
+        const hasScopeCols=!!(loc||doca);
+        const isMogiOuAruja = /(^|\D)(1110|1111)(\D|$)/.test(loc);
         const isTordesilhas = docaNorm.includes('tordesilhas') || docaNorm.includes('tord');
-        const agendaRaw=parseBR((c[iAg]||'').trim());
-        const fimAgendaRaw=parseBR((c[iFim]||'').trim());
         const diag={
           DT:dtNorm,LOCAL:loc,DOCA:doca,
-          TRANSPORTADORA:(c[iTransp]||'').trim(),
+          TRANSPORTADORA:String(rec.TRANSPORTADORA||'').trim(),
           AGENDA:agendaRaw,
           FIM_AGENDA:fimAgendaRaw,
-          TIPO:iTipo!==-1?(c[iTipo]||'').trim():'',
-          PESO:iPeso!==-1?(c[iPeso]||'').trim():'',
+          TIPO:String(rec.TIPO||'').trim(),
+          PESO:String(rec.PESO||'').trim(),
           included:false,
           motivo:'',
-          linha:i+1,
+          linha:rec.linha||'',
         };
-        if(!isMogiOuAruja && !isTordesilhas){
-          diag.motivo='Fora do escopo: LOCAL nao termina em 1110/1111 e DOCA nao e Tordesilhas.';
+        if(hasScopeCols && !isMogiOuAruja && !isTordesilhas){
+          diag.motivo='Fora do escopo: LOCAL sem 1110/1111 e DOCA nao e Tordesilhas.';
           agendaDiagRows.push(diag);
           continue;
         }
         const isFabMog = docaNorm.includes('fab_mog');
-        const isIfnt = docaNorm.includes('_ifnt');
+        const isIfnt = docaNorm.includes('_ifnt') || docaNorm.endsWith('ifnt');
         if(isFabMog && !isIfnt){
           diag.motivo='Descartada pela regra de DOCA FAB_MOG sem sufixo IFNT.';
           agendaDiagRows.push(diag);
           continue;
         }
-        if(!agendaRaw){
-          diag.motivo='Sem AGENDA TRANSPORTADOR valida.';
+        if(!agendaRaw && !fimAgendaRaw){
+          diag.motivo='Sem AGENDA TRANSPORTADOR/FIM AGENDA valida.';
           agendaDiagRows.push(diag);
           continue;
         }
@@ -959,8 +1037,8 @@ function processAgend(file){
       if(isInlineUpload){
         // Upload feito de dentro da tabela: pula passo 2/3 e vai direto para o banco
         const T=today(),AM=tomorrow();
-        const dtsH=agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),T));
-        const dtsA=agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),AM));
+        const dtsH=agendaRowsForDia(T);
+        const dtsA=agendaRowsForDia(AM);
         dtsMescladas=dedupeAgendaRowsByDTRef([...dtsH,...dtsA]);
         showOk('Agenda atualizada ('+agendRows.length+' linhas). Sincronizando banco…');
         await buildTable();
@@ -974,8 +1052,8 @@ function processAgend(file){
 
 function renderStep2(){
   const T=today(),AM=tomorrow();
-  const dtsH=agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),T));
-  const dtsA=agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),AM));
+  const dtsH=agendaRowsForDia(T);
+  const dtsA=agendaRowsForDia(AM);
   dtsMescladas=dedupeAgendaRowsByDTRef([...dtsH,...dtsA]);
   document.getElementById('p2info').innerHTML=
     '✅ <b style="color:#22c55e">'+agendRows.length+' linhas</b> encontradas · '+
@@ -996,8 +1074,8 @@ function renderStep2(){
 /* Copia DTs em coluna para colar no SAP */
 function copyDTs(dia){
   const arr = dia==='hoje'
-    ? agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),today()))
-    : agendRows.filter(r=>agendaRefDate(r)&&sameDay(agendaRefDate(r),tomorrow()));
+    ? agendaRowsForDia(today())
+    : agendaRowsForDia(tomorrow());
   const texto = arr.map(r=>r.DT).join('\n');
   navigator.clipboard.writeText(texto).then(()=>{
     const btn=document.getElementById('copy-'+dia+'-btn');
@@ -1330,6 +1408,28 @@ async function saveUploadSnapshot(rows){
 /* ═══════════════════════════════════════════════════════
    BUILD TABLE — Upsert preservando status/hora_chegada
 ═══════════════════════════════════════════════════════ */
+async function registrarSaidasGrade(rows,{origem='UPLOAD_DIFF'}={}){
+  const saidas=(rows||[]).filter(r=>r&&r.dt&&r.data_ref&&!STATUS_FINAIS.includes(String(r.status||''))&&String(r.status||'')!=='DT EXCLUIDA');
+  if(!saidas.length) return 0;
+  const now=new Date().toISOString();
+  for(const row of saidas){
+    const dt=normalizeDT(row.dt);
+    const dataRef=String(row.data_ref||'');
+    await sbPatch('reporte_carga',{status:'DT EXCLUIDA',updated_at:now,source:origem},{dt,data_ref:dataRef});
+    await tryInsertLog({
+      dt,
+      data_ref:dataRef,
+      event_type:'DT_EXCLUIDA_GRADE',
+      status:'DT EXCLUIDA',
+      transportadora:row.transportadora||'Saiu da grade ativa',
+      created_at:now,
+      source:origem,
+      payload:{status_before:row.status||'',grade_carregamento:row.grade_carregamento||'',fim_carregamento:row.fim_carregamento||''},
+    });
+  }
+  return saidas.length;
+}
+
 async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRows){
   const incomingKeys=new Set((incomingRows||[]).map(r=>`${normalizeDT(r.dt)}__${String(r.data_ref||'')}`));
   const refs=new Set((uploadedRefs||[]).map(String));
@@ -1342,6 +1442,7 @@ async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRow
     const st=String(row.status||'').trim();
     if(STATUS_FINAIS.includes(st) || st==='DT EXCLUIDA') continue;
     await sbPatch('reporte_carga',{status:'DT EXCLUIDA',updated_at:now,source:'UPLOAD_DIFF'},{dt,data_ref:dataRef});
+    await tryInsertLog({dt,data_ref:dataRef,event_type:'DT_EXCLUIDA_GRADE',status:'DT EXCLUIDA',transportadora:row.transportadora||'Saiu da nova agenda',created_at:now,source:'UPLOAD_DIFF',payload:{status_before:row.status||'',grade_carregamento:row.grade_carregamento||'',fim_carregamento:row.fim_carregamento||''}});
   }
 }
 
@@ -1915,6 +2016,65 @@ async function loadLogs(searchDT=""){
     }
     list.innerHTML='<div style="color:#ef4444;padding:12px;">Erro ao carregar logs: '+e.message+'<br/><small style="color:#64748b">Verifique se a tabela reporte_logs existe no Supabase.</small></div>';
   }
+}
+
+
+async function renderMudancasGrade(){
+  const body=document.getElementById('mudancas-list');
+  const resumo=document.getElementById('mudancas-resumo');
+  const diaSel=document.getElementById('mudancas-dia');
+  if(!body) return;
+  const ref=diaSel&&diaSel.value?diaSel.value:dKey(today());
+  if(diaSel && !diaSel.value) diaSel.value=ref;
+  body.innerHTML='<div style="color:#64748b;padding:12px;">Carregando mudanças…</div>';
+  if(resumo) resumo.textContent='';
+  try{
+    let logs=[],legacy=false;
+    try{
+      logs=await sbGet('dt_logs',`data_ref=${sbEq(ref)}&select=hora_evento,dt,event_type,status_before,status_after,transportadora,grade_carregamento,fim_carregamento,source,payload&order=hora_evento.desc&limit=500`);
+    }catch(e){
+      if(!isMissingDtLogsError(e)) throw e;
+      legacy=true;
+      logs=await sbGet('reporte_logs',`data_ref=${sbEq(ref)}&order=created_at.desc&limit=500`);
+    }
+    const rows=(logs||[]).filter(l=>{
+      const ev=String(l.event_type||l.status||l.status_after||'').toUpperCase();
+      const st=String(l.status_after||l.status||'').toUpperCase();
+      return ev.includes('REAGEND') || st.includes('REAGEND') || ev.includes('EXCLUID') || st.includes('EXCLUID') || ev.includes('REMOVED_FROM_CURRENT');
+    });
+    const reag=rows.filter(l=>String(l.event_type||l.status||l.status_after||'').toUpperCase().includes('REAGEND') || String(l.status_after||l.status||'').toUpperCase().includes('REAGEND')).length;
+    const excl=rows.length-reag;
+    if(resumo) resumo.innerHTML=`<span style="color:#f59e0b">${reag} reagendada(s)</span> · <span style="color:#ef4444">${excl} excluída(s)/fora da grade</span> · ${ref}`;
+    if(!rows.length){
+      body.innerHTML='<div style="color:#334155;padding:18px;text-align:center;">Nenhuma DT reagendada ou excluída da grade neste dia.</div>';
+      return;
+    }
+    body.innerHTML='';
+    rows.forEach(l=>{
+      const ev=String(l.event_type||l.status||l.status_after||'-');
+      const st=String(l.status_after||l.status||'-');
+      const isReag=ev.toUpperCase().includes('REAGEND')||st.toUpperCase().includes('REAGEND');
+      const payload=l.payload&&typeof l.payload==='object'?l.payload:{};
+      const grade=[l.grade_carregamento||payload.grade_carregamento,l.fim_carregamento||payload.fim_carregamento].filter(Boolean).join(' → ');
+      const div=document.createElement('div');
+      div.className='mud-item';
+      div.innerHTML=`
+        <div style="font-size:11px;color:#64748b;">${new Date(l.hora_evento||l.created_at||Date.now()).toLocaleString('pt-BR')}</div>
+        <div style="font-weight:900;color:#93c5fd;">${escHtml(l.dt||'-')}</div>
+        <div><span class="mud-badge" style="border-color:${isReag?'#f59e0b55':'#ef444455'};color:${isReag?'#fbbf24':'#fca5a5'};background:${isReag?'#f59e0b18':'#ef444418'};">${isReag?'REAGENDADA':'EXCLUÍDA DA GRADE'}</span></div>
+        <div style="color:#94a3b8;">${escHtml(l.transportadora||'—')}</div>
+        <div style="color:#64748b;">${escHtml(grade || (legacy?'legado':'—'))}</div>`;
+      body.appendChild(div);
+    });
+  }catch(e){
+    body.innerHTML='<div style="color:#ef4444;padding:12px;">Erro ao carregar mudanças: '+escHtml(e.message)+'</div>';
+  }
+}
+
+function mudancasSetDia(v){
+  const sel=document.getElementById('mudancas-dia');
+  if(sel) sel.value=v;
+  renderMudancasGrade();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -3915,15 +4075,17 @@ async function runImport(){
       }catch(e){skipped++;}
     }
 
-    // 2) DT ausente na planilha saiu da grade ativa: remove em vez de salvar como EXPEDIDO.
-    const beforePrune=tableData.length;
+    // 2) DT ausente na planilha saiu da grade ativa: registra como excluida da grade.
+    const removidas=[];
     tableData=tableData.filter(r=>{
       const ref=rowReportRefDate(r);
       const inActiveWindow=ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
       if(!inActiveWindow) return true;
-      return csvDtSet.has(String(r.dt));
+      if(csvDtSet.has(String(r.dt))) return true;
+      removidas.push(r);
+      return false;
     });
-    removed=beforePrune-tableData.length;
+    removed=await registrarSaidasGrade(removidas,{origem:'IMPORT_STATUS'});
 
     await rewriteActiveCargaSnapshot();
 
