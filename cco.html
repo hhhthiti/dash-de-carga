@@ -237,8 +237,8 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="ch"><span>📁</span><span class="ct">PASSO 1 — ARQUIVO DE AGENDAMENTO</span></div>
     <div class="cb">
       <p class="desc">Suba o arquivo de agendamento exportado do sistema.<br/>
-        Filtra automaticamente os locais <b style="color:#f59e0b">1110</b> e <b style="color:#f59e0b">1111</b> e, quando existir, exige <b style="color:#f59e0b">DOCA</b> preenchida
-        para montar a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#a78bfa">Amanhã</b> juntos.<br/>
+        Filtra automaticamente somente os <b style="color:#f59e0b">LOCAL</b> terminados em <b style="color:#f59e0b">1110</b> ou <b style="color:#f59e0b">1111</b>, remove <b style="color:#f59e0b">DOCA</b> vazia/null e DOCA FAB_MOG sem sufixo IFNT,
+        para montar a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#a78bfa">Amanhã</b> pela coluna <b style="color:#60a5fa">AGENDA TRANSPORTADOR</b>.<br/>
         <span style="color:#64748b;font-size:12px;">⚡ Ao subir uma nova planilha, o banco é atualizado preservando status (Expedido, No Show, Veículo Recusado) e hora chegada já registrados.</span>
       </p>
       <div class="dz" id="dz1" onclick="document.getElementById('f1').click()">

@@ -625,7 +625,7 @@ function parseBR(s){
 }
 
 function agendaRefDate(dt){
-  return (dt&&dt.FIM_AGENDA) || (dt&&dt.AGENDA) || null;
+  return (dt&&dt.AGENDA) || (dt&&dt.FIM_AGENDA) || null;
 }
 
 function rowRefDate(row){
@@ -895,7 +895,43 @@ function parseAnyDate(v){
     const d=XLSX.SSF.parse_date_code(v);
     if(d) return new Date(d.y,d.m-1,d.d,d.H||0,d.M||0,Math.floor(d.S||0));
   }
-  return parseBR(String(v||''));
+  const raw=String(v||'').trim();
+  if(!raw) return null;
+  const br=parseBR(raw);
+  if(br) return br;
+  const iso=raw.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2}))?/);
+  if(iso) return new Date(+iso[1],+iso[2]-1,+iso[3],+(iso[4]||0),+(iso[5]||0));
+  const flex=raw.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})(?:[,T\s]+(\d{1,2}):(\d{2}))?/);
+  if(flex){
+    const year=+flex[3]<100?2000+(+flex[3]):+flex[3];
+    return new Date(year,+flex[2]-1,+flex[1],+(flex[4]||0),+(flex[5]||0));
+  }
+  return null;
+}
+
+function normalizeDocaName(v){
+  return String(v||'')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/[\s\-]+/g,'_')
+    .replace(/_+/g,'_');
+}
+
+function isEmptyDoca(v){
+  const s=String(v??'').trim();
+  return !s || /^(null|undefined|n\/?a|nao_informado)$/i.test(s);
+}
+
+function isLocalFinal1110Or1111(v){
+  const s=String(v||'').trim().replace(/\.0+$/,'');
+  const m=s.match(/(\d+)\s*$/);
+  return !!(m && /(?:1110|1111)$/.test(m[1]));
+}
+
+function isDocaFabMogSemIfnt(docaNorm){
+  return /(?:^|_)doca_\d+_fab_mog(?:_|$)/.test(docaNorm) && !/(?:^|_)ifnt(?:_|$)/.test(docaNorm);
 }
 
 function getAgendaRecordsFromWorkbook(buf){
@@ -980,17 +1016,10 @@ function processAgend(file){
         if(!dtNorm) continue;
         const loc=String(rec.LOCAL||'').trim();
         const doca=String(rec.DOCA||'').trim();
-        const docaNorm=doca
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g,'')
-          .replace(/[\s\-]+/g,'_')
-          .replace(/_+/g,'_');
+        const docaNorm=normalizeDocaName(doca);
         const agendaRaw=parseAnyDate(rec.AGENDA);
         const fimAgendaRaw=parseAnyDate(rec.FIM_AGENDA);
-        const hasScopeCols=!!(loc||doca);
-        const isMogiOuAruja = /(^|\D)(1110|1111)(\D|$)/.test(loc);
-        const isTordesilhas = docaNorm.includes('tordesilhas') || docaNorm.includes('tord');
+        const isMogiOuAruja = isLocalFinal1110Or1111(loc);
         const diag={
           DT:dtNorm,LOCAL:loc,DOCA:doca,
           TRANSPORTADORA:String(rec.TRANSPORTADORA||'').trim(),
@@ -1002,20 +1031,23 @@ function processAgend(file){
           motivo:'',
           linha:rec.linha||'',
         };
-        if(hasScopeCols && !isMogiOuAruja && !isTordesilhas){
-          diag.motivo='Fora do escopo: LOCAL sem 1110/1111 e DOCA nao e Tordesilhas.';
+        if(!isMogiOuAruja){
+          diag.motivo='Fora do escopo: LOCAL nao termina com 1110/1111.';
           agendaDiagRows.push(diag);
           continue;
         }
-        const isFabMog = docaNorm.includes('fab_mog');
-        const isIfnt = docaNorm.includes('_ifnt') || docaNorm.endsWith('ifnt');
-        if(isFabMog && !isIfnt){
+        if(isEmptyDoca(doca)){
+          diag.motivo='Descartada: DOCA vazia/null.';
+          agendaDiagRows.push(diag);
+          continue;
+        }
+        if(isDocaFabMogSemIfnt(docaNorm)){
           diag.motivo='Descartada pela regra de DOCA FAB_MOG sem sufixo IFNT.';
           agendaDiagRows.push(diag);
           continue;
         }
-        if(!agendaRaw && !fimAgendaRaw){
-          diag.motivo='Sem AGENDA TRANSPORTADOR/FIM AGENDA valida.';
+        if(!agendaRaw){
+          diag.motivo='Sem AGENDA TRANSPORTADOR valida.';
           agendaDiagRows.push(diag);
           continue;
         }
@@ -1032,7 +1064,7 @@ function processAgend(file){
         });
       }
       agendRows=dedupeAgendaRowsByDTRef(agendRows);
-      if(!agendRows.length)throw new Error('Nenhuma linha válida encontrada (LOCAL 1110/1111 ou DOCA de Tordesilhas, com regras de DOCA aplicadas).');
+      if(!agendRows.length)throw new Error('Nenhuma linha válida encontrada (LOCAL terminando em 1110/1111, DOCA preenchida e sem FAB_MOG sem IFNT).');
       hideInf();
       if(isInlineUpload){
         // Upload feito de dentro da tabela: pula passo 2/3 e vai direto para o banco
