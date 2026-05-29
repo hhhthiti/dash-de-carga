@@ -87,12 +87,13 @@ async function sbGet(table, qs=''){
     throw new Error(`GET ${table}: `+msg);
   }
 }
-async function sbUpsert(table, rows){
+async function sbUpsert(table, rows, onConflict=''){
   for(let i=0;i<rows.length;i+=30){
     let lote=rows.slice(i,i+30);
     const ignoredCols=new Set();
     while(true){
-      const r=await sbFetch(`${SB_URL}/${table}`,{
+      const conflict=onConflict?`?on_conflict=${encodeURIComponent(onConflict)}`:'';
+      const r=await sbFetch(`${SB_URL}/${table}${conflict}`,{
         method:'POST',
         headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=minimal'},
         body:JSON.stringify(lote)
@@ -441,19 +442,23 @@ let matFiltro='todos';
 function switchTableTab(tab){
   if(tab==='materiais') tab='todas';
   currentTableTab=tab;
-  const allTabs=['todas','finalizadas','reporte','semgrade','dtfake','nf'];
+  const allTabs=['todas','finalizadas','reporte','planejamento','semgrade','dtfake','nf'];
   allTabs.forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el) el.classList.toggle('active',t===tab);
   });
   // Hide all content areas first
-  ['mat-board','twrap','materiais-wrap','reporte-wrap','semgrade-wrap','dtfake-wrap','nf-wrap'].forEach(id=>{
+  ['mat-board','twrap','materiais-wrap','reporte-wrap','planejamento-wrap','semgrade-wrap','dtfake-wrap','nf-wrap'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.style.display='none';
   });
   if(tab==='reporte'){
     document.getElementById('reporte-wrap').style.display='block';
     renderReporte();
+  } else if(tab==='planejamento'){
+    document.getElementById('planejamento-wrap').style.display='block';
+    renderReporte();
+    renderPlanejamento();
   } else if(tab==='semgrade'){
     document.getElementById('semgrade-wrap').style.display='block';
     renderSemGrade();
@@ -696,22 +701,11 @@ function isRowInActiveReportWindow(row){
 
 async function rewriteActiveCargaSnapshot(){
   if(!tableData||!tableData.length) return 0;
-  const refsToDelete=[...new Set(tableData.flatMap(r=>{
-    const refs=[];
-    const stored=String(r.data_ref||'').trim();
-    const effective=rowReportRefKey(r);
-    if(stored) refs.push(stored);
-    if(effective) refs.push(effective);
-    return refs;
-  }).filter(Boolean))];
   const rows=dedupeCargaRowsByDTRef(tableData.filter(isRowInActiveReportWindow))
     .map(cleanCargaRowForInsert)
     .filter(r=>r.dt&&r.data_ref);
 
-  for(const ref of refsToDelete){
-    await sbDelete('reporte_carga',{data_ref:ref});
-  }
-  if(rows.length) await sbInsert('reporte_carga',rows);
+  if(rows.length) await sbUpsert('reporte_carga',rows,'dt,data_ref');
   tableData=normalizeDiaRefRows(rows).sort(compareAgendaRows);
   return rows.length;
 }
@@ -1320,9 +1314,12 @@ async function saveUploadSnapshot(rows){
     const logs=refs.map(ref=>({
       dt:'__AGENDA__',
       data_ref:ref,
-      status:'UPLOAD_AGENDA',
+      event_type:'UPLOAD_AGENDA',
+      status_after:'UPLOAD_AGENDA',
       transportadora:'AGENDA_ATIVA',
-      created_at:uploadTs,
+      hora_evento:uploadTs,
+      source:'DASHBOARD',
+      payload:{refs,total_dts:rows.length},
     }));
     if(logs.length){
       for(const log of logs) await tryInsertLog(log);
@@ -1333,6 +1330,21 @@ async function saveUploadSnapshot(rows){
 /* ═══════════════════════════════════════════════════════
    BUILD TABLE — Upsert preservando status/hora_chegada
 ═══════════════════════════════════════════════════════ */
+async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRows){
+  const incomingKeys=new Set((incomingRows||[]).map(r=>`${normalizeDT(r.dt)}__${String(r.data_ref||'')}`));
+  const refs=new Set((uploadedRefs||[]).map(String));
+  const now=new Date().toISOString();
+  for(const row of existingRows||[]){
+    const dataRef=String(row.data_ref||'');
+    const dt=normalizeDT(row.dt);
+    if(!dt || !refs.has(dataRef)) continue;
+    if(incomingKeys.has(`${dt}__${dataRef}`)) continue;
+    const st=String(row.status||'').trim();
+    if(STATUS_FINAIS.includes(st) || st==='DT EXCLUIDA') continue;
+    await sbPatch('reporte_carga',{status:'DT EXCLUIDA',updated_at:now,source:'UPLOAD_DIFF'},{dt,data_ref:dataRef});
+  }
+}
+
 async function buildTable(){
   fileWorkflowInProgress=true;
   pauseAutoSync(180000);
@@ -1359,15 +1371,22 @@ async function buildTable(){
     if(dtsUpload.length){
       let logRows=[];
       try{
-        logRows=await sbGet('reporte_logs',
-          `dt=in.("${dtsUpload.join('\",\"')}")&order=created_at.desc&limit=1000`
+        logRows=await sbGet('dt_logs',
+          `dt=${sbIn(dtsUpload)}&select=dt,event_type,status_after,hora_evento&order=hora_evento.desc&limit=1000`
         );
       }catch(e){
-        if(!isMissingReporteLogsError(e)) throw e;
+        if(!isMissingLogsError(e)) throw e;
+        try{
+          logRows=await sbGet('reporte_logs',
+            `dt=${sbIn(dtsUpload)}&select=dt,status,created_at&order=created_at.desc&limit=1000`
+          );
+        }catch(e2){
+          if(!isMissingLogsError(e2)) throw e2;
+        }
       }
       (logRows||[]).forEach(l=>{
         const dtLog=normalizeDT(l.dt);
-        const st=String(l.status||'').trim();
+        const st=String(l.status_after||l.status||'').trim();
         if(!dtLog||!st) return;
         if(st==='UPLOAD_AGENDA'||st==='REAGENDADA') return;
         if(finalStatusSet.has(st)){
@@ -1414,10 +1433,8 @@ async function buildTable(){
     const activeRowRefs=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))];
     activeRefsOverride=(activeRowRefs.length?activeRowRefs:uploadedRefs).slice(0,2);
     // Como não existe constraint única (dt,data_ref), fazemos replace por data_ref
-    for(const ref of uploadedRefs){
-      await sbDelete('reporte_carga',{data_ref:ref});
-    }
-    if(rows.length) await sbInsert('reporte_carga',rows);
+    await markMissingRowsAsExcluded(uploadedRefs,rows,existing);
+    if(rows.length) await sbUpsert('reporte_carga',rows,'dt,data_ref');
     await saveUploadSnapshot(rows);
     const importedCount=await persistImportedMaterials(rows);
     hideInf();
@@ -1457,12 +1474,18 @@ async function getActiveRefs(){
     if(todayRows&&todayRows.length) return base;
 
     // Depois de cada upload salvamos marcadores __AGENDA__; eles evitam reabrir uma grade antiga (ex.: 05/05).
-    const markers=await sbGet('reporte_logs','dt=eq.__AGENDA__&status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=20');
-    const latestTs=markers&&markers.length?markers[0].created_at:null;
+    let markers=[];
+    try{
+      markers=await sbGet('dt_logs','dt=eq.__AGENDA__&event_type=eq.UPLOAD_AGENDA&select=data_ref,hora_evento&order=hora_evento.desc&limit=20');
+    }catch(e){
+      if(!isMissingLogsError(e)) throw e;
+      markers=await sbGet('reporte_logs','dt=eq.__AGENDA__&status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=20');
+    }
+    const latestTs=markers&&markers.length?String(markers[0].hora_evento||markers[0].created_at||''):null;
     if(latestTs){
       const active=[];
       (markers||[]).forEach(r=>{
-        if(r.created_at!==latestTs) return;
+        if(String(r.hora_evento||r.created_at||'')!==latestTs) return;
         const k=String(r.data_ref||'');
         if(k&&!active.includes(k)) active.push(k);
       });
@@ -1470,7 +1493,13 @@ async function getActiveRefs(){
     }
 
     // Fallback legado: usa os data_ref mais recentes em logs de upload existentes.
-    const lastUpload=await sbGet('reporte_logs',`status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=300`);
+    let lastUpload=[];
+    try{
+      lastUpload=await sbGet('dt_logs',`event_type=eq.UPLOAD_AGENDA&select=data_ref,hora_evento&order=hora_evento.desc&limit=300`);
+    }catch(e){
+      if(!isMissingLogsError(e)) throw e;
+      lastUpload=await sbGet('reporte_logs',`status=eq.UPLOAD_AGENDA&select=data_ref,created_at&order=created_at.desc&limit=300`);
+    }
     const byUpload=[];
     (lastUpload||[]).forEach(r=>{
       const k=String(r.data_ref||'');
@@ -1751,11 +1780,40 @@ async function saveField(dt,dataRef,field,value){
 }
 
 async function tryInsertLog(row){
+  const eventType=String(row.event_type||row.status||'STATUS_CHANGED');
+  const payload={
+    ...(row.payload&&typeof row.payload==='object'?row.payload:{}),
+    legacy_status:row.status||row.status_after||null,
+  };
+  const dtLog={
+    dt:String(row.dt||''),
+    data_ref:String(row.data_ref||''),
+    event_type:eventType,
+    status_after:row.status_after||row.status||null,
+    transportadora:row.transportadora||null,
+    hora_evento:row.hora_evento||row.created_at||new Date().toISOString(),
+    source:row.source||'DASHBOARD',
+    payload,
+  };
   try{
-    await sbInsert('reporte_logs',[row]);
+    await sbInsert('dt_logs',[dtLog]);
   }catch(e){
     const msg=String(e&&e.message||'');
-    if(isMissingReporteLogsError(e)) return;
+    if(isMissingDtLogsError(e)){
+      try{
+        await sbInsert('reporte_logs',[{
+          dt:dtLog.dt,
+          data_ref:dtLog.data_ref,
+          status:dtLog.status_after||eventType,
+          transportadora:dtLog.transportadora||'',
+          created_at:dtLog.hora_evento,
+        }]);
+      }catch(e2){
+        if(isMissingReporteLogsError(e2)) return;
+        console.warn('Falha ao gravar log legado:',String(e2&&e2.message||''));
+      }
+      return;
+    }
     console.warn('Falha ao gravar log:',msg);
   }
 }
@@ -1771,7 +1829,7 @@ async function saveStatus(dt,dataRef,value){
     renderRows();
     renderReporte();
     // Grava log só para status relevantes (evita poluição)
-    const STATUS_LOG=['EXPEDIDO','NO SHOW','EM FATURAMENTO','VEICULO RECUSADO','FOI EMBORA'];
+    const STATUS_LOG=[];
     if(STATUS_LOG.includes(value)){
       await tryInsertLog({
         dt:String(dt),
@@ -1795,6 +1853,13 @@ function openLogs(){
 function closeLogs(){
   document.getElementById('log-overlay').classList.remove('open');
 }
+function isMissingDtLogsError(err){
+  const msg=String(err&&err.message||err||'').toLowerCase();
+  return msg.includes("public.dt_logs")
+    || msg.includes('relation "dt_logs" does not exist')
+    || msg.includes('404')
+    || msg.includes('pgrst');
+}
 function isMissingReporteLogsError(err){
   const msg=String(err&&err.message||err||'').toLowerCase();
   return msg.includes("public.reporte_logs")
@@ -1802,31 +1867,49 @@ function isMissingReporteLogsError(err){
     || msg.includes('404')
     || msg.includes('pgrst');
 }
+function isMissingLogsError(err){
+  return isMissingDtLogsError(err)||isMissingReporteLogsError(err);
+}
 
 async function loadLogs(searchDT=""){
   const list=document.getElementById('log-list');
   list.innerHTML='<div style="color:#64748b;padding:12px;">Carregando…</div>';
   try{
-    const logs=await sbGet('reporte_logs','order=created_at.desc&limit=200');
+    let logs=[];
+    let legacy=false;
+    try{
+      logs=await sbGet('dt_logs','select=hora_evento,dt,event_type,status_before,status_after,transportadora,grade_carregamento,fim_carregamento,source,payload&order=hora_evento.desc&limit=200');
+    }catch(e){
+      if(!isMissingDtLogsError(e)) throw e;
+      legacy=true;
+      logs=await sbGet('reporte_logs','order=created_at.desc&limit=200');
+    }
     let rows=logs||[];
     const filtro=String(searchDT||'').replace(/\D/g,'');
     if(filtro) rows=rows.filter(l=>String(l.dt||'').includes(filtro));
     if(!rows.length){list.innerHTML='<div style="color:#334155;padding:12px;">Nenhum log para o filtro informado.</div>';return;}
     list.innerHTML='';
     rows.forEach(l=>{
-      const sc=SC[l.status]||'#64748b';
+      const status=String(l.status_after||l.status||'').trim();
+      const eventType=String(l.event_type||status||'-');
+      const sc=SC[status]||'#64748b';
+      const when=l.hora_evento||l.created_at;
+      const grade=[l.grade_carregamento,l.fim_carregamento].filter(Boolean).join(' - ');
       const div=document.createElement('div');
       div.className='log-entry';
       div.innerHTML=
-        `<span style="color:#64748b">${l.created_at?new Date(l.created_at).toLocaleString('pt-BR'):'-'}</span>`+
+        `<span style="color:#64748b">${when?new Date(when).toLocaleString('pt-BR'):'-'}</span>`+
         `<span style="color:#93c5fd;font-weight:700">${l.dt||'-'}</span>`+
-        `<span style="background:${sc}22;border:1px solid ${sc}55;color:${sc};border-radius:4px;padding:2px 8px;font-weight:700;">${l.status||'-'}</span>`+
-        `<span style="color:#94a3b8">${l.transportadora||'—'}</span>`;
+        `<span style="color:#c4b5fd;font-weight:700">${eventType}</span>`+
+        `<span style="background:${sc}22;border:1px solid ${sc}55;color:${sc};border-radius:4px;padding:2px 8px;font-weight:700;">${status||'-'}</span>`+
+        `<span style="color:#94a3b8">${l.transportadora||'—'}</span>`+
+        `<span style="color:#94a3b8">${grade||'—'}</span>`+
+        `<span style="color:#64748b">${legacy?'legado':(l.source||'SYSTEM')}</span>`;
       list.appendChild(div);
     });
   }catch(e){
     const msg=String(e&&e.message||'');
-    if(isMissingReporteLogsError(e)){
+    if(isMissingLogsError(e)){
       list.innerHTML='<div style="color:#94a3b8;padding:12px;">ℹ️ Log desativado: tabela <b>reporte_logs</b> não existe neste projeto Supabase. O painel de carga continua funcionando normalmente.</div>';
       return;
     }
@@ -2146,6 +2229,7 @@ function exportCSV(){
    REPORTE DE STATUS
 ═══════════════════════════════════════════════════════ */
 const RP_TIPOS = ['GRADE','TRANSFERÊNCIA','VENDA ARUJA','VENDA MOGI','PRÉ-FATURA'];
+const RP_SUZANO_TIPOS = ['VENDA ARUJA','VENDA MOGI','TRANSFERENCIA','PRE-FATURA'];
 const RP_COLORS = {
   'VENDA ARUJA':'#22c55e','VENDA MOGI':'#06b6d4','PRÉ-FATURA':'#a78bfa','TRANSFERÊNCIA':'#fb923c','GRADE':'#60a5fa'
 };
@@ -2250,6 +2334,7 @@ function rpSetDataRef(v){
   rpDataRef=String(v||'').trim();
   try{localStorage.setItem('rp_data_ref',rpDataRef);}catch(e){}
   renderReporte();
+  renderPlanejamento();
 }
 
 function rpSetHoraCorte(v){
@@ -2265,16 +2350,43 @@ function rpParsePlanejadoInput(raw){
 }
 
 function rpGetPlanejadoSuzano(){
-  return Math.max(0,Number(rpPlanejadoSuzano[rpDataRef]||0));
+  const item=rpPlanejadoSuzano[rpDataRef];
+  if(item&&typeof item==='object') return Object.values(item).reduce((s,v)=>s+Math.max(0,Number(v)||0),0);
+  return Math.max(0,Number(item||0));
+}
+
+function rpGetPlanejadoSuzanoDetalhado(){
+  const item=rpPlanejadoSuzano[rpDataRef];
+  const det={};
+  RP_SUZANO_TIPOS.forEach(tipo=>det[tipo]=0);
+  if(item&&typeof item==='object'){
+    RP_SUZANO_TIPOS.forEach(tipo=>{det[tipo]=Math.max(0,Number(item[tipo]||0));});
+  }else if(Number(item||0)>0){
+    det['VENDA ARUJA']=Number(item)||0;
+  }
+  return det;
 }
 
 function rpSetPlanejadoSuzano(v){
   const val=rpParsePlanejadoInput(v);
   if(!rpDataRef) rpDataRef=dKey(today());
-  if(val) rpPlanejadoSuzano[rpDataRef]=val;
+  if(val) rpPlanejadoSuzano[rpDataRef]={'VENDA ARUJA':val,'VENDA MOGI':0,'TRANSFERENCIA':0,'PRE-FATURA':0};
   else delete rpPlanejadoSuzano[rpDataRef];
   try{localStorage.setItem('rp_planejado_suzano',JSON.stringify(rpPlanejadoSuzano));}catch(e){}
   renderReporte();
+}
+
+function rpSetPlanejadoSuzanoTipo(tipo,v){
+  if(!rpDataRef) rpDataRef=dKey(today());
+  const det=rpGetPlanejadoSuzanoDetalhado();
+  const val=rpParsePlanejadoInput(v);
+  if(val) det[tipo]=val;
+  else det[tipo]=0;
+  rpPlanejadoSuzano[rpDataRef]=det;
+  if(!rpGetPlanejadoSuzano()) delete rpPlanejadoSuzano[rpDataRef];
+  try{localStorage.setItem('rp_planejado_suzano',JSON.stringify(rpPlanejadoSuzano));}catch(e){}
+  renderReporte();
+  renderPlanejamento();
 }
 
 function getEmailList(raw){
@@ -2288,6 +2400,7 @@ function openConfigModal(){
   const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val||'';};
   set('cfg-email-provider',appConfig.emailProvider||'');
   set('cfg-email-from',appConfig.emailFrom||'');
+  set('cfg-email-endpoint',appConfig.emailEndpoint||'');
   set('cfg-email-to',(appConfig.emailTo||[]).join('; '));
   set('cfg-email-cc',(appConfig.emailCc||[]).join('; '));
   set('cfg-report-inicial',appConfig.reportInicial||'00:00');
@@ -2305,6 +2418,7 @@ function saveConfigModal(){
   appConfig={
     emailProvider:val('cfg-email-provider'),
     emailFrom:val('cfg-email-from').trim(),
+    emailEndpoint:val('cfg-email-endpoint').trim(),
     emailTo:getEmailList(val('cfg-email-to')),
     emailCc:getEmailList(val('cfg-email-cc')),
     reportInicial:val('cfg-report-inicial') || '00:00',
@@ -2314,6 +2428,23 @@ function saveConfigModal(){
   try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
   closeConfigModal();
   showOk('Configurações do reporte salvas.');
+}
+
+function syncConfigFromOpenModal(){
+  const ov=document.getElementById('config-overlay');
+  if(!ov || ov.style.display==='none') return;
+  const val=id=>document.getElementById(id)?.value || '';
+  appConfig={
+    emailProvider:val('cfg-email-provider'),
+    emailFrom:val('cfg-email-from').trim(),
+    emailEndpoint:val('cfg-email-endpoint').trim(),
+    emailTo:getEmailList(val('cfg-email-to')),
+    emailCc:getEmailList(val('cfg-email-cc')),
+    reportInicial:val('cfg-report-inicial') || '00:00',
+    reportFinal:val('cfg-report-final') || '23:59',
+    updatedAt:new Date().toISOString(),
+  };
+  try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
 }
 
 function rpBuildSnapshotPayload(source='DASHBOARD',evento='Snapshot manual'){
@@ -2341,6 +2472,7 @@ function rpBuildSnapshotPayload(source='DASHBOARD',evento='Snapshot manual'){
       corte:report.corteLabel||'',
       turno:rpTurnoFiltro,
       email_configurado:!!(appConfig.emailProvider&&appConfig.emailFrom&&appConfig.emailTo&&appConfig.emailTo.length),
+      planejado_suzano_detalhado:rpGetPlanejadoSuzanoDetalhado(),
       tipos:report.tipos||[],
       paletizacao:report.paletizacao||{},
       turnos:report.turnos||{},
@@ -2376,8 +2508,10 @@ async function rpSalvarPlanejadoSuzano(){
       data_ref:dataRef,
       data_operacao:dataOperacao?dataOperacao.toISOString().slice(0,10):null,
       planejado_suzano_kg:kg,
+      dts_total:tableData.filter(r=>rpDateKey(r)===dataRef).length,
       source:'DASHBOARD',
-      observacao:'Planejado informado no reporte'
+      observacao:'Planejado informado no planejamento',
+      detalhes:rpGetPlanejadoSuzanoDetalhado()
     }]);
     await rpCreateGradeSnapshot('SUZANO','Planejado Suzano atualizado');
     showOk('Planejado Suzano salvo e snapshot criado.');
@@ -2498,6 +2632,104 @@ function renderTimelineChart(){
       <circle cx="208" cy="0" r="4" fill="#22c55e"/><text x="216" y="4" fill="#94a3b8">Realizado</text>
     </g>
   </svg>`;
+}
+
+function rpSuzanoLabel(tipo){
+  return {
+    'VENDA ARUJA':'Venda Aruja',
+    'VENDA MOGI':'Venda Mogi',
+    'TRANSFERENCIA':'Transferencia',
+    'PRE-FATURA':'Pre-fatura'
+  }[tipo]||tipo;
+}
+
+function renderPlanejamento(){
+  const wrap=document.getElementById('planejamento-wrap');
+  if(!wrap) return;
+  const refs=[...new Set(tableData.map(r=>rpDateKey(r)).filter(Boolean))]
+    .filter(ref=>{const d=parseBR(ref);return d&&(sameDay(d,today())||sameDay(d,tomorrow()));})
+    .sort(compareDateRefs);
+  if(!rpDataRef || (refs.length && !refs.includes(rpDataRef))) rpDataRef=refs[0]||dKey(today());
+  const sel=document.getElementById('pl-data-ref');
+  if(sel){
+    sel.innerHTML=refs.map(ref=>`<option value="${ref}">${ref}</option>`).join('');
+    sel.value=rpDataRef;
+  }
+  const det=rpGetPlanejadoSuzanoDetalhado();
+  const inputs=document.getElementById('pl-suzano-inputs');
+  if(inputs){
+    inputs.innerHTML=RP_SUZANO_TIPOS.map(tipo=>{
+      const color=RP_COLORS[tipo]||'#38bdf8';
+      return `<div class="rp-tipo-card" style="border-color:${color}44;text-align:left;">
+        <label class="rp-tipo-title" style="color:${color};display:block;">${rpSuzanoLabel(tipo)}</label>
+        <input class="rp-meta-input" inputmode="decimal" value="${det[tipo]?fmtCargaCompact(det[tipo]).replace(' kg','').replace(' t',''):''}" placeholder="ex: 45,5 t" oninput="rpSetPlanejadoSuzanoTipo('${tipo}',this.value)" onchange="rpSetPlanejadoSuzanoTipo('${tipo}',this.value)" style="text-align:left;"/>
+        <div class="rp-num-label" style="margin-top:7px;">Pedido Suzano para esta operação</div>
+      </div>`;
+    }).join('');
+  }
+  const info=document.getElementById('pl-info');
+  if(info) info.textContent='Total Suzano: '+fmtCargaCompact(rpGetPlanejadoSuzano());
+  renderTimelineChart();
+}
+
+function rpBuildEmailPayload(){
+  renderReporte();
+  const report=rpLastReport||{};
+  const det=rpGetPlanejadoSuzanoDetalhado();
+  const linhas=[
+    `Reporte Operacional - ${report.dataRef||rpDataRef||dKey(today())}`,
+    '',
+    `Planejado Suzano: ${fmtCargaCompact(report.planejadoSuzano||0)}`,
+    `- Venda Aruja: ${fmtCargaCompact(det['VENDA ARUJA']||0)}`,
+    `- Venda Mogi: ${fmtCargaCompact(det['VENDA MOGI']||0)}`,
+    `- Transferencia: ${fmtCargaCompact(det.TRANSFERENCIA||0)}`,
+    `- Pre-fatura: ${fmtCargaCompact(det['PRE-FATURA']||0)}`,
+    '',
+    `Nossa grade: ${fmtCargaCompact(report.nossaGrade||0)}`,
+    `Realizado: ${fmtCargaCompact(report.realizadoGrade||0)}`,
+    `Pendente: ${fmtCargaCompact(Math.max(0,(report.nossaGrade||0)-(report.realizadoGrade||0)))}`,
+    '',
+    `DTs expedidas: ${(report.statusCounts&&report.statusCounts.EXPEDIDO)||0}`,
+    `No-shows: ${(report.statusCounts&&report.statusCounts['NO SHOW'])||0}`,
+    `Recusas: ${(report.statusCounts&&report.statusCounts['VEICULO RECUSADO'])||0}`,
+  ];
+  return {
+    subject:`Reporte Operacional - ${report.dataRef||rpDataRef||dKey(today())}`,
+    body:linhas.join('\n'),
+    report,
+    planejadoSuzanoDetalhado:det,
+    config:appConfig
+  };
+}
+
+async function rpEnviarEmailAgora(){
+  syncConfigFromOpenModal();
+  appConfig=JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
+  const payload=rpBuildEmailPayload();
+  if(!appConfig.emailTo||!appConfig.emailTo.length){
+    showErr('Configure pelo menos um destinatário antes de enviar.');
+    openConfigModal();
+    return;
+  }
+  if(appConfig.emailEndpoint){
+    spin(true);
+    try{
+      const r=await fetch(appConfig.emailEndpoint,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(!r.ok) throw new Error(await r.text());
+      showOk('Solicitação de envio enviada para a automação.');
+      closeConfigModal();
+    }catch(e){showErr('Erro ao chamar automação de e-mail: '+e.message);}
+    spin(false);
+    return;
+  }
+  const to=(appConfig.emailTo||[]).join(',');
+  const cc=(appConfig.emailCc&&appConfig.emailCc.length)?'&cc='+encodeURIComponent(appConfig.emailCc.join(',')):'';
+  window.location.href=`mailto:${to}?subject=${encodeURIComponent(payload.subject)}${cc}&body=${encodeURIComponent(payload.body)}`;
+  showOk('E-mail preparado. Para envio automático direto, configure a URL da automação.');
 }
 
 
@@ -2711,6 +2943,7 @@ function renderReporte(){
     dataRef:rpDataRef,
     corteLabel,
     planejadoSuzano,
+    planejadoSuzanoDetalhado:rpGetPlanejadoSuzanoDetalhado(),
     nossaGrade,
     realizadoGrade,
     variacaoSuzanoGrade:deltaSuzanoGrade,

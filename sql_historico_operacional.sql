@@ -204,7 +204,7 @@ begin
     coalesce(row_new.paletizacao, row_old.paletizacao),
     coalesce(row_new.tipo_operacao, row_old.tipo_operacao),
     case
-      when coalesce(row_new.fim_carregamento, row_old.fim_carregamento, '') ~ '\d{2}:\d{2}' then
+      when coalesce(row_new.fim_carregamento, row_old.fim_carregamento, '') ~ '^\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}' then
         case
           when extract(hour from to_timestamp(coalesce(row_new.fim_carregamento, row_old.fim_carregamento), 'DD/MM/YYYY HH24:MI')) between 7 and 14 then 'T1'
           when extract(hour from to_timestamp(coalesce(row_new.fim_carregamento, row_old.fim_carregamento), 'DD/MM/YYYY HH24:MI')) between 15 and 22 then 'T2'

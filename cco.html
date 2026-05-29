@@ -174,7 +174,7 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 #log-modal{background:#1e293b;border:1px solid #334155;border-radius:14px;width:92%;max-width:820px;max-height:80vh;display:flex;flex-direction:column;}
 #log-head{padding:16px 20px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;}
 #log-body{flex:1;overflow-y:auto;padding:16px;}
-.log-entry{border-bottom:1px solid #1e293b;padding:9px 0;display:grid;grid-template-columns:140px 100px 130px 1fr;gap:10px;font-size:11px;align-items:center;}
+.log-entry{border-bottom:1px solid #1e293b;padding:9px 0;display:grid;grid-template-columns:140px 95px 130px 150px 95px 110px 1fr;gap:10px;font-size:11px;align-items:center;}
 .log-entry:last-child{border-bottom:none;}
 .log-entry-head{color:#64748b;font-size:9px;letter-spacing:1.5px;font-weight:700;}
 
@@ -322,6 +322,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
       <button class="tab-btn" id="tab-reporte" onclick="switchTableTab('reporte')" style="color:#a78bfa;">📊 REPORTE DE STATUS</button>
+      <button class="tab-btn" id="tab-planejamento" onclick="switchTableTab('planejamento')" style="color:#38bdf8;">📈 PLANEJAMENTO</button>
       <button class="tab-btn" id="tab-semgrade" onclick="switchTableTab('semgrade')" style="color:#f59e0b;">➕ ADICIONAR DT</button>
       <button class="tab-btn" id="tab-dtfake" onclick="switchTableTab('dtfake')" style="color:#fb923c;">🔄 DT FAKE</button>
       <button class="tab-btn" id="tab-nf" onclick="switchTableTab('nf')" style="color:#34d399;">📎 JUNTAR NFs</button>
@@ -368,12 +369,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <label for="rp-hora-corte" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">⏱️ CORTE ATÉ:</label>
         <input id="rp-hora-corte" type="time" step="60" oninput="rpSetHoraCorte(this.value)" onchange="rpSetHoraCorte(this.value)"
           style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"/>
-        <label for="rp-planejado-suzano" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">SUZANO:</label>
-        <input id="rp-planejado-suzano" inputmode="decimal" placeholder="ex: 185,1 t" oninput="rpSetPlanejadoSuzano(this.value)" onchange="rpSetPlanejadoSuzano(this.value)"
-          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;width:92px;"/>
-        <button class="bg" onclick="rpSalvarPlanejadoSuzano()" style="font-size:10px;padding:4px 10px;">Salvar Suzano</button>
         <button class="bg" onclick="rpSetHoraCorte('')" style="font-size:10px;padding:4px 10px;">Agora</button>
-        <button class="bg" onclick="rpSalvarSnapshotManual()" style="font-size:10px;padding:4px 10px;">Snapshot</button>
         <button class="bexp" onclick="rpSalvarReporteManual()" style="font-size:10px;padding:4px 10px;background:#7c3aed;border-color:#8b5cf6;">Salvar reporte</button>
         <button class="bexp" onclick="exportReporteJPG()" style="font-size:10px;padding:4px 10px;">Salvar JPG</button>
         <span id="rp-turno-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
@@ -382,17 +378,6 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div style="display:none;background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
         <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📋 PLANEJADO AUTOMÁTICO DO DIA</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;" id="rp-metas-inputs"></div>
-      </div>
-      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
-        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">PLANEJADO SUZANO x NOSSA GRADE x REALIZADO</div>
-        <div id="rp-comparativo-suzano" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;"></div>
-      </div>
-      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-          <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">EVOLUÇÃO DO PLANEJAMENTO</div>
-          <span id="rp-snapshot-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
-        </div>
-        <div id="rp-timeline-chart" style="height:250px;overflow:hidden;border-radius:8px;background:#0f172a;border:1px solid #334155;"></div>
       </div>
       <!-- Gráfico -->
       <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
@@ -420,6 +405,33 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
         <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">🔢 SEPARAÇÕES POR TURNO</div>
         <div id="rp-turnos-resumo" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
+      </div>
+    </div>
+
+    <!-- ABA: PLANEJAMENTO -->
+    <div id="planejamento-wrap" style="display:none;padding:16px 18px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <label for="pl-data-ref" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">DIA:</label>
+        <select id="pl-data-ref" onchange="rpSetDataRef(this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"></select>
+        <button class="bg" onclick="rpSalvarPlanejadoSuzano()" style="font-size:10px;padding:4px 10px;">Salvar Suzano</button>
+        <button class="bg" onclick="rpSalvarSnapshotManual()" style="font-size:10px;padding:4px 10px;">Snapshot</button>
+        <button class="bexp" onclick="rpEnviarEmailAgora()" style="font-size:10px;padding:4px 10px;background:#0e7490;border-color:#06b6d4;">Enviar e-mail agora</button>
+        <span id="pl-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">PLANEJADO SUZANO POR OPERAÇÃO</div>
+        <div id="pl-suzano-inputs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">PLANEJADO SUZANO x NOSSA GRADE x REALIZADO</div>
+        <div id="rp-comparativo-suzano" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;"></div>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+          <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">EVOLUÇÃO DO PLANEJAMENTO</div>
+          <span id="rp-snapshot-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+        </div>
+        <div id="rp-timeline-chart" style="height:250px;overflow:hidden;border-radius:8px;background:#0f172a;border:1px solid #334155;"></div>
       </div>
     </div>
 
@@ -539,7 +551,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div id="log-body">
       <div style="margin:0 0 10px 0;"><input id="log-search" type="text" placeholder="🔎 Filtrar DT nos logs" oninput="loadLogs(this.value)" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:7px 10px;font-size:11px;"></div>
       <div class="log-entry log-entry-head">
-        <span>DATA/HORA</span><span>DT</span><span>STATUS</span><span>TRANSPORTADORA</span>
+        <span>DATA/HORA</span><span>DT</span><span>EVENTO</span><span>STATUS</span><span>TRANSPORTADORA</span><span>GRADE</span><span>ORIGEM</span>
       </div>
       <div id="log-list" style="color:#94a3b8;font-size:12px;">Carregando…</div>
     </div>
@@ -667,6 +679,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <div><label class="sl">SERVIÇO DE E-MAIL</label><select id="cfg-email-provider" class="mat-input"><option value="">Não configurado</option><option value="resend">Resend</option><option value="sendgrid">SendGrid</option><option value="brevo">Brevo</option><option value="smtp">SMTP/Nodemailer</option></select></div>
         <div><label class="sl">REMETENTE</label><input id="cfg-email-from" class="mat-input" placeholder="operacao@suaempresa.com"/></div>
       </div>
+      <div><label class="sl">URL DA AUTOMAÇÃO DE ENVIO (OPCIONAL)</label><input id="cfg-email-endpoint" class="mat-input" placeholder="https://.../send-report"/></div>
       <div><label class="sl">DESTINATÁRIOS</label><textarea id="cfg-email-to" class="obs-area" placeholder="gestor@empresa.com; operacao@empresa.com"></textarea></div>
       <div><label class="sl">CÓPIA (CC)</label><input id="cfg-email-cc" class="mat-input" placeholder="opcional"/></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="sg-form-grid">
@@ -674,9 +687,11 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <div><label class="sl">REPORTE FINAL</label><input id="cfg-report-final" type="time" class="mat-input" value="23:59"/></div>
       </div>
       <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;color:#94a3b8;font-size:12px;line-height:1.7;">
-        O painel salva essas preferências no navegador. O envio automático real deve rodar em backend/Edge Function/Cron, usando essas regras e uma chave de e-mail guardada fora do HTML.
+        <b style="color:#e2e8f0;">Como funciona:</b><br>
+        Serviço de e-mail é quem dispara o envio, remetente é o endereço que aparece como origem, destinatários são quem recebe, CC recebe em cópia e os horários definem o automático. Se a URL da automação não estiver configurada, o envio manual abre um e-mail pronto no seu programa de e-mail; para enviar sozinho, precisa de backend/Edge Function/Cron com chave protegida.
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="bexp" onclick="rpEnviarEmailAgora()" style="background:#0e7490;border-color:#06b6d4;">Enviar e-mail agora</button>
         <button class="bg" onclick="closeConfigModal()">Cancelar</button>
         <button class="bp" onclick="saveConfigModal()">Salvar configurações</button>
       </div>
