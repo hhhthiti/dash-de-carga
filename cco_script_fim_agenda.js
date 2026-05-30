@@ -1619,11 +1619,90 @@ async function registrarSaidasGrade(rows,{origem='UPLOAD_DIFF'}={}){
   return saidas.length;
 }
 
+function agendaScheduleKey(row){
+  const ini=parseBR(String((row&&row.grade_carregamento)||(row&&row.agenda)||''));
+  const fim=parseBR(String((row&&row.fim_carregamento)||(row&&row.fim_agenda)||''));
+  const iniKey=ini?ini.getTime():String((row&&row.grade_carregamento)||(row&&row.agenda)||'').trim();
+  const fimKey=fim?fim.getTime():String((row&&row.fim_carregamento)||(row&&row.fim_agenda)||'').trim();
+  return `${iniKey}__${fimKey}`;
+}
+
+function hasAgendaScheduleChanged(oldRow,newRow){
+  if(!oldRow||!newRow) return false;
+  const oldRef=String(oldRow.data_ref||'');
+  const newRef=String(newRow.data_ref||'');
+  if(oldRef&&newRef&&oldRef!==newRef) return true;
+  return agendaScheduleKey(oldRow)!==agendaScheduleKey(newRow);
+}
+
+function buildExistingByDT(rows){
+  const byDT=new Map();
+  (rows||[]).forEach(row=>{
+    const dt=normalizeDT(row&&row.dt);
+    if(!dt) return;
+    if(!byDT.has(dt)) byDT.set(dt,[]);
+    byDT.get(dt).push(row);
+  });
+  return byDT;
+}
+
+function bestExistingForIncoming(incoming,byDT){
+  const dt=normalizeDT(incoming&&incoming.dt);
+  const rows=(byDT&&byDT.get(dt))||[];
+  if(!rows.length) return null;
+  const sameRef=rows.find(r=>String(r.data_ref||'')===String(incoming.data_ref||''));
+  if(sameRef) return sameRef;
+  return rows.find(r=>!isFinalStatus(r.status)&&String(r.status||'')!=='DT EXCLUIDA') || rows[0];
+}
+
+async function registrarReagendamentosAgenda(incomingRows,existingRows){
+  const byDT=buildExistingByDT(existingRows);
+  const now=new Date().toISOString();
+  let total=0;
+  for(const incoming of incomingRows||[]){
+    const dt=normalizeDT(incoming&&incoming.dt);
+    const oldRow=bestExistingForIncoming(incoming,byDT);
+    if(!dt||!oldRow||!hasAgendaScheduleChanged(oldRow,incoming)) continue;
+    const oldRef=String(oldRow.data_ref||'');
+    const newRef=String(incoming.data_ref||'');
+    await tryInsertLog({
+      dt,
+      data_ref:newRef||oldRef,
+      event_type:'REAGENDADA',
+      status_before:oldRow.status||'',
+      status_after:'REAGENDADA',
+      transportadora:incoming.transportadora||oldRow.transportadora||'DT reagendada na agenda',
+      grade_carregamento:incoming.grade_carregamento||'',
+      fim_carregamento:incoming.fim_carregamento||'',
+      created_at:now,
+      source:'UPLOAD_DIFF',
+      payload:{
+        data_ref_before:oldRef,
+        data_ref_after:newRef,
+        grade_carregamento:incoming.grade_carregamento||incoming.agenda||'',
+        fim_carregamento:incoming.fim_carregamento||'',
+        grade_carregamento_before:oldRow.grade_carregamento||oldRow.agenda||'',
+        fim_carregamento_before:oldRow.fim_carregamento||'',
+        grade_carregamento_after:incoming.grade_carregamento||incoming.agenda||'',
+        fim_carregamento_after:incoming.fim_carregamento||'',
+        status_before:oldRow.status||'',
+        observacao:'DT já existia no banco com outra data/horário; tratada como reagendamento, não como DT excluída.'
+      },
+    });
+    if(oldRef&&newRef&&oldRef!==newRef){
+      await sbDelete('reporte_carga',{dt:String(oldRow.dt||dt),data_ref:oldRef});
+    }
+    total++;
+  }
+  return total;
+}
+
 async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRows){
   // REGRA 5: NUNCA remover automaticamente DTs pendentes (GAP).
   // Apenas registrar em log que a DT saiu da nova agenda.
   // O usuário deve excluir manualmente quando necessário.
   const incomingKeys=new Set((incomingRows||[]).map(r=>`${normalizeDT(r.dt)}__${String(r.data_ref||'')}`));
+  const incomingDTs=new Set((incomingRows||[]).map(r=>normalizeDT(r.dt)).filter(Boolean));
   const refs=new Set((uploadedRefs||[]).map(String));
   const now=new Date().toISOString();
   for(const row of existingRows||[]){
@@ -1631,6 +1710,7 @@ async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRow
     const dt=normalizeDT(row.dt);
     if(!dt || !refs.has(dataRef)) continue;
     if(incomingKeys.has(`${dt}__${dataRef}`)) continue;
+    if(incomingDTs.has(dt)) continue; // mesma DT veio em outro horário/data: é reagendamento, não exclusão
     const st=String(row.status||'').trim();
     if(isFinalStatus(st) || st==='DT EXCLUIDA') continue;
     // GAP: DT pendente que sumiu da nova agenda → apenas logar, NÃO excluir automaticamente
@@ -1647,11 +1727,13 @@ async function buildTable(){
   try{
     // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(agendaRefDate(r)||T)))];
+    const refsExisting=[...new Set([...refsUpload,kT,kAM].filter(Boolean))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas,doca_null`
+      `data_ref=${sbIn(refsExisting)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas,doca_null,transportadora,grade_carregamento,fim_carregamento,agenda`
     );
     const exMap={};
-    (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
+    const exByDT=buildExistingByDT(existing||[]);
+    (existing||[]).forEach(r=>{exMap[normalizeDT(r.dt)+'_'+r.data_ref]=r;});
     const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
     const logsStatusMap={};
     const finalStatusSet=new Set(STATUS_FINAIS);
@@ -1695,7 +1777,10 @@ async function buildTable(){
     const rows=dedupeCargaRowsByDTRef(dtsMescladas.filter(dt=>!finalizedDTs.has(normalizeDT(dt.DT))).map(dt=>{
       const refDate=agendaRefDate(dt)||T;
       const ref=dKey(refDate);
-      const ex=exMap[dt.DT+'_'+ref]||{};
+      const dtNorm=normalizeDT(dt.DT);
+      const sameRefEx=exMap[dtNorm+'_'+ref]||{};
+      const fallbackEx=(exByDT.get(dtNorm)||[]).find(r=>!isFinalStatus(r.status)&&String(r.status||'')!=='DT EXCLUIDA')||{};
+      const ex=Object.keys(sameRefEx).length?sameRefEx:fallbackEx;
       const diaRef=sameDay(refDate,T)?'HOJE':'AMANHÃ';
       const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
       const pesoRelatorio = pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '';
@@ -1738,6 +1823,7 @@ async function buildTable(){
     // Como não existe constraint única (dt,data_ref), fazemos replace por data_ref
     await markMissingRowsAsExcluded(uploadedRefs,rows,existing);
     if(rows.length) await sbUpsert('reporte_carga',rows,'dt,data_ref');
+    await registrarReagendamentosAgenda(rows,existing);
     await saveUploadSnapshot(rows);
     const importedCount=await persistImportedMaterials(rows);
     hideInf();
