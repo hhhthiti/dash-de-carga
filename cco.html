@@ -178,6 +178,11 @@ p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
 .log-entry:last-child{border-bottom:none;}
 .log-entry-head{color:#64748b;font-size:9px;letter-spacing:1.5px;font-weight:700;}
 
+.mud-item{display:grid;grid-template-columns:140px 95px 135px 1fr 1.2fr;gap:10px;align-items:center;padding:9px 8px;border-bottom:1px solid #1e293b;font-size:12px;}
+.mud-item:last-child{border-bottom:none;}
+.mud-badge{border:1px solid;border-radius:999px;padding:2px 8px;font-size:9px;font-weight:900;letter-spacing:.8px;}
+@media(max-width:800px){.mud-item{grid-template-columns:1fr!important;gap:4px;}.mud-item+div{margin-top:8px;}}
+
 /* Reagendar painel */
 #reagend-overlay{position:fixed;inset:0;background:#000000cc;z-index:302;display:none;align-items:center;justify-content:center;}
 #reagend-overlay.open{display:flex;}
@@ -232,8 +237,8 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
     <div class="ch"><span>📁</span><span class="ct">PASSO 1 — ARQUIVO DE AGENDAMENTO</span></div>
     <div class="cb">
       <p class="desc">Suba o arquivo de agendamento exportado do sistema.<br/>
-        Filtra automaticamente os locais <b style="color:#f59e0b">1110</b> e <b style="color:#f59e0b">1111</b> e, quando existir, exige <b style="color:#f59e0b">DOCA</b> preenchida
-        para montar a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#a78bfa">Amanhã</b> juntos.<br/>
+        Filtra automaticamente somente os <b style="color:#f59e0b">LOCAL</b> terminados em <b style="color:#f59e0b">1110</b> ou <b style="color:#f59e0b">1111</b>, remove <b style="color:#f59e0b">DOCA</b> vazia/null e DOCA FAB_MOG sem sufixo IFNT,
+        para montar a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#a78bfa">Amanhã</b> pela coluna <b style="color:#60a5fa">AGENDA TRANSPORTADOR</b>.<br/>
         <span style="color:#64748b;font-size:12px;">⚡ Ao subir uma nova planilha, o banco é atualizado preservando status (Expedido, No Show, Veículo Recusado) e hora chegada já registrados.</span>
       </p>
       <div class="dz" id="dz1" onclick="document.getElementById('f1').click()">
@@ -323,8 +328,10 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
       <button class="tab-btn" id="tab-reporte" onclick="switchTableTab('reporte')" style="color:#a78bfa;">📊 REPORTE DE STATUS</button>
       <button class="tab-btn" id="tab-planejamento" onclick="switchTableTab('planejamento')" style="color:#38bdf8;">📈 PLANEJAMENTO</button>
+      <button class="tab-btn" id="tab-mudancas" onclick="switchTableTab('mudancas')" style="color:#fbbf24;">📝 MUDANÇAS DA GRADE</button>
       <button class="tab-btn" id="tab-semgrade" onclick="switchTableTab('semgrade')" style="color:#f59e0b;">➕ ADICIONAR DT</button>
       <button class="tab-btn" id="tab-dtfake" onclick="switchTableTab('dtfake')" style="color:#fb923c;">🔄 DT FAKE</button>
+      <button class="tab-btn" id="tab-docanull" onclick="switchTableTab('docanull')" style="color:#f59e0b;">⚠️ DOCA S/ INFO</button>
       <button class="tab-btn" id="tab-nf" onclick="switchTableTab('nf')" style="color:#34d399;">📎 JUNTAR NFs</button>
     </div>
 
@@ -371,7 +378,9 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
           style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"/>
         <button class="bg" onclick="rpSetHoraCorte('')" style="font-size:10px;padding:4px 10px;">Agora</button>
         <button class="bexp" onclick="rpSalvarReporteManual()" style="font-size:10px;padding:4px 10px;background:#7c3aed;border-color:#8b5cf6;">Salvar reporte</button>
-        <button class="bexp" onclick="exportReporteJPG()" style="font-size:10px;padding:4px 10px;">Salvar JPG</button>
+        <button class="bexp" onclick="exportReporteJPG()" style="font-size:10px;padding:4px 10px;">📸 JPG</button>
+        <button class="bexp" onclick="exportReporteCSV()" style="font-size:10px;padding:4px 10px;background:#065f46;border-color:#059669;">📥 CSV</button>
+        <button class="bexp" onclick="exportReporteXLSX()" style="font-size:10px;padding:4px 10px;background:#1e3a5f;border-color:#2563eb;">📊 XLSX</button>
         <span id="rp-turno-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
       </div>
       <!-- Metas configuráveis -->
@@ -435,6 +444,24 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       </div>
     </div>
 
+    <!-- ABA: MUDANÇAS DA GRADE -->
+    <div id="mudancas-wrap" style="display:none;padding:16px 18px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <span style="font-size:10px;letter-spacing:2px;color:#fbbf24;font-weight:700;">DTs REAGENDADAS / EXCLUÍDAS DA GRADE</span>
+        <button class="bg" onclick="mudancasSetDia(new Date().toLocaleDateString('pt-BR'))" style="font-size:10px;padding:4px 10px;">Hoje</button>
+        <button class="bg" onclick="{const d=new Date();d.setDate(d.getDate()+1);mudancasSetDia(d.toLocaleDateString('pt-BR'))}" style="font-size:10px;padding:4px 10px;">Amanhã</button>
+        <input id="mudancas-dia" class="mat-input" value="" placeholder="dd/mm/aaaa" onchange="renderMudancasGrade()" style="width:120px;padding:5px 9px;font-size:11px;"/>
+        <button class="bg" onclick="renderMudancasGrade()" style="font-size:10px;padding:4px 10px;">↻ Atualizar</button>
+        <span id="mudancas-resumo" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:12px;">
+        <div style="display:grid;grid-template-columns:140px 95px 135px 1fr 1.2fr;gap:10px;padding:0 8px 8px;border-bottom:1px solid #334155;font-size:9px;letter-spacing:1.3px;color:#64748b;font-weight:800;">
+          <span>HORÁRIO</span><span>DT</span><span>EVENTO</span><span>OBS/TRANSPORTADORA</span><span>GRADE</span>
+        </div>
+        <div id="mudancas-list" style="display:grid;gap:0;"></div>
+      </div>
+    </div>
+
     <!-- ══════ ABA: ADICIONAR DT ══════ -->
     <div id="semgrade-wrap" style="display:none;padding:16px 18px;">
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
@@ -481,6 +508,19 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
           <button class="bp" onclick="confirmarSubstituicao()" style="flex:1;">✅ Confirmar substituição</button>
           <button class="bg" onclick="cancelarSubstituicao()">Cancelar</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: DOCA SEM INFO (REGRA 10) ══════ -->
+    <div id="docanull-wrap" style="display:none;padding:16px 18px;">
+      <div style="background:#162032;border:1px solid #f59e0b55;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#f59e0b;font-weight:700;margin-bottom:6px;">⚠️ DTs COM DOCA NÃO INFORMADA</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:14px;">
+          Estas DTs foram importadas da agenda mas estão <b style="color:#f59e0b">sem DOCA definida</b>.<br/>
+          Confirme se pertencem ao CD antes de manter. Use o botão <b style="color:#ef4444">Excluir</b> para remover manualmente.
+        </p>
+        <div id="docanull-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <div id="docanull-empty" style="display:none;color:#22c55e;font-size:13px;padding:10px 0;">✅ Nenhuma DT com DOCA não informada no momento.</div>
       </div>
     </div>
 
