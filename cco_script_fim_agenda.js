@@ -1139,11 +1139,13 @@ function processAgend(file){
           agendaDiagRows.push(diag);
           continue;
         }
-        // REGRA 10: DTs com DOCA nula devem ser importadas com flag visual (borda amarela)
-        // Não descartar — incluir com docaNula=true para auditoria manual
+        // DTs com DOCA vazia/null devem ser desconsideradas na importação de DTS.
+        // Mantemos o diagnóstico para explicar por que a linha não entrou na grade.
         const docaNula = isEmptyDoca(doca);
         if(docaNula){
-          diag.motivo='DOCA vazia/null — importada para auditoria (borda amarela).';
+          diag.motivo='Descartada: DOCA vazia/null na importação de DTS.';
+          agendaDiagRows.push(diag);
+          continue;
         }
         if(isDocaFabMogSemIfnt(docaNorm)){
           diag.motivo='Descartada pela regra de DOCA FAB_MOG sem sufixo IFNT.';
