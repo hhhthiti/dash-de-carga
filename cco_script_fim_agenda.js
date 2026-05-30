@@ -676,16 +676,14 @@ function parseBR(s){
 }
 
 function agendaRefDate(dt){
-  // REGRA 2/3: data de referência é sempre o FIM de carregamento, não o início
-  return (dt&&dt.FIM_AGENDA) || (dt&&dt.AGENDA) || null;
+  // REGRA 2/3: data de referência é sempre o FIM de carregamento, nunca o início.
+  return (dt&&dt.FIM_AGENDA) || null;
 }
 
 function rowRefDate(row){
   return parseBR(String((row&&row.fim_carregamento)||'')) ||
     parseBR(String((row&&row.fim_agenda)||'')) ||
-    parseBR(String((row&&row.data_ref)||'')) ||
-    parseBR(String((row&&row.grade_carregamento)||'')) ||
-    parseBR(String((row&&row.agenda)||''));
+    parseBR(String((row&&row.data_ref)||''));
 }
 
 function rowLoadingEndDate(row){
@@ -695,9 +693,12 @@ function rowLoadingEndDate(row){
 
 function rowReportRefDate(row){
   return rowLoadingEndDate(row) ||
-    parseBR(String((row&&row.data_ref)||'')) ||
-    parseBR(String((row&&row.grade_carregamento)||'')) ||
-    parseBR(String((row&&row.agenda)||''));
+    parseBR(String((row&&row.data_ref)||''));
+}
+
+function rowStatusRefDate(row){
+  // Importação de status usa exclusivamente o FIM de carregamento para data e horário.
+  return rowLoadingEndDate(row);
 }
 
 function rowReportRefKey(row){
@@ -919,6 +920,55 @@ function normalizeHora(raw){
 
 function normalizeSap(raw){
   return String(raw||'').trim().replace(/\.0+$/,'').replace(/\D/g,'');
+}
+
+function parseImportDate(raw){
+  const s=String(raw||'').trim();
+  if(!s) return null;
+  const br=parseBR(s);
+  if(br) return br;
+  const iso=s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if(iso) return new Date(+iso[1],+iso[2]-1,+iso[3]);
+  if(/^\d+(?:[,.]\d+)?$/.test(s)){
+    const n=Number(s.replace(',','.'));
+    if(n>20000&&n<80000){
+      const excelEpoch=new Date(1899,11,30);
+      excelEpoch.setDate(excelEpoch.getDate()+Math.floor(n));
+      return excelEpoch;
+    }
+  }
+  return null;
+}
+
+function combineImportDateHora(dataRaw,horaRaw){
+  const d=parseImportDate(dataRaw);
+  if(!d) return null;
+  const hora=normalizeHora(horaRaw);
+  if(hora){
+    const [hh,mm]=hora.split(':').map(n=>parseInt(n,10));
+    d.setHours(hh||0,mm||0,0,0);
+  }else{
+    d.setHours(0,0,0,0);
+  }
+  return d;
+}
+
+function sameMinute(a,b){
+  return a&&b&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()&&a.getHours()===b.getHours()&&a.getMinutes()===b.getMinutes();
+}
+
+function findDashRowForImportedStatus(csvRow,dashRows){
+  const dt=String(csvRow&&csvRow.dt||'');
+  const candidates=(dashRows||[]).filter(r=>String(r.dt)===dt);
+  if(!candidates.length) return null;
+  const importFim=csvRow&&csvRow.fimAgendamento;
+  if(importFim){
+    const exact=candidates.find(r=>sameMinute(rowStatusRefDate(r),importFim));
+    if(exact) return exact;
+    const sameEndDay=candidates.find(r=>sameDay(rowStatusRefDate(r),importFim));
+    if(sameEndDay) return sameEndDay;
+  }
+  return candidates[0];
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1620,11 +1670,8 @@ async function registrarSaidasGrade(rows,{origem='UPLOAD_DIFF'}={}){
 }
 
 function agendaScheduleKey(row){
-  const ini=parseBR(String((row&&row.grade_carregamento)||(row&&row.agenda)||''));
   const fim=parseBR(String((row&&row.fim_carregamento)||(row&&row.fim_agenda)||''));
-  const iniKey=ini?ini.getTime():String((row&&row.grade_carregamento)||(row&&row.agenda)||'').trim();
-  const fimKey=fim?fim.getTime():String((row&&row.fim_carregamento)||(row&&row.fim_agenda)||'').trim();
-  return `${iniKey}__${fimKey}`;
+  return fim?String(fim.getTime()):String((row&&row.fim_carregamento)||(row&&row.fim_agenda)||'').trim();
 }
 
 function hasAgendaScheduleChanged(oldRow,newRow){
@@ -4330,6 +4377,7 @@ function buildImportRows(parsed){
   // DT, HORA, DATA, FATURAMENTO, SAP, TRANSPORTADORA, STATUS, Mapa, Grade, TIPO, PESO.
   const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
   const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
+  const iData=headers.findIndex(h=>h==='DATA'||h.includes('DATA'));
   const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP'));
   const iFaturamento=headers.findIndex(h=>h==='FATURAMENTO'||h.includes('FATURAMENTO'));
   const statusIndexes=headers.map((h,i)=>({h,i})).filter(x=>x.h==='STATUS'||x.h.startsWith('STATUS.')).map(x=>x.i);
@@ -4348,17 +4396,22 @@ function buildImportRows(parsed){
     const faturamento=iFaturamento!==-1?(cols[iFaturamento]||''):'';
     const mappedStatus=normalizeStatus(rawStatus) || normalizeFaturamentoStatus(faturamento);
     const hora=iHora!==-1?normalizeHora(cols[iHora]):'';
+    const dataAgenda=iData!==-1?(cols[iData]||''):'';
+    const fimAgendamento=combineImportDateHora(dataAgenda,hora);
     const sap=iSap!==-1?normalizeSap(cols[iSap]):'';
-    if(byDT.has(dt)){
-      const current=byDT.get(dt);
+    const importKey=dt+'__'+(fimAgendamento?fimAgendamento.getTime():(dataAgenda||''));
+    if(byDT.has(importKey)){
+      const current=byDT.get(importKey);
       if(!current.rawStatus&&rawStatus) current.rawStatus=rawStatus;
       if(!current.faturamento&&faturamento) current.faturamento=faturamento;
       if(!current.mappedStatus&&mappedStatus) current.mappedStatus=mappedStatus;
       if(!current.hora&&hora) current.hora=hora;
+      if(!current.dataAgenda&&dataAgenda) current.dataAgenda=dataAgenda;
+      if(!current.fimAgendamento&&fimAgendamento) current.fimAgendamento=fimAgendamento;
       if(!current.sap&&sap) current.sap=sap;
     }else{
-      const item={dt, rawStatus, faturamento, mappedStatus, hora, sap};
-      byDT.set(dt,item);
+      const item={dt, rawStatus, faturamento, mappedStatus, hora, dataAgenda, fimAgendamento, sap};
+      byDT.set(importKey,item);
       data.push(item);
     }
   }
@@ -4430,9 +4483,9 @@ async function runImport(){
   try{
     const now=new Date();
 
-    // Filtra DTs pelo FIM da agenda, nunca pelo inicio.
+    // Filtra DTs pelo FIM de carregamento, nunca pelo início nem por fallback da data_ref.
     const dashHojeAmanha=tableData.filter(r=>{
-      const ref=rowRefDate(r);
+      const ref=rowStatusRefDate(r);
       return ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
     });
 
@@ -4446,7 +4499,7 @@ async function runImport(){
       const dt=String(csvRow.dt);
       const mappedStatus=csvRow.mappedStatus || normalizeStatus(csvRow.rawStatus) || normalizeFaturamentoStatus(csvRow.faturamento);
 
-      const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
+      const dashRow=findDashRowForImportedStatus(csvRow,dashHojeAmanha);
       if(!dashRow){skipped++;continue;}
 
       const patch={};
@@ -4474,7 +4527,7 @@ async function runImport(){
     // 2) DT ausente na planilha saiu da grade ativa: registra como excluida da grade.
     const removidas=[];
     tableData=tableData.filter(r=>{
-      const ref=rowReportRefDate(r);
+      const ref=rowStatusRefDate(r);
       const inActiveWindow=ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
       if(!inActiveWindow) return true;
       if(csvDtSet.has(String(r.dt))) return true;
