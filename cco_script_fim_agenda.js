@@ -1139,13 +1139,11 @@ function processAgend(file){
           agendaDiagRows.push(diag);
           continue;
         }
-        // DTs com DOCA vazia/null devem ser desconsideradas na importação de DTS.
-        // Mantemos o diagnóstico para explicar por que a linha não entrou na grade.
+        // DTs com DOCA vazia/null entram na grade para auditoria, mas ficam fora do reporte
+        // enquanto não forem liberadas manualmente pelo operador.
         const docaNula = isEmptyDoca(doca);
         if(docaNula){
-          diag.motivo='Descartada: DOCA vazia/null na importação de DTS.';
-          agendaDiagRows.push(diag);
-          continue;
+          diag.motivo='DOCA vazia/null — importada para auditoria e fora do reporte até liberação manual.';
         }
         if(isDocaFabMogSemIfnt(docaNorm)){
           diag.motivo='Descartada pela regra de DOCA FAB_MOG sem sufixo IFNT.';
@@ -1598,7 +1596,7 @@ async function buildTable(){
     // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(agendaRefDate(r)||T)))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas`
+      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas,doca_null`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
@@ -1651,7 +1649,8 @@ async function buildTable(){
       const pesoRelatorio = pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '';
       const pesoAtual = String(ex.peso_liquido || ex.toneladas || '');
       const pesoFinal = pesoRelatorio || pesoAtual;
-      // Preserva status, hora_chegada e peso existente; peso novo só vem do relatório de materiais.
+      const docaNullFinal = dt.DOCA_NULL ? ex.doca_null !== false : false;
+      // Preserva status, hora_chegada, peso existente e liberações manuais de DOCA no reporte.
       const statusAtual = ex.status && ex.status !== '' ? ex.status : (logsStatusMap[normalizeDT(dt.DT)]||'AG CHEGADA');
       const horaAtual   = ex.hora_chegada || '';
       return {
@@ -1672,7 +1671,7 @@ async function buildTable(){
         data_ref:String(ref),
         tipo_operacao:String(tipoOp),
         reagendada: ex.reagendada || false,
-        doca_null: !!dt.DOCA_NULL,
+        doca_null: docaNullFinal,
       };
     }));
 
@@ -1974,9 +1973,12 @@ function renderRows(){
     const isNovoDT = novoDTs.has(normalizeDT(row.dt));
     const novoBadge = isNovoDT ? ' <span style="background:#f59e0b22;border:1px solid #f59e0b88;color:#f59e0b;font-size:9px;font-weight:900;border-radius:4px;padding:1px 5px;letter-spacing:1px;vertical-align:middle;">NOVO ✨</span>' : '';
     const docaNullStyle = row.doca_null ? 'outline:2px solid #f59e0b;outline-offset:1px;' : '';
+    const docaReporteToggle = (preFatMode && row.doca_null)
+      ? `<label style="font-size:9px;color:#f59e0b;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" onchange="toggleDocaNullReporte('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#f59e0b;"/>REPORTE</label>`
+      : '';
     tr.innerHTML=
       `<td>${diaTag}</td>`+
-      `<td><span class="td-dt" style="${docaNullStyle}" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${novoBadge}${row.doca_null?' <span title="DOCA não informada — confirmar pertencimento ao CD" style="color:#f59e0b;font-size:11px;cursor:default;">⚠️</span>':''}${clock?` <span style="margin-left:4px;vertical-align:middle;">${clock}</span>`:''}${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}</td>` +
+      `<td><span class="td-dt" style="${docaNullStyle}" onclick="openPanel('${row.dt}','${row.data_ref}')">${row.dt}</span>${novoBadge}${row.doca_null?' <span title="DOCA não informada — fora do reporte até liberação manual" style="color:#f59e0b;font-size:11px;cursor:default;">⚠️</span>':''}${clock?` <span style="margin-left:4px;vertical-align:middle;">${clock}</span>`:''}${preFatMode?`<label style="font-size:9px;color:#a78bfa;display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;"><input type="checkbox" ${row.tipo_operacao==='PRÉ-FAT'?'checked':''} onchange="togglePreFat('${row.dt}','${row.data_ref}',this.checked)" style="accent-color:#a78bfa;"/>PRÉ-FAT</label>`:''}${docaReporteToggle}</td>` +
       `<td class="td-transp">${row.transportadora||'—'}</td>`+
       `<td class="td-sm">${paletTag}</td>`+
       `<td class="td-time">${row.grade_carregamento||'—'}</td>`+
@@ -2026,12 +2028,20 @@ async function togglePreFat(dt,dataRef,checked){
   if(row){row.tipo_operacao=novoTipo; renderRows(); renderReporte();}
 }
 
+async function toggleDocaNullReporte(dt,dataRef,checked){
+  const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
+  const docaNull=checked?false:true;
+  await saveField(dt,dataRef,'doca_null',docaNull);
+  if(row){row.doca_null=docaNull; renderRows(); renderReporte(); renderDocaNullAudit();}
+}
+
 async function saveField(dt,dataRef,field,value){
   spin(true);
   try{
-    await sbPatch('reporte_carga',{[field]:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
+    const patchValue=typeof value==='boolean'?value:String(value);
+    await sbPatch('reporte_carga',{[field]:patchValue,updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
-    if(row){row[field]=value;}
+    if(row){row[field]=patchValue;}
     await reloadTable();
     renderRows();
     renderReporte();
@@ -2888,6 +2898,7 @@ function rpRowDentroDoCorte(row,corteDate){
 }
 
 function rpRowContaNoReporte(row){
+  if(row&&row.doca_null) return false;
   return !STATUS_FORA_REPORTE.includes(String((row&&row.status)||'').trim().toUpperCase());
 }
 
@@ -3217,7 +3228,7 @@ function renderReporte(){
   const corte=rpGetCorteDate();
   const corteLabel=corte.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   if(infoEl) infoEl.textContent=reportRows.length+' DTs no filtro atual · corte até '+corteLabel+
-    (excludedRows?` · ${excludedRows} NO SHOW/RECUSADA fora do reporte`:'');
+    (excludedRows?` · ${excludedRows} NO SHOW/RECUSADA/DOCA S/ INFO fora do reporte`:'');
 
   const planejadoTon={};
   const realizadoTon={};
@@ -3794,6 +3805,7 @@ function renderDocaNullAudit(){
       <span style="font-size:11px;color:#64748b;">Grade: ${escHtml(r.grade_carregamento||'—')}</span>
       <span style="font-size:11px;color:#64748b;">Fim: ${escHtml(r.fim_carregamento||'—')}</span>
       <span style="font-size:11px;color:#64748b;">Status: ${escHtml(r.status||'—')}</span>
+      <button class="bp" onclick="toggleDocaNullReporte('${r.dt}','${r.data_ref}',true)" style="font-size:10px;padding:3px 10px;background:#b45309;border-color:#f59e0b;color:#fff7ed;">✅ Liberar no reporte</button>
       <button class="bg" onclick="docaNullExcluir('${r.dt}','${r.data_ref}')" style="font-size:10px;padding:3px 10px;border-color:#ef444455;color:#ef4444;">🗑️ Excluir</button>
     </div>
   `).join('');
