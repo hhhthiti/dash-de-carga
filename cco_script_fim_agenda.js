@@ -1598,7 +1598,7 @@ async function buildTable(){
     // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(agendaRefDate(r)||T)))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada`
+      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
@@ -1648,7 +1648,10 @@ async function buildTable(){
       const ex=exMap[dt.DT+'_'+ref]||{};
       const diaRef=sameDay(refDate,T)?'HOJE':'AMANHÃ';
       const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
-      // Preserva status e hora_chegada existentes!
+      const pesoRelatorio = pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '';
+      const pesoAtual = String(ex.peso_liquido || ex.toneladas || '');
+      const pesoFinal = pesoRelatorio || pesoAtual;
+      // Preserva status, hora_chegada e peso existente; peso novo só vem do relatório de materiais.
       const statusAtual = ex.status && ex.status !== '' ? ex.status : (logsStatusMap[normalizeDT(dt.DT)]||'AG CHEGADA');
       const horaAtual   = ex.hora_chegada || '';
       return {
@@ -1661,8 +1664,8 @@ async function buildTable(){
         status:statusAtual,
         descricao_documento:String(descDocMap[dt.DT]||ex.descricao_documento||''),
         centro:String(centroMap[dt.DT]||ex.centro||''),
-        toneladas:String(toTonInt(dt.PESO)),
-        peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] ?? dt.PESO)),
+        toneladas:pesoFinal,
+        peso_liquido:pesoFinal,
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
         dia_ref:diaRef,
@@ -1698,8 +1701,8 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:String(toTonInt(dt.PESO)),
-      peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] ?? dt.PESO)),
+      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:pesoLiquidoMap[dt.DT]?String(toTonInt(pesoLiquidoMap[dt.DT])):'',
+      peso_liquido: pesoLiquidoMap[dt.DT]?String(toTonInt(pesoLiquidoMap[dt.DT])):'',
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(agendaRefDate(dt)||T,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(agendaRefDate(dt)||T),
