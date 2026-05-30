@@ -154,6 +154,9 @@ async function sbInsert(table, rows){
 ═══════════════════════════════════════════════════════ */
 const STATUS_OPTIONS=['AG CHEGADA','CARREGANDO','EXPEDIDO','NO SHOW','VEICULO RECUSADO','SEPARANDO','EM FATURAMENTO','PATIO','DT EXCLUIDA','FOI EMBORA'];
 const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
+function isFinalStatus(status){
+  return STATUS_FINAIS.includes(String(status||'').trim().toUpperCase());
+}
 const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
 // REGRA 9: DTs novas — badge NOVO até a próxima atualização da agenda
 let novoDTs = new Set(); // DTs novas do último upload
@@ -690,15 +693,22 @@ function normalizeDiaRefRows(rows){
   return dedupeCargaRowsByDTRef((rows||[]).map(normalizeDiaRefRow));
 }
 
+const REPORTE_CARGA_UPSERT_COLUMNS=[
+  'dt','transportadora','grade_carregamento','fim_carregamento','hora_chegada','n_portaria',
+  'status','descricao_documento','centro','toneladas','peso_liquido','agenda','local_cd',
+  'dia_ref','data_ref','tipo_operacao','reagendada','doca_null','paletizacao','updated_at'
+];
+
 function cleanCargaRowForInsert(row){
   const refDate=rowReportRefDate(row);
   const dataRef=refDate?dKey(refDate):String(row.data_ref||'');
-  const clean={...row};
-  delete clean.id;
-  delete clean._stored_dia_ref;
+  const clean={};
+  REPORTE_CARGA_UPSERT_COLUMNS.forEach(col=>{ clean[col]=row&&row[col]!==undefined&&row[col]!==null?row[col]:''; });
   clean.dt=String(normalizeDT(clean.dt));
   clean.data_ref=String(dataRef);
   clean.dia_ref=sameDay(refDate,today())?'HOJE':(sameDay(refDate,tomorrow())?'AMANHÃ':'');
+  clean.reagendada=!!row.reagendada;
+  clean.doca_null=!!row.doca_null;
   clean.updated_at=new Date().toISOString();
   return clean;
 }
@@ -1404,7 +1414,6 @@ function processRelatorioCSV(file) {
       if(isInlineUpload){
         const importedCount=await persistImportedMaterialsForCurrentTable();
         await persistRelatorioFieldsForCurrentTable();
-        await rewriteActiveCargaSnapshot();
         await persistImportedMaterialsForCurrentTable();
         hideInf();
         showOk(`Relatório OK — ${totalDTs} transportes · ${linhasOk} linhas · materiais salvos para ${importedCount} DT(s)`);
@@ -1546,7 +1555,7 @@ async function saveUploadSnapshot(rows){
    BUILD TABLE — Upsert preservando status/hora_chegada
 ═══════════════════════════════════════════════════════ */
 async function registrarSaidasGrade(rows,{origem='UPLOAD_DIFF'}={}){
-  const saidas=(rows||[]).filter(r=>r&&r.dt&&r.data_ref&&!STATUS_FINAIS.includes(String(r.status||''))&&String(r.status||'')!=='DT EXCLUIDA');
+  const saidas=(rows||[]).filter(r=>r&&r.dt&&r.data_ref&&!isFinalStatus(r.status)&&String(r.status||'')!=='DT EXCLUIDA');
   if(!saidas.length) return 0;
   const now=new Date().toISOString();
   for(const row of saidas){
@@ -1580,7 +1589,7 @@ async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRow
     if(!dt || !refs.has(dataRef)) continue;
     if(incomingKeys.has(`${dt}__${dataRef}`)) continue;
     const st=String(row.status||'').trim();
-    if(STATUS_FINAIS.includes(st) || st==='DT EXCLUIDA') continue;
+    if(isFinalStatus(st) || st==='DT EXCLUIDA') continue;
     // GAP: DT pendente que sumiu da nova agenda → apenas logar, NÃO excluir automaticamente
     await tryInsertLog({dt,data_ref:dataRef,event_type:'DT_SAIU_GRADE',status:st,transportadora:row.transportadora||'Saiu da nova agenda',created_at:now,source:'UPLOAD_DIFF',payload:{status_before:st,grade_carregamento:row.grade_carregamento||'',fim_carregamento:row.fim_carregamento||'',observacao:'GAP: DT pendente não encontrada na nova agenda — mantida no sistema conforme Regra 5'}});
   }
@@ -1607,7 +1616,7 @@ async function buildTable(){
     (existing||[]).forEach(r=>{
       const dtEx=normalizeDT(r.dt);
       const st=String(r.status||'').trim();
-      if(dtEx&&finalStatusSet.has(st)) finalizedDTs.add(dtEx);
+      if(dtEx&&isFinalStatus(st)) finalizedDTs.add(dtEx);
     });
     if(dtsUpload.length){
       let logRows=[];
@@ -1630,7 +1639,7 @@ async function buildTable(){
         const st=String(l.status_after||l.status||'').trim();
         if(!dtLog||!st) return;
         if(st==='UPLOAD_AGENDA'||st==='REAGENDADA') return;
-        if(finalStatusSet.has(st)){
+        if(isFinalStatus(st)){
           finalizedDTs.add(dtLog);
           return;
         }
@@ -1839,7 +1848,7 @@ async function enrichRowsWithPaletizacao(rows){
 function clockEmoji(row){
   if(row.dia_ref!=='HOJE') return '';
   if(row.n_portaria) return '';
-  if(STATUS_FINAIS.includes(row.status)) return '';
+  if(isFinalStatus(row.status)) return '';
   if(row.status==='CARREGANDO') return '<span class="dt-clock" title="DT em carregamento sem SAP/Portaria. Preencher SAP agora.">🚨</span>';
   if(!row.grade_carregamento) return '';
   const grade=parseBR(row.grade_carregamento);
@@ -1935,9 +1944,9 @@ function renderRows(){
 
   let rows=[...tableData].sort(compareTableRows);
   if(currentTableTab==='finalizadas'){
-    rows=rows.filter(r=>STATUS_FINAIS.includes(r.status));
+    rows=rows.filter(r=>isFinalStatus(r.status));
   }else{
-    rows=rows.filter(r=>!STATUS_FINAIS.includes(r.status));
+    rows=rows.filter(r=>!isFinalStatus(r.status));
   }
   if(dtSearchTerm){
     rows=rows.filter(r=>String(r.dt||'').includes(dtSearchTerm));
@@ -1946,7 +1955,7 @@ function renderRows(){
   const tbody=document.getElementById('tbody');tbody.innerHTML='';
 
   // Atualiza badge da aba finalizadas
-  const nFin=tableData.filter(r=>STATUS_FINAIS.includes(r.status)).length;
+  const nFin=tableData.filter(r=>isFinalStatus(r.status)).length;
   document.getElementById('tab-finalizadas').textContent=`🏁 EXPEDIDAS / NO SHOW / RECUSADAS (${nFin})`;
   // Atualiza badge da aba DOCA S/ INFO
   const nDocaNull=tableData.filter(r=>r.doca_null).length;
@@ -1957,7 +1966,7 @@ function renderRows(){
     const isH=row.dia_ref==='HOJE';
     const c=SC[row.status]||'#334155';
     const tr=document.createElement('tr');
-    const isFinal=STATUS_FINAIS.includes(row.status);
+    const isFinal=isFinalStatus(row.status);
     const isReagend=row.reagendada;
     if(isReagend) tr.className='row-reagendada-flag';
     else tr.className=isH?'row-hoje':'row-amanha';
@@ -2795,7 +2804,7 @@ function rpBuildSnapshotPayload(source='DASHBOARD',evento='Snapshot manual'){
     realizado_kg:report.realizadoGrade||0,
     pendente_kg:Math.max(0,(report.nossaGrade||0)-(report.realizadoGrade||0)),
     dts_total:tableData.filter(r=>rpDateKey(r)===dataRef).length,
-    dts_abertas:tableData.filter(r=>rpDateKey(r)===dataRef&&!STATUS_FINAIS.includes(String(r.status||''))).length,
+    dts_abertas:tableData.filter(r=>rpDateKey(r)===dataRef&&!isFinalStatus(r.status)).length,
     dts_expedidas:Number(status.EXPEDIDO||0),
     dts_no_show:Number(status['NO SHOW']||0),
     dts_recusadas:Number(status['VEICULO RECUSADO']||0),
@@ -3659,7 +3668,7 @@ function downloadCanvasJPG(canvas,filename,quality=0.92,delay=0){
 
 function exportGradeTodasDTsJPG(){
   const rows=[...tableData]
-    .filter(r=>!STATUS_FINAIS.includes(r.status))
+    .filter(r=>!isFinalStatus(r.status))
     .sort(compareTableRows);
   const visibleRows=rows.slice(0,54);
   const W=1800;
