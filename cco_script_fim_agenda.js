@@ -1032,6 +1032,19 @@ function getAgendaHeaderNames(){
   };
 }
 
+const AGENDA_FIM_TRANSPORTADOR_COL_INDEX=22; // coluna 23 da agenda completa
+
+function getAgendaCompleteFimValue(cols){
+  return Array.isArray(cols)&&cols.length>AGENDA_FIM_TRANSPORTADOR_COL_INDEX ? cols[AGENDA_FIM_TRANSPORTADOR_COL_INDEX] : '';
+}
+
+function getAgendaFimValue(cols,mapFim,getByHeader){
+  const col23=getAgendaCompleteFimValue(cols);
+  // Na agenda completa, a coluna 23 é a referência oficial: FIM AGENDA TRANSPORTADOR.
+  if(parseAnyDate(col23)) return col23;
+  return mapFim?getByHeader(cols,mapFim):col23;
+}
+
 function getAgendaHeaderMap(keys){
   const h=getAgendaHeaderNames();
   return {
@@ -1112,7 +1125,7 @@ function agendaInvalidSummary(totalRows){
     .slice(0,4)
     .map(([motivo,total])=>`${total} ${motivo}`);
   const sample=(agendaDiagRows||[]).slice(0,3)
-    .map(r=>`linha ${r.linha||'?'}: LOCAL="${r.LOCAL||'-'}", DOCA="${r.DOCA||'-'}", AGENDA="${fmtDT(r.AGENDA,true)||'-'}"`)
+    .map(r=>`linha ${r.linha||'?'}: LOCAL="${r.LOCAL||'-'}", DOCA="${r.DOCA||'-'}", FIM="${fmtDT(r.FIM_AGENDA,true)||'-'}"`)
     .join(' | ');
   return `Nenhuma linha válida encontrada. Lidas ${totalRows||0} linhas. Motivos: ${parts.join('; ')||'sem diagnostico'}.${sample?' Amostras: '+sample:''}`;
 }
@@ -1135,7 +1148,7 @@ function getAgendaRecordsFromWorkbook(buf){
       if(score>bestScore){bestScore=score;headerIdx=i;header=keys;}
     });
     const map=getAgendaHeaderMap(header);
-    if(headerIdx<0||!map.DT||!map.AGENDA) return [];
+    if(headerIdx<0||!map.DT) return [];
     const idx=k=>k?header.indexOf(k):-1;
     const get=(cols,k)=>{const i=idx(k);return i>=0?cols[i]:'';};
     return table.slice(headerIdx+1).map((cols,i)=>({
@@ -1144,7 +1157,7 @@ function getAgendaRecordsFromWorkbook(buf){
       LOCAL:get(cols,map.LOCAL),
       TRANSPORTADORA:get(cols,map.TRANSPORTADORA),
       AGENDA:get(cols,map.AGENDA),
-      FIM_AGENDA:get(cols,map.FIM_AGENDA),
+      FIM_AGENDA:getAgendaFimValue(cols,map.FIM_AGENDA,get),
       PESO:get(cols,map.PESO),
       TIPO:get(cols,map.TIPO),
       DOCA:get(cols,map.DOCA),
@@ -1179,12 +1192,12 @@ function getAgendaRecordsFromText(buf){
     if(score>bestScore){bestScore=score;headerIdx=i;h=keys;}
   });
   const map=getAgendaHeaderMap(h);
-  if(headerIdx<0||!map.DT||!map.AGENDA) throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+(h.length?h.join(' | '):'nenhuma linha de cabeçalho reconhecida'));
+  if(headerIdx<0||!map.DT) throw new Error('Coluna DT não encontrada. A data oficial deve estar na coluna 23 (FIM AGENDA TRANSPORTADOR).\nColunas: '+(h.length?h.join(' | '):'nenhuma linha de cabeçalho reconhecida'));
   const idx=k=>k?h.indexOf(k):-1;
   const get=(cols,k)=>{const i=idx(k);return i>=0?cols[i]||'':'';};
   return lines.slice(headerIdx+1).map((line,i)=>{
     const c=splitAgendaLine(line,sep);
-    return {linha:headerIdx+i+2,DT:get(c,map.DT),LOCAL:get(c,map.LOCAL),TRANSPORTADORA:get(c,map.TRANSPORTADORA),AGENDA:get(c,map.AGENDA),FIM_AGENDA:get(c,map.FIM_AGENDA),PESO:get(c,map.PESO),TIPO:get(c,map.TIPO),DOCA:get(c,map.DOCA)};
+    return {linha:headerIdx+i+2,DT:get(c,map.DT),LOCAL:get(c,map.LOCAL),TRANSPORTADORA:get(c,map.TRANSPORTADORA),AGENDA:get(c,map.AGENDA),FIM_AGENDA:getAgendaFimValue(c,map.FIM_AGENDA,get),PESO:get(c,map.PESO),TIPO:get(c,map.TIPO),DOCA:get(c,map.DOCA)};
   }).filter(r=>String(r.DT||'').trim());
 }
 
@@ -1253,8 +1266,8 @@ function processAgend(file){
           agendaDiagRows.push(diag);
           continue;
         }
-        if(!agendaRaw){
-          diag.motivo='Sem AGENDA TRANSPORTADOR valida.';
+        if(!fimAgendaRaw){
+          diag.motivo='Sem FIM AGENDA TRANSPORTADOR valido na coluna 23.';
           agendaDiagRows.push(diag);
           continue;
         }
@@ -1772,16 +1785,28 @@ async function buildTable(){
   const T=today(),AM=tomorrow();
   const kT=dKey(T), kAM=dKey(AM);
   try{
-    // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
+    // Busca existentes por data de FIM e também por DT para limpar registros antigos gravados pelo início.
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(agendaRefDate(r)||T)))];
+    const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
+    const selectCarga='dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas,doca_null,transportadora,grade_carregamento,fim_carregamento,agenda';
     const refsExisting=[...new Set([...refsUpload,kT,kAM].filter(Boolean))];
-    const existing=await sbGet('reporte_carga',
-      `data_ref=${sbIn(refsExisting)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas,doca_null,transportadora,grade_carregamento,fim_carregamento,agenda`
+    const existingByRef=await sbGet('reporte_carga',
+      `data_ref=${sbIn(refsExisting)}&select=${selectCarga}`
     );
+    let existingByDt=[];
+    if(dtsUpload.length){
+      existingByDt=await sbGet('reporte_carga',
+        `dt=${sbIn(dtsUpload)}&select=${selectCarga}`
+      );
+    }
+    const existingMap=new Map();
+    [...(existingByRef||[]),...(existingByDt||[])].forEach(r=>{
+      existingMap.set(`${normalizeDT(r.dt)}__${String(r.data_ref||'')}`,r);
+    });
+    const existing=[...existingMap.values()];
     const exMap={};
     const exByDT=buildExistingByDT(existing||[]);
     (existing||[]).forEach(r=>{exMap[normalizeDT(r.dt)+'_'+r.data_ref]=r;});
-    const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
     const logsStatusMap={};
     const finalStatusSet=new Set(STATUS_FINAIS);
     const finalizedDTs=new Set();
