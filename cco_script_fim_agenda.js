@@ -327,14 +327,87 @@ function closeAgendaSearchModal(){
   if(ov) ov.style.display='none';
 }
 
-function agendaDiagnosticRowsForTerm(term){
+function agendaDiagnosticRowsForTerm(term,{dtOnly=false}={}){
   const q=normalizeDT(term).toLowerCase();
   if(!q) return [];
-  return (agendaDiagRows||[]).filter(r=>
-    String(r.DT||'').toLowerCase().includes(q) ||
-    String(r.TRANSPORTADORA||'').toLowerCase().includes(q) ||
-    String(r.DOCA||'').toLowerCase().includes(q)
-  );
+  return (agendaDiagRows||[]).filter(r=>{
+    const dt=normalizeDT(r.DT).toLowerCase();
+    if(dt===q || dt.includes(q)) return true;
+    if(dtOnly) return false;
+    return String(r.TRANSPORTADORA||'').toLowerCase().includes(q) ||
+      String(r.DOCA||'').toLowerCase().includes(q);
+  });
+}
+
+function agendaSearchTerms(raw){
+  const text=String(raw||'').trim();
+  if(!text) return [];
+  const numericTerms=[...text.matchAll(/\d{5,}/g)]
+    .map(m=>normalizeDT(m[0]))
+    .filter(Boolean);
+  const uniqueNumeric=[];
+  numericTerms.forEach(dt=>{if(!uniqueNumeric.includes(dt)) uniqueNumeric.push(dt);});
+  if(uniqueNumeric.length>1) return uniqueNumeric.map(value=>({value,dtOnly:true}));
+  return [{value:text,dtOnly:false}];
+}
+
+function agendaDashRowsForTerm(term,{dtOnly=false}={}){
+  const dtTerm=normalizeDT(term);
+  if(!dtTerm) return [];
+  return tableData.filter(r=>{
+    const dt=String(r.dt||'');
+    if(dt===dtTerm || dt.includes(dtTerm)) return true;
+    if(dtOnly) return false;
+    return String(r.transportadora||'').toLowerCase().includes(String(term).toLowerCase());
+  });
+}
+
+function buildAgendaSearchMissingCard(term){
+  return `<div style="color:#fca5a5;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:12px;margin-bottom:10px;">
+    Não achei a DT <b>${escHtml(term)}</b> na última agenda lida nem na tabela atual. Se a agenda foi carregada antes de abrir esta tela, importe o arquivo de agenda novamente e pesquise de novo.
+  </div>`;
+}
+
+function buildAgendaSearchCard(dt,diagRows,dashRows){
+  const rows=diagRows.filter(r=>normalizeDT(r.DT)===normalizeDT(dt));
+  const inDash=dashRows.filter(r=>normalizeDT(r.dt)===normalizeDT(dt));
+  const anyIncluded=rows.some(r=>r.included);
+  const refLabels=[...new Set(rows.map(r=>agendaRefDate(r)).filter(Boolean).map(dKey))];
+  const statusColor=inDash.length?'#22c55e':anyIncluded?'#f59e0b':'#ef4444';
+  const statusText=inDash.length
+    ? 'Entrou no dashboard atual'
+    : anyIncluded
+      ? 'Entrou na agenda filtrada, mas nao esta na tabela atual'
+      : 'Apareceu no arquivo, mas foi descartada pelos filtros';
+  const rowHtml=rows.length?rows.map(r=>{
+    const ref=agendaRefDate(r);
+    return `<div style="display:grid;grid-template-columns:90px 1fr;gap:8px;padding:8px 0;border-top:1px solid #334155;">
+      <div style="color:#64748b;font-size:10px;">Linha ${escHtml(r.linha)}</div>
+      <div style="font-size:12px;line-height:1.6;">
+        <b style="color:${r.included?'#86efac':'#fca5a5'};">${r.included?'Incluida':'Fora'}</b>
+        <span style="color:#94a3b8;"> · ${escHtml(r.motivo||'')}</span><br>
+        <span style="color:#64748b;">Inicio:</span> ${escHtml(fmtDT(r.AGENDA,true)||'-')}
+        <span style="color:#64748b;margin-left:10px;">Fim:</span> ${escHtml(fmtDT(r.FIM_AGENDA,true)||'-')}
+        <span style="color:#64748b;margin-left:10px;">Dia usado:</span> ${escHtml(ref?dKey(ref):'-')}<br>
+        <span style="color:#64748b;">Local:</span> ${escHtml(r.LOCAL||'-')}
+        <span style="color:#64748b;margin-left:10px;">Doca:</span> ${escHtml(r.DOCA||'-')}<br>
+        <span style="color:#64748b;">Transp.:</span> ${escHtml(r.TRANSPORTADORA||'-')}
+        <span style="color:#64748b;margin-left:10px;">Peso:</span> ${escHtml(r.PESO||'-')}
+      </div>
+    </div>`;
+  }).join(''):'<div style="padding:8px 0;color:#64748b;">Nao apareceu na ultima agenda lida, mas existe na tabela atual.</div>';
+  const dashHtml=inDash.length?inDash.map(r=>`<div style="margin-top:8px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:8px 10px;font-size:12px;">
+    Tabela atual: <b>${escHtml(r.dia_ref||'-')}</b> · data_ref ${escHtml(r.data_ref||'-')} · status ${escHtml(r.status||'-')} · fim ${escHtml(r.fim_carregamento||'-')}
+  </div>`).join(''):'';
+  return `<div style="background:#0f172a;border:1px solid #334155;border-left:3px solid ${statusColor};border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;">
+      <div style="font-size:15px;font-weight:900;color:#93c5fd;">DT ${escHtml(dt)}</div>
+      <div style="font-size:11px;color:${statusColor};font-weight:800;">${statusText}</div>
+    </div>
+    <div style="font-size:11px;color:#64748b;margin-top:3px;">Referencia pelo fim da agenda: ${escHtml(refLabels.join(', ')||'-')}</div>
+    ${rowHtml}
+    ${dashHtml}
+  </div>`;
 }
 
 function renderAgendaSearch(){
@@ -349,60 +422,30 @@ function renderAgendaSearch(){
       : 'Nenhuma agenda carregada nesta sessao';
   }
   if(!term){
-    body.innerHTML='<div style="color:#64748b;padding:18px;text-align:center;">Digite a DT, transportadora ou doca para investigar.</div>';
-    return;
-  }
-  const diagRows=agendaDiagnosticRowsForTerm(term);
-  const dtTerm=normalizeDT(term);
-  const dashRows=tableData.filter(r=>String(r.dt||'')===dtTerm || String(r.dt||'').includes(dtTerm));
-  const foundDTs=new Set([...diagRows.map(r=>String(r.DT)),...dashRows.map(r=>String(r.dt))].filter(Boolean));
-
-  if(!foundDTs.size){
-    body.innerHTML='<div style="color:#fca5a5;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:12px;">Nao achei essa DT na ultima agenda lida nem na tabela atual. Se a agenda foi carregada antes de abrir esta tela, importe o arquivo de agenda novamente e pesquise de novo.</div>';
+    body.innerHTML='<div style="color:#64748b;padding:18px;text-align:center;">Digite uma ou várias DTs, transportadora ou doca para investigar.</div>';
     return;
   }
 
-  body.innerHTML=[...foundDTs].map(dt=>{
-    const rows=diagRows.filter(r=>String(r.DT)===dt);
-    const inDash=dashRows.filter(r=>String(r.dt)===dt);
-    const anyIncluded=rows.some(r=>r.included);
-    const refLabels=[...new Set(rows.map(r=>agendaRefDate(r)).filter(Boolean).map(dKey))];
-    const statusColor=inDash.length?'#22c55e':anyIncluded?'#f59e0b':'#ef4444';
-    const statusText=inDash.length
-      ? 'Entrou no dashboard atual'
-      : anyIncluded
-        ? 'Entrou na agenda filtrada, mas nao esta na tabela atual'
-        : 'Apareceu no arquivo, mas foi descartada pelos filtros';
-    const rowHtml=rows.length?rows.map(r=>{
-      const ref=agendaRefDate(r);
-      return `<div style="display:grid;grid-template-columns:90px 1fr;gap:8px;padding:8px 0;border-top:1px solid #334155;">
-        <div style="color:#64748b;font-size:10px;">Linha ${escHtml(r.linha)}</div>
-        <div style="font-size:12px;line-height:1.6;">
-          <b style="color:${r.included?'#86efac':'#fca5a5'};">${r.included?'Incluida':'Fora'}</b>
-          <span style="color:#94a3b8;"> · ${escHtml(r.motivo||'')}</span><br>
-          <span style="color:#64748b;">Inicio:</span> ${escHtml(fmtDT(r.AGENDA,true)||'-')}
-          <span style="color:#64748b;margin-left:10px;">Fim:</span> ${escHtml(fmtDT(r.FIM_AGENDA,true)||'-')}
-          <span style="color:#64748b;margin-left:10px;">Dia usado:</span> ${escHtml(ref?dKey(ref):'-')}<br>
-          <span style="color:#64748b;">Local:</span> ${escHtml(r.LOCAL||'-')}
-          <span style="color:#64748b;margin-left:10px;">Doca:</span> ${escHtml(r.DOCA||'-')}<br>
-          <span style="color:#64748b;">Transp.:</span> ${escHtml(r.TRANSPORTADORA||'-')}
-          <span style="color:#64748b;margin-left:10px;">Peso:</span> ${escHtml(r.PESO||'-')}
-        </div>
-      </div>`;
-    }).join(''):'<div style="padding:8px 0;color:#64748b;">Nao apareceu na ultima agenda lida, mas existe na tabela atual.</div>';
-    const dashHtml=inDash.length?inDash.map(r=>`<div style="margin-top:8px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:8px 10px;font-size:12px;">
-      Tabela atual: <b>${escHtml(r.dia_ref||'-')}</b> · data_ref ${escHtml(r.data_ref||'-')} · status ${escHtml(r.status||'-')} · fim ${escHtml(r.fim_carregamento||'-')}
-    </div>`).join(''):'';
-    return `<div style="background:#0f172a;border:1px solid #334155;border-left:3px solid ${statusColor};border-radius:8px;padding:12px 14px;margin-bottom:10px;">
-      <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;">
-        <div style="font-size:15px;font-weight:900;color:#93c5fd;">DT ${escHtml(dt)}</div>
-        <div style="font-size:11px;color:${statusColor};font-weight:800;">${statusText}</div>
-      </div>
-      <div style="font-size:11px;color:#64748b;margin-top:3px;">Referencia pelo fim da agenda: ${escHtml(refLabels.join(', ')||'-')}</div>
-      ${rowHtml}
-      ${dashHtml}
-    </div>`;
-  }).join('');
+  const searches=agendaSearchTerms(term);
+  const cards=[];
+  const renderedDTs=new Set();
+  searches.forEach(search=>{
+    const diagRows=agendaDiagnosticRowsForTerm(search.value,{dtOnly:search.dtOnly});
+    const dashRows=agendaDashRowsForTerm(search.value,{dtOnly:search.dtOnly});
+    const foundDTs=[...new Set([...diagRows.map(r=>normalizeDT(r.DT)),...dashRows.map(r=>normalizeDT(r.dt))].filter(Boolean))];
+    if(!foundDTs.length){
+      cards.push(buildAgendaSearchMissingCard(search.value));
+      return;
+    }
+    foundDTs.forEach(dt=>{
+      const key=normalizeDT(dt);
+      if(renderedDTs.has(key)) return;
+      renderedDTs.add(key);
+      cards.push(buildAgendaSearchCard(dt,diagRows,dashRows));
+    });
+  });
+
+  body.innerHTML=cards.join('') || '<div style="color:#fca5a5;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:12px;">Nenhum resultado encontrado.</div>';
 }
 
 function setStep(n){
