@@ -676,16 +676,14 @@ function parseBR(s){
 }
 
 function agendaRefDate(dt){
-  // REGRA 2/3: data de referência é sempre o FIM de carregamento, não o início
-  return (dt&&dt.FIM_AGENDA) || (dt&&dt.AGENDA) || null;
+  // REGRA 2/3: data de referência é sempre o FIM de carregamento, nunca o início.
+  return (dt&&dt.FIM_AGENDA) || null;
 }
 
 function rowRefDate(row){
   return parseBR(String((row&&row.fim_carregamento)||'')) ||
     parseBR(String((row&&row.fim_agenda)||'')) ||
-    parseBR(String((row&&row.data_ref)||'')) ||
-    parseBR(String((row&&row.grade_carregamento)||'')) ||
-    parseBR(String((row&&row.agenda)||''));
+    parseBR(String((row&&row.data_ref)||''));
 }
 
 function rowLoadingEndDate(row){
@@ -695,9 +693,12 @@ function rowLoadingEndDate(row){
 
 function rowReportRefDate(row){
   return rowLoadingEndDate(row) ||
-    parseBR(String((row&&row.data_ref)||'')) ||
-    parseBR(String((row&&row.grade_carregamento)||'')) ||
-    parseBR(String((row&&row.agenda)||''));
+    parseBR(String((row&&row.data_ref)||''));
+}
+
+function rowStatusRefDate(row){
+  // Importação de status usa exclusivamente o FIM de carregamento para data e horário.
+  return rowLoadingEndDate(row);
 }
 
 function rowReportRefKey(row){
@@ -921,6 +922,55 @@ function normalizeSap(raw){
   return String(raw||'').trim().replace(/\.0+$/,'').replace(/\D/g,'');
 }
 
+function parseImportDate(raw){
+  const s=String(raw||'').trim();
+  if(!s) return null;
+  const br=parseBR(s);
+  if(br) return br;
+  const iso=s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if(iso) return new Date(+iso[1],+iso[2]-1,+iso[3]);
+  if(/^\d+(?:[,.]\d+)?$/.test(s)){
+    const n=Number(s.replace(',','.'));
+    if(n>20000&&n<80000){
+      const excelEpoch=new Date(1899,11,30);
+      excelEpoch.setDate(excelEpoch.getDate()+Math.floor(n));
+      return excelEpoch;
+    }
+  }
+  return null;
+}
+
+function combineImportDateHora(dataRaw,horaRaw){
+  const d=parseImportDate(dataRaw);
+  if(!d) return null;
+  const hora=normalizeHora(horaRaw);
+  if(hora){
+    const [hh,mm]=hora.split(':').map(n=>parseInt(n,10));
+    d.setHours(hh||0,mm||0,0,0);
+  }else{
+    d.setHours(0,0,0,0);
+  }
+  return d;
+}
+
+function sameMinute(a,b){
+  return a&&b&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()&&a.getHours()===b.getHours()&&a.getMinutes()===b.getMinutes();
+}
+
+function findDashRowForImportedStatus(csvRow,dashRows){
+  const dt=String(csvRow&&csvRow.dt||'');
+  const candidates=(dashRows||[]).filter(r=>String(r.dt)===dt);
+  if(!candidates.length) return null;
+  const importFim=csvRow&&csvRow.fimAgendamento;
+  if(importFim){
+    const exact=candidates.find(r=>sameMinute(rowStatusRefDate(r),importFim));
+    if(exact) return exact;
+    const sameEndDay=candidates.find(r=>sameDay(rowStatusRefDate(r),importFim));
+    if(sameEndDay) return sameEndDay;
+  }
+  return candidates[0];
+}
+
 /* ═══════════════════════════════════════════════════════
    DECODE BUFFER
 ═══════════════════════════════════════════════════════ */
@@ -972,7 +1022,7 @@ function pickAgendaStartHeader(keys,...names){
 function getAgendaHeaderNames(){
   return {
     dt:['DT','Nº TRANSPORTE','N TRANSPORTE','NUMERO TRANSPORTE','NÚMERO TRANSPORTE','TRANSPORTE','NR TRANSPORTE','NR. TRANSPORTE'],
-    agenda:['AGENDA TRANSPORTADOR','INICIO AGENDA TRANSPORTADOR','INÍCIO AGENDA TRANSPORTADOR','DATA/HORA AGENDA TRANSPORTADOR','DATA AGENDA TRANSPORTADOR','AGENDA'],
+    agenda:['AGENDA TRANSPORTADOR','INICIO AGENDA TRANSPORTADOR','INÍCIO AGENDA TRANSPORTADOR','INICIO AGENDA','INÍCIO AGENDA','DATA/HORA AGENDA TRANSPORTADOR','DATA AGENDA TRANSPORTADOR','AGENDA'],
     local:['LOCAL','LOCAL CARREGAMENTO','LOCAL DE CARREGAMENTO','CENTRO','CENTRO CD','CD','PLANTA'],
     transportadora:['NOME TRANSPORTADORA','TRANSPORTADORA','NOME TRANSP','TRANSP.','TRANSP'],
     fim:['FIM AGENDA TRANSPORTADOR','FIM DA AGENDA TRANSPORTADOR','DATA/HORA FIM AGENDA TRANSPORTADOR','FIM AGENDA','AGENDA FIM','FIM'],
@@ -980,6 +1030,19 @@ function getAgendaHeaderNames(){
     tipo:['TIPO VEICULO','TIPO VEÍCULO','TIPO DE VEICULO','TIPO DE VEÍCULO','TIPO'],
     doca:['DOCA','DOCA CARREGAMENTO','DOCA DE CARREGAMENTO'],
   };
+}
+
+const AGENDA_FIM_TRANSPORTADOR_COL_INDEX=22; // coluna 23 da agenda completa
+
+function getAgendaCompleteFimValue(cols){
+  return Array.isArray(cols)&&cols.length>AGENDA_FIM_TRANSPORTADOR_COL_INDEX ? cols[AGENDA_FIM_TRANSPORTADOR_COL_INDEX] : '';
+}
+
+function getAgendaFimValue(cols,mapFim,getByHeader){
+  const col23=getAgendaCompleteFimValue(cols);
+  // Na agenda completa, a coluna 23 é a referência oficial: FIM AGENDA TRANSPORTADOR.
+  if(parseAnyDate(col23)) return col23;
+  return mapFim?getByHeader(cols,mapFim):col23;
 }
 
 function getAgendaHeaderMap(keys){
@@ -1062,7 +1125,7 @@ function agendaInvalidSummary(totalRows){
     .slice(0,4)
     .map(([motivo,total])=>`${total} ${motivo}`);
   const sample=(agendaDiagRows||[]).slice(0,3)
-    .map(r=>`linha ${r.linha||'?'}: LOCAL="${r.LOCAL||'-'}", DOCA="${r.DOCA||'-'}", AGENDA="${fmtDT(r.AGENDA,true)||'-'}"`)
+    .map(r=>`linha ${r.linha||'?'}: LOCAL="${r.LOCAL||'-'}", DOCA="${r.DOCA||'-'}", FIM="${fmtDT(r.FIM_AGENDA,true)||'-'}"`)
     .join(' | ');
   return `Nenhuma linha válida encontrada. Lidas ${totalRows||0} linhas. Motivos: ${parts.join('; ')||'sem diagnostico'}.${sample?' Amostras: '+sample:''}`;
 }
@@ -1085,7 +1148,7 @@ function getAgendaRecordsFromWorkbook(buf){
       if(score>bestScore){bestScore=score;headerIdx=i;header=keys;}
     });
     const map=getAgendaHeaderMap(header);
-    if(headerIdx<0||!map.DT||!map.AGENDA) return [];
+    if(headerIdx<0||!map.DT) return [];
     const idx=k=>k?header.indexOf(k):-1;
     const get=(cols,k)=>{const i=idx(k);return i>=0?cols[i]:'';};
     return table.slice(headerIdx+1).map((cols,i)=>({
@@ -1094,7 +1157,7 @@ function getAgendaRecordsFromWorkbook(buf){
       LOCAL:get(cols,map.LOCAL),
       TRANSPORTADORA:get(cols,map.TRANSPORTADORA),
       AGENDA:get(cols,map.AGENDA),
-      FIM_AGENDA:get(cols,map.FIM_AGENDA),
+      FIM_AGENDA:getAgendaFimValue(cols,map.FIM_AGENDA,get),
       PESO:get(cols,map.PESO),
       TIPO:get(cols,map.TIPO),
       DOCA:get(cols,map.DOCA),
@@ -1129,12 +1192,12 @@ function getAgendaRecordsFromText(buf){
     if(score>bestScore){bestScore=score;headerIdx=i;h=keys;}
   });
   const map=getAgendaHeaderMap(h);
-  if(headerIdx<0||!map.DT||!map.AGENDA) throw new Error('Colunas DT ou AGENDA TRANSPORTADOR não encontradas.\nColunas: '+(h.length?h.join(' | '):'nenhuma linha de cabeçalho reconhecida'));
+  if(headerIdx<0||!map.DT) throw new Error('Coluna DT não encontrada. A data oficial deve estar na coluna 23 (FIM AGENDA TRANSPORTADOR).\nColunas: '+(h.length?h.join(' | '):'nenhuma linha de cabeçalho reconhecida'));
   const idx=k=>k?h.indexOf(k):-1;
   const get=(cols,k)=>{const i=idx(k);return i>=0?cols[i]||'':'';};
   return lines.slice(headerIdx+1).map((line,i)=>{
     const c=splitAgendaLine(line,sep);
-    return {linha:headerIdx+i+2,DT:get(c,map.DT),LOCAL:get(c,map.LOCAL),TRANSPORTADORA:get(c,map.TRANSPORTADORA),AGENDA:get(c,map.AGENDA),FIM_AGENDA:get(c,map.FIM_AGENDA),PESO:get(c,map.PESO),TIPO:get(c,map.TIPO),DOCA:get(c,map.DOCA)};
+    return {linha:headerIdx+i+2,DT:get(c,map.DT),LOCAL:get(c,map.LOCAL),TRANSPORTADORA:get(c,map.TRANSPORTADORA),AGENDA:get(c,map.AGENDA),FIM_AGENDA:getAgendaFimValue(c,map.FIM_AGENDA,get),PESO:get(c,map.PESO),TIPO:get(c,map.TIPO),DOCA:get(c,map.DOCA)};
   }).filter(r=>String(r.DT||'').trim());
 }
 
@@ -1203,8 +1266,8 @@ function processAgend(file){
           agendaDiagRows.push(diag);
           continue;
         }
-        if(!agendaRaw){
-          diag.motivo='Sem AGENDA TRANSPORTADOR valida.';
+        if(!fimAgendaRaw){
+          diag.motivo='Sem FIM AGENDA TRANSPORTADOR valido na coluna 23.';
           agendaDiagRows.push(diag);
           continue;
         }
@@ -1381,7 +1444,7 @@ function processRelatorioCSV(file) {
       const records = rows.slice(1).filter(r => r.some(c => c.trim() !== ''));
       for (const cols of records) {
         const strip = v => (v||'').trim().replace(/^"|"$/g,'');
-        const dt = strip(cols[iTransp]).replace(/\.0+$/, '').replace(/\D/g, '');
+        const dt = normalizeDT(strip(cols[iTransp]).replace(/\.0+$/, '').replace(/\D/g, ''));
         if (!dt || dt.length < 5) continue;
 
         const descDoc = iDesc !== -1 ? strip(cols[iDesc]) : '';
@@ -1427,7 +1490,7 @@ function processRelatorioCSV(file) {
         // peso liquido — soma por DT
         if (pesoRaw) {
           const p = parseCargaNumber(pesoRaw);
-          pesoLiquidoMap[dt] = (pesoLiquidoMap[dt] || 0) + p;
+          pesoLiquidoMap[normalizeDT(dt)] = (pesoLiquidoMap[normalizeDT(dt)] || 0) + p;
         }
 
         // remessas por transporte (para aba Materiais / Quantidades)
@@ -1515,6 +1578,14 @@ async function persistImportedMaterials(cargaRows=null){
   return pares.length;
 }
 
+function hasPesoMateriais(dt){
+  return Object.prototype.hasOwnProperty.call(pesoLiquidoMap,normalizeDT(dt));
+}
+
+function pesoMateriaisFinal(dt){
+  return hasPesoMateriais(dt)?String(toTonInt(pesoLiquidoMap[normalizeDT(dt)])):'';
+}
+
 function getCurrentTableRefsByDT(){
   const refsByDT=new Map();
   tableData.forEach(r=>{
@@ -1558,11 +1629,10 @@ async function persistRelatorioFieldsForCurrentTable(){
     if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
     if(centroMap[dt]) patch.centro=String(centroMap[dt]);
     if(paletizacaoMap[dt]) patch.paletizacao=String(paletizacaoMap[dt]);
-    if(pesoLiquidoMap[dt]){
-      const peso=String(Math.floor(pesoLiquidoMap[dt]));
-      patch.peso_liquido=peso;
-      patch.toneladas=peso;
-    }
+    // Peso é exclusivamente do relatório/materiais importado; sem material, limpa o peso.
+    const peso=pesoMateriaisFinal(dt);
+    patch.peso_liquido=peso;
+    patch.toneladas=peso;
     if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
     if(sapNumMap[dt]) patch.n_portaria=String(sapNumMap[dt]);
     if(Object.keys(patch).length===1) continue;
@@ -1619,11 +1689,87 @@ async function registrarSaidasGrade(rows,{origem='UPLOAD_DIFF'}={}){
   return saidas.length;
 }
 
+function agendaScheduleKey(row){
+  const fim=parseBR(String((row&&row.fim_carregamento)||(row&&row.fim_agenda)||''));
+  return fim?String(fim.getTime()):String((row&&row.fim_carregamento)||(row&&row.fim_agenda)||'').trim();
+}
+
+function hasAgendaScheduleChanged(oldRow,newRow){
+  if(!oldRow||!newRow) return false;
+  const oldRef=String(oldRow.data_ref||'');
+  const newRef=String(newRow.data_ref||'');
+  if(oldRef&&newRef&&oldRef!==newRef) return true;
+  return agendaScheduleKey(oldRow)!==agendaScheduleKey(newRow);
+}
+
+function buildExistingByDT(rows){
+  const byDT=new Map();
+  (rows||[]).forEach(row=>{
+    const dt=normalizeDT(row&&row.dt);
+    if(!dt) return;
+    if(!byDT.has(dt)) byDT.set(dt,[]);
+    byDT.get(dt).push(row);
+  });
+  return byDT;
+}
+
+function bestExistingForIncoming(incoming,byDT){
+  const dt=normalizeDT(incoming&&incoming.dt);
+  const rows=(byDT&&byDT.get(dt))||[];
+  if(!rows.length) return null;
+  const sameRef=rows.find(r=>String(r.data_ref||'')===String(incoming.data_ref||''));
+  if(sameRef) return sameRef;
+  return rows.find(r=>!isFinalStatus(r.status)&&String(r.status||'')!=='DT EXCLUIDA') || rows[0];
+}
+
+async function registrarReagendamentosAgenda(incomingRows,existingRows){
+  const byDT=buildExistingByDT(existingRows);
+  const now=new Date().toISOString();
+  let total=0;
+  for(const incoming of incomingRows||[]){
+    const dt=normalizeDT(incoming&&incoming.dt);
+    const oldRow=bestExistingForIncoming(incoming,byDT);
+    if(!dt||!oldRow||!hasAgendaScheduleChanged(oldRow,incoming)) continue;
+    const oldRef=String(oldRow.data_ref||'');
+    const newRef=String(incoming.data_ref||'');
+    await tryInsertLog({
+      dt,
+      data_ref:newRef||oldRef,
+      event_type:'REAGENDADA',
+      status_before:oldRow.status||'',
+      status_after:'REAGENDADA',
+      transportadora:incoming.transportadora||oldRow.transportadora||'DT reagendada na agenda',
+      grade_carregamento:incoming.grade_carregamento||'',
+      fim_carregamento:incoming.fim_carregamento||'',
+      created_at:now,
+      source:'UPLOAD_DIFF',
+      payload:{
+        data_ref_before:oldRef,
+        data_ref_after:newRef,
+        grade_carregamento:incoming.grade_carregamento||incoming.agenda||'',
+        fim_carregamento:incoming.fim_carregamento||'',
+        grade_carregamento_before:oldRow.grade_carregamento||oldRow.agenda||'',
+        fim_carregamento_before:oldRow.fim_carregamento||'',
+        grade_carregamento_after:incoming.grade_carregamento||incoming.agenda||'',
+        fim_carregamento_after:incoming.fim_carregamento||'',
+        status_before:oldRow.status||'',
+        observacao:'DT já existia no banco com outra data/horário; tratada como reagendamento, não como DT excluída.'
+      },
+    });
+    if(oldRef&&newRef&&oldRef!==newRef){
+      await sbDelete('reporte_carga',{dt:String(oldRow.dt||dt),data_ref:oldRef});
+    }
+    total++;
+  }
+  return total;
+}
+
 async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRows){
   // REGRA 5: NUNCA remover automaticamente DTs pendentes (GAP).
   // Apenas registrar em log que a DT saiu da nova agenda.
   // O usuário deve excluir manualmente quando necessário.
   const incomingKeys=new Set((incomingRows||[]).map(r=>`${normalizeDT(r.dt)}__${String(r.data_ref||'')}`));
+  const incomingDTs=new Set((incomingRows||[]).map(r=>normalizeDT(r.dt)).filter(Boolean));
   const refs=new Set((uploadedRefs||[]).map(String));
   const now=new Date().toISOString();
   for(const row of existingRows||[]){
@@ -1631,6 +1777,7 @@ async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRow
     const dt=normalizeDT(row.dt);
     if(!dt || !refs.has(dataRef)) continue;
     if(incomingKeys.has(`${dt}__${dataRef}`)) continue;
+    if(incomingDTs.has(dt)) continue; // mesma DT veio em outro horário/data: é reagendamento, não exclusão
     const st=String(row.status||'').trim();
     if(isFinalStatus(st) || st==='DT EXCLUIDA') continue;
     // GAP: DT pendente que sumiu da nova agenda → apenas logar, NÃO excluir automaticamente
@@ -1645,14 +1792,28 @@ async function buildTable(){
   const T=today(),AM=tomorrow();
   const kT=dKey(T), kAM=dKey(AM);
   try{
-    // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
+    // Busca existentes por data de FIM e também por DT para limpar registros antigos gravados pelo início.
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(agendaRefDate(r)||T)))];
-    const existing=await sbGet('reporte_carga',
-      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas,doca_null`
-    );
-    const exMap={};
-    (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
     const dtsUpload=[...new Set(dtsMescladas.map(r=>normalizeDT(r.DT)).filter(Boolean))];
+    const selectCarga='dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada,peso_liquido,toneladas,doca_null,transportadora,grade_carregamento,fim_carregamento,agenda';
+    const refsExisting=[...new Set([...refsUpload,kT,kAM].filter(Boolean))];
+    const existingByRef=await sbGet('reporte_carga',
+      `data_ref=${sbIn(refsExisting)}&select=${selectCarga}`
+    );
+    let existingByDt=[];
+    if(dtsUpload.length){
+      existingByDt=await sbGet('reporte_carga',
+        `dt=${sbIn(dtsUpload)}&select=${selectCarga}`
+      );
+    }
+    const existingMap=new Map();
+    [...(existingByRef||[]),...(existingByDt||[])].forEach(r=>{
+      existingMap.set(`${normalizeDT(r.dt)}__${String(r.data_ref||'')}`,r);
+    });
+    const existing=[...existingMap.values()];
+    const exMap={};
+    const exByDT=buildExistingByDT(existing||[]);
+    (existing||[]).forEach(r=>{exMap[normalizeDT(r.dt)+'_'+r.data_ref]=r;});
     const logsStatusMap={};
     const finalStatusSet=new Set(STATUS_FINAIS);
     const finalizedDTs=new Set();
@@ -1695,14 +1856,15 @@ async function buildTable(){
     const rows=dedupeCargaRowsByDTRef(dtsMescladas.filter(dt=>!finalizedDTs.has(normalizeDT(dt.DT))).map(dt=>{
       const refDate=agendaRefDate(dt)||T;
       const ref=dKey(refDate);
-      const ex=exMap[dt.DT+'_'+ref]||{};
+      const dtNorm=normalizeDT(dt.DT);
+      const sameRefEx=exMap[dtNorm+'_'+ref]||{};
+      const fallbackEx=(exByDT.get(dtNorm)||[]).find(r=>!isFinalStatus(r.status)&&String(r.status||'')!=='DT EXCLUIDA')||{};
+      const ex=Object.keys(sameRefEx).length?sameRefEx:fallbackEx;
       const diaRef=sameDay(refDate,T)?'HOJE':'AMANHÃ';
       const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
-      const pesoRelatorio = pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '';
-      const pesoAtual = String(ex.peso_liquido || ex.toneladas || '');
-      const pesoFinal = pesoRelatorio || pesoAtual;
+      const pesoFinal = pesoMateriaisFinal(dt.DT);
       const docaNullFinal = dt.DOCA_NULL ? ex.doca_null !== false : false;
-      // Preserva status, hora_chegada, peso existente e liberações manuais de DOCA no reporte.
+      // Preserva status/hora_chegada e liberações manuais; peso não tem fallback: só materiais.
       const statusAtual = ex.status && ex.status !== '' ? ex.status : (logsStatusMap[normalizeDT(dt.DT)]||'AG CHEGADA');
       const horaAtual   = ex.hora_chegada || '';
       return {
@@ -1735,9 +1897,23 @@ async function buildTable(){
     const uploadedRefs=[...new Set(refsUpload.filter(Boolean))];
     const activeRowRefs=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))];
     activeRefsOverride=(activeRowRefs.length?activeRowRefs:uploadedRefs).slice(0,2);
+    // REGRA UNICIDADE DT: apaga do banco qualquer linha com mesmo DT mas data_ref diferente
+    // (evita duplicatas ao re-subir a grade com horários alterados).
+    const staleRows=[];
+    rows.forEach(row=>{
+      const dtNorm=normalizeDT(row.dt);
+      const expectedRef=String(row.data_ref||'');
+      (exByDT.get(dtNorm)||[]).forEach(ex=>{
+        if(String(ex.data_ref||'')!==expectedRef) staleRows.push({dt:String(ex.dt||dtNorm),data_ref:String(ex.data_ref||'')});
+      });
+    });
+    for(const s of staleRows){
+      try{await sbDelete('reporte_carga',s);}catch(e){console.warn('Falha ao limpar data_ref obsoleto:',s,e);}
+    }
     // Como não existe constraint única (dt,data_ref), fazemos replace por data_ref
     await markMissingRowsAsExcluded(uploadedRefs,rows,existing);
     if(rows.length) await sbUpsert('reporte_carga',rows,'dt,data_ref');
+    await registrarReagendamentosAgenda(rows,existing);
     await saveUploadSnapshot(rows);
     const importedCount=await persistImportedMaterials(rows);
     hideInf();
@@ -1752,8 +1928,8 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:pesoLiquidoMap[dt.DT]?String(toTonInt(pesoLiquidoMap[dt.DT])):'',
-      peso_liquido: pesoLiquidoMap[dt.DT]?String(toTonInt(pesoLiquidoMap[dt.DT])):'',
+      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:pesoMateriaisFinal(dt.DT),
+      peso_liquido: pesoMateriaisFinal(dt.DT),
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(agendaRefDate(dt)||T,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(agendaRefDate(dt)||T),
@@ -1892,11 +2068,25 @@ function clockEmoji(row){
   if(row.dia_ref!=='HOJE') return '';
   if(row.n_portaria) return '';
   if(isFinalStatus(row.status)) return '';
+  const agora=new Date();
+  // 🚛 Carreta deve sair: fim_carregamento chegando ou passado (para DTs pendentes)
+  if(row.fim_carregamento){
+    const fim=parseBR(row.fim_carregamento);
+    if(fim){
+      const diffFimMin=(fim-agora)/60000;
+      const fimStr=fim.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      if(diffFimMin<=0 && diffFimMin>-120){
+        return '<span class="dt-clock" title="🚛 Fim do carregamento atingido ('+fimStr+') — carreta deve sair!">🚛</span>';
+      }
+      if(diffFimMin>0 && diffFimMin<=30){
+        return '<span class="dt-clock" title="🚛 Falta '+Math.round(diffFimMin)+'min para o fim do carregamento ('+fimStr+') — prepare saída!">🚛</span>';
+      }
+    }
+  }
   if(row.status==='CARREGANDO') return '<span class="dt-clock" title="DT em carregamento sem SAP/Portaria. Preencher SAP agora.">🚨</span>';
   if(!row.grade_carregamento) return '';
   const grade=parseBR(row.grade_carregamento);
   if(!grade) return '';
-  const agora=new Date();
   const chegadaLimite=new Date(grade.getTime()-3600000);
   const diffGradeMin=(grade-agora)/60000;
   if(diffGradeMin>=0 && diffGradeMin<=60){
@@ -1987,9 +2177,10 @@ function renderRows(){
 
   let rows=[...tableData].sort(compareTableRows);
   if(currentTableTab==='finalizadas'){
-    rows=rows.filter(r=>isFinalStatus(r.status));
+    rows=rows.filter(r=>isFinalStatus(r.status)&&!r.doca_null);
   }else{
-    rows=rows.filter(r=>!isFinalStatus(r.status));
+    // Exclui doca_null da tabela principal: essas DTs ficam apenas na aba ⚠️ DOCA S/ INFO
+    rows=rows.filter(r=>!isFinalStatus(r.status)&&!r.doca_null);
   }
   if(dtSearchTerm){
     rows=rows.filter(r=>String(r.dt||'').includes(dtSearchTerm));
@@ -4244,6 +4435,7 @@ function buildImportRows(parsed){
   // DT, HORA, DATA, FATURAMENTO, SAP, TRANSPORTADORA, STATUS, Mapa, Grade, TIPO, PESO.
   const iDT=headers.findIndex(h=>h==='DT'||h.includes('TRANSPORTE'));
   const iHora=headers.findIndex(h=>h==='HORA'||h.includes('HORA CHEGADA'));
+  const iData=headers.findIndex(h=>h==='DATA'||h.includes('DATA'));
   const iSap=headers.findIndex(h=>h==='SAP'||h.includes('PORTARIA')||h.includes('N SAP')||h.includes('NR SAP')||h.includes('NO SAP'));
   const iFaturamento=headers.findIndex(h=>h==='FATURAMENTO'||h.includes('FATURAMENTO'));
   const statusIndexes=headers.map((h,i)=>({h,i})).filter(x=>x.h==='STATUS'||x.h.startsWith('STATUS.')).map(x=>x.i);
@@ -4262,17 +4454,22 @@ function buildImportRows(parsed){
     const faturamento=iFaturamento!==-1?(cols[iFaturamento]||''):'';
     const mappedStatus=normalizeStatus(rawStatus) || normalizeFaturamentoStatus(faturamento);
     const hora=iHora!==-1?normalizeHora(cols[iHora]):'';
+    const dataAgenda=iData!==-1?(cols[iData]||''):'';
+    const fimAgendamento=combineImportDateHora(dataAgenda,hora);
     const sap=iSap!==-1?normalizeSap(cols[iSap]):'';
-    if(byDT.has(dt)){
-      const current=byDT.get(dt);
+    const importKey=dt+'__'+(fimAgendamento?fimAgendamento.getTime():(dataAgenda||''));
+    if(byDT.has(importKey)){
+      const current=byDT.get(importKey);
       if(!current.rawStatus&&rawStatus) current.rawStatus=rawStatus;
       if(!current.faturamento&&faturamento) current.faturamento=faturamento;
       if(!current.mappedStatus&&mappedStatus) current.mappedStatus=mappedStatus;
       if(!current.hora&&hora) current.hora=hora;
+      if(!current.dataAgenda&&dataAgenda) current.dataAgenda=dataAgenda;
+      if(!current.fimAgendamento&&fimAgendamento) current.fimAgendamento=fimAgendamento;
       if(!current.sap&&sap) current.sap=sap;
     }else{
-      const item={dt, rawStatus, faturamento, mappedStatus, hora, sap};
-      byDT.set(dt,item);
+      const item={dt, rawStatus, faturamento, mappedStatus, hora, dataAgenda, fimAgendamento, sap};
+      byDT.set(importKey,item);
       data.push(item);
     }
   }
@@ -4344,9 +4541,9 @@ async function runImport(){
   try{
     const now=new Date();
 
-    // Filtra DTs pelo FIM da agenda, nunca pelo inicio.
+    // Filtra DTs pelo FIM de carregamento, nunca pelo início nem por fallback da data_ref.
     const dashHojeAmanha=tableData.filter(r=>{
-      const ref=rowRefDate(r);
+      const ref=rowStatusRefDate(r);
       return ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
     });
 
@@ -4360,7 +4557,7 @@ async function runImport(){
       const dt=String(csvRow.dt);
       const mappedStatus=csvRow.mappedStatus || normalizeStatus(csvRow.rawStatus) || normalizeFaturamentoStatus(csvRow.faturamento);
 
-      const dashRow=dashHojeAmanha.find(r=>String(r.dt)===dt);
+      const dashRow=findDashRowForImportedStatus(csvRow,dashHojeAmanha);
       if(!dashRow){skipped++;continue;}
 
       const patch={};
@@ -4388,7 +4585,7 @@ async function runImport(){
     // 2) DT ausente na planilha saiu da grade ativa: registra como excluida da grade.
     const removidas=[];
     tableData=tableData.filter(r=>{
-      const ref=rowReportRefDate(r);
+      const ref=rowStatusRefDate(r);
       const inActiveWindow=ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
       if(!inActiveWindow) return true;
       if(csvDtSet.has(String(r.dt))) return true;
