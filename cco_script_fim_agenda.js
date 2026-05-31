@@ -1832,24 +1832,26 @@ async function buildTable(){
     const exByDT=buildExistingByDT(existing||[]);
     (existing||[]).forEach(r=>{exMap[normalizeDT(r.dt)+'_'+r.data_ref]=r;});
     const logsStatusMap={};
-    const finalStatusSet=new Set(STATUS_FINAIS);
-    const finalizedDTs=new Set();
+    // Status final bloqueia somente a mesma DT no mesmo data_ref;
+    // se a DT voltar em outro fim de agenda, ela deve entrar como nova linha ativa.
+    const finalizedKeys=new Set();
     (existing||[]).forEach(r=>{
       const dtEx=normalizeDT(r.dt);
+      const dataRefEx=String(r.data_ref||'');
       const st=String(r.status||'').trim();
-      if(dtEx&&isFinalStatus(st)) finalizedDTs.add(dtEx);
+      if(dtEx&&dataRefEx&&isFinalStatus(st)) finalizedKeys.add(dtEx+'__'+dataRefEx);
     });
     if(dtsUpload.length){
       let logRows=[];
       try{
         logRows=await sbGet('dt_logs',
-          `dt=${sbIn(dtsUpload)}&select=dt,event_type,status_after,hora_evento&order=hora_evento.desc&limit=1000`
+          `dt=${sbIn(dtsUpload)}&select=dt,data_ref,event_type,status_after,hora_evento&order=hora_evento.desc&limit=1000`
         );
       }catch(e){
         if(!isMissingLogsError(e)) throw e;
         try{
           logRows=await sbGet('reporte_logs',
-            `dt=${sbIn(dtsUpload)}&select=dt,status,created_at&order=created_at.desc&limit=1000`
+            `dt=${sbIn(dtsUpload)}&select=dt,data_ref,status,created_at&order=created_at.desc&limit=1000`
           );
         }catch(e2){
           if(!isMissingLogsError(e2)) throw e2;
@@ -1861,7 +1863,8 @@ async function buildTable(){
         if(!dtLog||!st) return;
         if(st==='UPLOAD_AGENDA'||st==='REAGENDADA') return;
         if(isFinalStatus(st)){
-          finalizedDTs.add(dtLog);
+          const dataRefLog=String(l.data_ref||'');
+          if(dataRefLog) finalizedKeys.add(dtLog+'__'+dataRefLog);
           return;
         }
         if(logsStatusMap[dtLog]) return;
@@ -1870,7 +1873,11 @@ async function buildTable(){
     }
 
 
-    const rows=dedupeCargaRowsByDTRef(dtsMescladas.filter(dt=>!finalizedDTs.has(normalizeDT(dt.DT))).map(dt=>{
+    const rows=dedupeCargaRowsByDTRef(dtsMescladas.filter(dt=>{
+      const refDate=agendaRefDate(dt)||T;
+      const ref=dKey(refDate);
+      return !finalizedKeys.has(normalizeDT(dt.DT)+'__'+ref);
+    }).map(dt=>{
       const refDate=agendaRefDate(dt)||T;
       const ref=dKey(refDate);
       const dtNorm=normalizeDT(dt.DT);
