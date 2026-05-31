@@ -157,6 +157,9 @@ const STATUS_FINAIS=['EXPEDIDO','NO SHOW','VEICULO RECUSADO'];
 function isFinalStatus(status){
   return STATUS_FINAIS.includes(String(status||'').trim().toUpperCase());
 }
+function isExcludedStatus(status){
+  return String(status||'').trim().toUpperCase()==='DT EXCLUIDA';
+}
 const SC={'EXPEDIDO':'#22c55e','CARREGANDO':'#3b82f6','AG CHEGADA':'#f59e0b','NO SHOW':'#ef4444','VEICULO RECUSADO':'#dc2626','SEPARANDO':'#8b5cf6','EM FATURAMENTO':'#06b6d4','PATIO':'#64748b','DT EXCLUIDA':'#374151','FOI EMBORA':'#6b7280'};
 // REGRA 9: DTs novas — badge NOVO até a próxima atualização da agenda
 let novoDTs = new Set(); // DTs novas do último upload
@@ -765,6 +768,7 @@ function cleanCargaRowForInsert(row){
 }
 
 function isRowInActiveReportWindow(row){
+  if(isExcludedStatus(row&&row.status)) return false;
   const ref=rowReportRefDate(row);
   return !!ref && (sameDay(ref,today())||sameDay(ref,tomorrow()));
 }
@@ -1681,7 +1685,7 @@ async function saveUploadSnapshot(rows){
    BUILD TABLE — Upsert preservando status/hora_chegada
 ═══════════════════════════════════════════════════════ */
 async function registrarSaidasGrade(rows,{origem='UPLOAD_DIFF'}={}){
-  const saidas=(rows||[]).filter(r=>r&&r.dt&&r.data_ref&&!isFinalStatus(r.status)&&String(r.status||'')!=='DT EXCLUIDA');
+  const saidas=(rows||[]).filter(r=>r&&r.dt&&r.data_ref&&!isFinalStatus(r.status)&&!isExcludedStatus(r.status));
   if(!saidas.length) return 0;
   const now=new Date().toISOString();
   for(const row of saidas){
@@ -1732,7 +1736,7 @@ function bestExistingForIncoming(incoming,byDT){
   if(!rows.length) return null;
   const sameRef=rows.find(r=>String(r.data_ref||'')===String(incoming.data_ref||''));
   if(sameRef) return sameRef;
-  return rows.find(r=>!isFinalStatus(r.status)&&String(r.status||'')!=='DT EXCLUIDA') || rows[0];
+  return rows.find(r=>!isFinalStatus(r.status)&&!isExcludedStatus(r.status)) || rows[0];
 }
 
 async function registrarReagendamentosAgenda(incomingRows,existingRows){
@@ -1792,7 +1796,7 @@ async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRow
     if(incomingKeys.has(`${dt}__${dataRef}`)) continue;
     if(incomingDTs.has(dt)) continue; // mesma DT veio em outro horário/data: é reagendamento, não exclusão
     const st=String(row.status||'').trim();
-    if(isFinalStatus(st) || st==='DT EXCLUIDA') continue;
+    if(isFinalStatus(st) || isExcludedStatus(st)) continue;
     // GAP: DT pendente que sumiu da nova agenda → apenas logar, NÃO excluir automaticamente
     await tryInsertLog({dt,data_ref:dataRef,event_type:'DT_SAIU_GRADE',status:st,transportadora:row.transportadora||'Saiu da nova agenda',created_at:now,source:'UPLOAD_DIFF',payload:{status_before:st,grade_carregamento:row.grade_carregamento||'',fim_carregamento:row.fim_carregamento||'',observacao:'GAP: DT pendente não encontrada na nova agenda — mantida no sistema conforme Regra 5'}});
   }
@@ -1871,14 +1875,18 @@ async function buildTable(){
       const ref=dKey(refDate);
       const dtNorm=normalizeDT(dt.DT);
       const sameRefEx=exMap[dtNorm+'_'+ref]||{};
-      const fallbackEx=(exByDT.get(dtNorm)||[]).find(r=>!isFinalStatus(r.status)&&String(r.status||'')!=='DT EXCLUIDA')||{};
+      const fallbackEx=(exByDT.get(dtNorm)||[]).find(r=>!isFinalStatus(r.status)&&!isExcludedStatus(r.status))||{};
       const ex=Object.keys(sameRefEx).length?sameRefEx:fallbackEx;
       const diaRef=sameDay(refDate,T)?'HOJE':'AMANHÃ';
       const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
       const pesoFinal = pesoMateriaisFinal(dt.DT);
       const docaNullFinal = dt.DOCA_NULL ? ex.doca_null !== false : false;
       // Preserva status/hora_chegada e liberações manuais; peso não tem fallback: só materiais.
-      const statusAtual = ex.status && ex.status !== '' ? ex.status : (logsStatusMap[normalizeDT(dt.DT)]||'AG CHEGADA');
+      // DT EXCLUIDA é só histórico de mudança de grade; se a DT voltar na agenda, volta ativa.
+      const statusLogado = logsStatusMap[normalizeDT(dt.DT)];
+      const statusAtual = ex.status && ex.status !== '' && !isExcludedStatus(ex.status)
+        ? ex.status
+        : (!isExcludedStatus(statusLogado)?(statusLogado||'AG CHEGADA'):'AG CHEGADA');
       const horaAtual   = ex.hora_chegada || '';
       return {
         dt:String(dt.DT),
@@ -2017,7 +2025,7 @@ async function reloadTable(){
     const data=await sbGet('reporte_carga',
       `data_ref=${sbIn(refs)}&order=dia_ref.asc,agenda.asc`
     );
-    tableData=normalizeDiaRefRows(data||[]).sort((a,b)=>{
+    tableData=normalizeDiaRefRows((data||[]).filter(r=>!isExcludedStatus(r.status))).sort((a,b)=>{
       return compareAgendaRows(a,b);
     });
     await enrichRowsWithPaletizacao(tableData);
@@ -2348,8 +2356,17 @@ async function tryInsertLog(row){
 async function saveStatus(dt,dataRef,value){
   spin(true);
   try{
-    await sbPatch('reporte_carga',{status:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     const row=tableData.find(r=>r.dt===dt&&r.data_ref===dataRef);
+    if(isExcludedStatus(value)){
+      await registrarSaidasGrade(row?[row]:[{dt,data_ref:dataRef,status:'',transportadora:''}],{origem:'MANUAL_STATUS'});
+      tableData=tableData.filter(r=>!(String(r.dt)===String(dt)&&String(r.data_ref)===String(dataRef)));
+      await reloadTable();
+      renderRows();
+      renderReporte();
+      spin(false);
+      return;
+    }
+    await sbPatch('reporte_carga',{status:String(value),updated_at:new Date().toISOString()},{dt,data_ref:dataRef});
     if(row){row.status=value;}
     await reloadTable();
     renderRows();
@@ -2480,7 +2497,13 @@ async function renderMudancasGrade(){
       const st=String(l.status_after||l.status||'-');
       const isReag=ev.toUpperCase().includes('REAGEND')||st.toUpperCase().includes('REAGEND');
       const payload=l.payload&&typeof l.payload==='object'?l.payload:{};
-      const grade=[l.grade_carregamento||payload.grade_carregamento,l.fim_carregamento||payload.fim_carregamento].filter(Boolean).join(' → ');
+      const inicioOriginal=payload.grade_carregamento_before||payload.grade_inicio_before||payload.grade_before||'';
+      const novoInicio=payload.grade_carregamento_after||payload.grade_carregamento||l.grade_carregamento||'';
+      const novoFim=payload.fim_carregamento_after||payload.fim_carregamento||l.fim_carregamento||'';
+      const gradeAtual=[novoInicio,novoFim].filter(Boolean).join(' → ');
+      const grade=isReag
+        ? [`Início: ${inicioOriginal||'—'}`,`Novo: ${gradeAtual||'—'}`].join(' · ')
+        : ([l.grade_carregamento||payload.grade_carregamento,l.fim_carregamento||payload.fim_carregamento].filter(Boolean).join(' → ') || (legacy?'legado':'—'));
       const div=document.createElement('div');
       div.className='mud-item';
       div.innerHTML=`
@@ -2488,7 +2511,7 @@ async function renderMudancasGrade(){
         <div style="font-weight:900;color:#93c5fd;">${escHtml(l.dt||'-')}</div>
         <div><span class="mud-badge" style="border-color:${isReag?'#f59e0b55':'#ef444455'};color:${isReag?'#fbbf24':'#fca5a5'};background:${isReag?'#f59e0b18':'#ef444418'};">${isReag?'REAGENDADA':'EXCLUÍDA DA GRADE'}</span></div>
         <div style="color:#94a3b8;">${escHtml(l.transportadora||'—')}</div>
-        <div style="color:#64748b;">${escHtml(grade || (legacy?'legado':'—'))}</div>`;
+        <div style="color:#64748b;">${escHtml(grade)}</div>`;
       body.appendChild(div);
     });
   }catch(e){
@@ -3155,6 +3178,7 @@ function rpRowDentroDoCorte(row,corteDate){
 
 function rpRowContaNoReporte(row){
   if(row&&row.doca_null) return false;
+  if(isExcludedStatus(row&&row.status)) return false;
   return !STATUS_FORA_REPORTE.includes(String((row&&row.status)||'').trim().toUpperCase());
 }
 
@@ -4565,6 +4589,8 @@ async function runImport(){
 
     let updated=0, fieldUpdated=0, removed=0, skipped=0;
 
+    const excluidasImportadas=[];
+
     // 1) Update DTs present in imported sheet (so as que estao no dash de hoje/amanha pelo fim)
     for(const csvRow of importCsvData){
       const dt=String(csvRow.dt);
@@ -4572,6 +4598,11 @@ async function runImport(){
 
       const dashRow=findDashRowForImportedStatus(csvRow,dashHojeAmanha);
       if(!dashRow){skipped++;continue;}
+
+      if(isExcludedStatus(mappedStatus)){
+        excluidasImportadas.push(dashRow);
+        continue;
+      }
 
       const patch={};
       if(csvRow.hora && dashRow.hora_chegada!==csvRow.hora) patch.hora_chegada=csvRow.hora;
@@ -4595,6 +4626,12 @@ async function runImport(){
       }catch(e){skipped++;}
     }
 
+    if(excluidasImportadas.length){
+      removed+=await registrarSaidasGrade(excluidasImportadas,{origem:'IMPORT_STATUS'});
+      const excluidasKeys=new Set(excluidasImportadas.map(r=>normalizeDT(r.dt)+'__'+String(r.data_ref||'')));
+      tableData=tableData.filter(r=>!excluidasKeys.has(normalizeDT(r.dt)+'__'+String(r.data_ref||'')));
+    }
+
     // 2) DT ausente na planilha saiu da grade ativa: registra como excluida da grade.
     const removidas=[];
     tableData=tableData.filter(r=>{
@@ -4605,7 +4642,7 @@ async function runImport(){
       removidas.push(r);
       return false;
     });
-    removed=await registrarSaidasGrade(removidas,{origem:'IMPORT_STATUS'});
+    removed+=await registrarSaidasGrade(removidas,{origem:'IMPORT_STATUS'});
 
     await rewriteActiveCargaSnapshot();
 
