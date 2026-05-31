@@ -1022,7 +1022,7 @@ function pickAgendaStartHeader(keys,...names){
 function getAgendaHeaderNames(){
   return {
     dt:['DT','Nº TRANSPORTE','N TRANSPORTE','NUMERO TRANSPORTE','NÚMERO TRANSPORTE','TRANSPORTE','NR TRANSPORTE','NR. TRANSPORTE'],
-    agenda:['AGENDA TRANSPORTADOR','INICIO AGENDA TRANSPORTADOR','INÍCIO AGENDA TRANSPORTADOR','DATA/HORA AGENDA TRANSPORTADOR','DATA AGENDA TRANSPORTADOR','AGENDA'],
+    agenda:['AGENDA TRANSPORTADOR','INICIO AGENDA TRANSPORTADOR','INÍCIO AGENDA TRANSPORTADOR','INICIO AGENDA','INÍCIO AGENDA','DATA/HORA AGENDA TRANSPORTADOR','DATA AGENDA TRANSPORTADOR','AGENDA'],
     local:['LOCAL','LOCAL CARREGAMENTO','LOCAL DE CARREGAMENTO','CENTRO','CENTRO CD','CD','PLANTA'],
     transportadora:['NOME TRANSPORTADORA','TRANSPORTADORA','NOME TRANSP','TRANSP.','TRANSP'],
     fim:['FIM AGENDA TRANSPORTADOR','FIM DA AGENDA TRANSPORTADOR','DATA/HORA FIM AGENDA TRANSPORTADOR','FIM AGENDA','AGENDA FIM','FIM'],
@@ -1897,6 +1897,19 @@ async function buildTable(){
     const uploadedRefs=[...new Set(refsUpload.filter(Boolean))];
     const activeRowRefs=[...new Set(rows.map(r=>r.data_ref).filter(Boolean))];
     activeRefsOverride=(activeRowRefs.length?activeRowRefs:uploadedRefs).slice(0,2);
+    // REGRA UNICIDADE DT: apaga do banco qualquer linha com mesmo DT mas data_ref diferente
+    // (evita duplicatas ao re-subir a grade com horários alterados).
+    const staleRows=[];
+    rows.forEach(row=>{
+      const dtNorm=normalizeDT(row.dt);
+      const expectedRef=String(row.data_ref||'');
+      (exByDT.get(dtNorm)||[]).forEach(ex=>{
+        if(String(ex.data_ref||'')!==expectedRef) staleRows.push({dt:String(ex.dt||dtNorm),data_ref:String(ex.data_ref||'')});
+      });
+    });
+    for(const s of staleRows){
+      try{await sbDelete('reporte_carga',s);}catch(e){console.warn('Falha ao limpar data_ref obsoleto:',s,e);}
+    }
     // Como não existe constraint única (dt,data_ref), fazemos replace por data_ref
     await markMissingRowsAsExcluded(uploadedRefs,rows,existing);
     if(rows.length) await sbUpsert('reporte_carga',rows,'dt,data_ref');
@@ -2055,11 +2068,25 @@ function clockEmoji(row){
   if(row.dia_ref!=='HOJE') return '';
   if(row.n_portaria) return '';
   if(isFinalStatus(row.status)) return '';
+  const agora=new Date();
+  // 🚛 Carreta deve sair: fim_carregamento chegando ou passado (para DTs pendentes)
+  if(row.fim_carregamento){
+    const fim=parseBR(row.fim_carregamento);
+    if(fim){
+      const diffFimMin=(fim-agora)/60000;
+      const fimStr=fim.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      if(diffFimMin<=0 && diffFimMin>-120){
+        return '<span class="dt-clock" title="🚛 Fim do carregamento atingido ('+fimStr+') — carreta deve sair!">🚛</span>';
+      }
+      if(diffFimMin>0 && diffFimMin<=30){
+        return '<span class="dt-clock" title="🚛 Falta '+Math.round(diffFimMin)+'min para o fim do carregamento ('+fimStr+') — prepare saída!">🚛</span>';
+      }
+    }
+  }
   if(row.status==='CARREGANDO') return '<span class="dt-clock" title="DT em carregamento sem SAP/Portaria. Preencher SAP agora.">🚨</span>';
   if(!row.grade_carregamento) return '';
   const grade=parseBR(row.grade_carregamento);
   if(!grade) return '';
-  const agora=new Date();
   const chegadaLimite=new Date(grade.getTime()-3600000);
   const diffGradeMin=(grade-agora)/60000;
   if(diffGradeMin>=0 && diffGradeMin<=60){
@@ -2150,9 +2177,10 @@ function renderRows(){
 
   let rows=[...tableData].sort(compareTableRows);
   if(currentTableTab==='finalizadas'){
-    rows=rows.filter(r=>isFinalStatus(r.status));
+    rows=rows.filter(r=>isFinalStatus(r.status)&&!r.doca_null);
   }else{
-    rows=rows.filter(r=>!isFinalStatus(r.status));
+    // Exclui doca_null da tabela principal: essas DTs ficam apenas na aba ⚠️ DOCA S/ INFO
+    rows=rows.filter(r=>!isFinalStatus(r.status)&&!r.doca_null);
   }
   if(dtSearchTerm){
     rows=rows.filter(r=>String(r.dt||'').includes(dtSearchTerm));
