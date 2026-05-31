@@ -697,8 +697,15 @@ function rowReportRefDate(row){
 }
 
 function rowStatusRefDate(row){
-  // Importação de status usa exclusivamente o FIM de carregamento para data e horário.
+  // Janela ativa da importação de status continua baseada no FIM de carregamento.
   return rowLoadingEndDate(row);
+}
+
+function rowImportAgendaDate(row){
+  // Para identificar DTs duplicadas na importação, a data/hora da planilha deve
+  // ser comparada com a agenda (início), não com o dia atual nem com o fim.
+  return parseBR(String((row&&row.grade_carregamento)||'')) ||
+    parseBR(String((row&&row.agenda)||''));
 }
 
 function rowReportRefKey(row){
@@ -961,11 +968,17 @@ function findDashRowForImportedStatus(csvRow,dashRows){
   const dt=String(csvRow&&csvRow.dt||'');
   const candidates=(dashRows||[]).filter(r=>String(r.dt)===dt);
   if(!candidates.length) return null;
-  const importFim=csvRow&&csvRow.fimAgendamento;
-  if(importFim){
-    const exact=candidates.find(r=>sameMinute(rowStatusRefDate(r),importFim));
-    if(exact) return exact;
-    const sameEndDay=candidates.find(r=>sameDay(rowStatusRefDate(r),importFim));
+  const importAgenda=csvRow&&csvRow.fimAgendamento;
+  if(importAgenda){
+    const exactAgenda=candidates.find(r=>sameMinute(rowImportAgendaDate(r),importAgenda));
+    if(exactAgenda) return exactAgenda;
+    const sameAgendaDay=candidates.find(r=>sameDay(rowImportAgendaDate(r),importAgenda));
+    if(sameAgendaDay) return sameAgendaDay;
+
+    // Fallback para arquivos antigos em que DATA/HORA tenha sido preenchida com o fim.
+    const exactEnd=candidates.find(r=>sameMinute(rowStatusRefDate(r),importAgenda));
+    if(exactEnd) return exactEnd;
+    const sameEndDay=candidates.find(r=>sameDay(rowStatusRefDate(r),importAgenda));
     if(sameEndDay) return sameEndDay;
   }
   return candidates[0];
