@@ -1444,7 +1444,7 @@ function processRelatorioCSV(file) {
       const records = rows.slice(1).filter(r => r.some(c => c.trim() !== ''));
       for (const cols of records) {
         const strip = v => (v||'').trim().replace(/^"|"$/g,'');
-        const dt = strip(cols[iTransp]).replace(/\.0+$/, '').replace(/\D/g, '');
+        const dt = normalizeDT(strip(cols[iTransp]).replace(/\.0+$/, '').replace(/\D/g, ''));
         if (!dt || dt.length < 5) continue;
 
         const descDoc = iDesc !== -1 ? strip(cols[iDesc]) : '';
@@ -1490,7 +1490,7 @@ function processRelatorioCSV(file) {
         // peso liquido — soma por DT
         if (pesoRaw) {
           const p = parseCargaNumber(pesoRaw);
-          pesoLiquidoMap[dt] = (pesoLiquidoMap[dt] || 0) + p;
+          pesoLiquidoMap[normalizeDT(dt)] = (pesoLiquidoMap[normalizeDT(dt)] || 0) + p;
         }
 
         // remessas por transporte (para aba Materiais / Quantidades)
@@ -1578,6 +1578,14 @@ async function persistImportedMaterials(cargaRows=null){
   return pares.length;
 }
 
+function hasPesoMateriais(dt){
+  return Object.prototype.hasOwnProperty.call(pesoLiquidoMap,normalizeDT(dt));
+}
+
+function pesoMateriaisFinal(dt){
+  return hasPesoMateriais(dt)?String(toTonInt(pesoLiquidoMap[normalizeDT(dt)])):'';
+}
+
 function getCurrentTableRefsByDT(){
   const refsByDT=new Map();
   tableData.forEach(r=>{
@@ -1621,11 +1629,10 @@ async function persistRelatorioFieldsForCurrentTable(){
     if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
     if(centroMap[dt]) patch.centro=String(centroMap[dt]);
     if(paletizacaoMap[dt]) patch.paletizacao=String(paletizacaoMap[dt]);
-    if(pesoLiquidoMap[dt]){
-      const peso=String(Math.floor(pesoLiquidoMap[dt]));
-      patch.peso_liquido=peso;
-      patch.toneladas=peso;
-    }
+    // Peso é exclusivamente do relatório/materiais importado; sem material, limpa o peso.
+    const peso=pesoMateriaisFinal(dt);
+    patch.peso_liquido=peso;
+    patch.toneladas=peso;
     if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
     if(sapNumMap[dt]) patch.n_portaria=String(sapNumMap[dt]);
     if(Object.keys(patch).length===1) continue;
@@ -1855,11 +1862,9 @@ async function buildTable(){
       const ex=Object.keys(sameRefEx).length?sameRefEx:fallbackEx;
       const diaRef=sameDay(refDate,T)?'HOJE':'AMANHÃ';
       const tipoOp=tipoOpMap[dt.DT]||(ex.tipo_operacao&&ex.tipo_operacao!==''?ex.tipo_operacao:'');
-      const pesoRelatorio = pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '';
-      const pesoAtual = String(ex.peso_liquido || ex.toneladas || '');
-      const pesoFinal = pesoRelatorio || pesoAtual;
+      const pesoFinal = pesoMateriaisFinal(dt.DT);
       const docaNullFinal = dt.DOCA_NULL ? ex.doca_null !== false : false;
-      // Preserva status, hora_chegada, peso existente e liberações manuais de DOCA no reporte.
+      // Preserva status/hora_chegada e liberações manuais; peso não tem fallback: só materiais.
       const statusAtual = ex.status && ex.status !== '' ? ex.status : (logsStatusMap[normalizeDT(dt.DT)]||'AG CHEGADA');
       const horaAtual   = ex.hora_chegada || '';
       return {
@@ -1910,8 +1915,8 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:pesoLiquidoMap[dt.DT]?String(toTonInt(pesoLiquidoMap[dt.DT])):'',
-      peso_liquido: pesoLiquidoMap[dt.DT]?String(toTonInt(pesoLiquidoMap[dt.DT])):'',
+      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:pesoMateriaisFinal(dt.DT),
+      peso_liquido: pesoMateriaisFinal(dt.DT),
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(agendaRefDate(dt)||T,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(agendaRefDate(dt)||T),
