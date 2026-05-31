@@ -1355,6 +1355,50 @@ function copyDTs(dia){
   }).catch(()=>showErr('Não foi possível copiar. Use Ctrl+C manualmente.'));
 }
 
+function normalizeMaterialSAP(raw){
+  const original=String(raw||'').trim();
+  if(!original) return '';
+  const digits=original.replace(/\D/g,'');
+  return digits || original;
+}
+
+function materiaisSAPForAgendaRows(rows){
+  const seen=new Set();
+  const materiais=[];
+  (rows||[]).forEach(r=>{
+    const dt=String(r&&r.DT||'').trim();
+    if(!dt) return;
+    const fontes=[...(exportMap[dt]||[]),...(remessaMap[dt]||[])];
+    fontes.forEach(m=>{
+      const mat=normalizeMaterialSAP(m&&m.material);
+      if(!mat||seen.has(mat)) return;
+      seen.add(mat);
+      materiais.push(mat);
+    });
+  });
+  return materiais;
+}
+
+/* Copia materiais linha a linha para colar na seleção múltipla do SAP */
+function copyMateriaisSAP(dia){
+  const arr = dia==='hoje'
+    ? agendaRowsForDia(today())
+    : agendaRowsForDia(tomorrow());
+  const materiais=materiaisSAPForAgendaRows(arr);
+  if(!materiais.length){
+    showErr('Nenhum material encontrado para '+(dia==='hoje'?'hoje':'amanhã')+'. Suba uma agenda/relatório com coluna Material.');
+    return;
+  }
+  const texto=materiais.join('\n');
+  navigator.clipboard.writeText(texto).then(()=>{
+    const btn=document.getElementById('copy-mat-'+dia+'-btn');
+    const total=materiais.length;
+    btn.textContent='✅ '+total+' material(is)!';
+    btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='📋 Copiar materiais em linha';btn.classList.remove('copied');},2200);
+  }).catch(()=>showErr('Não foi possível copiar os materiais. Use Ctrl+C manualmente.'));
+}
+
 /* ═══════════════════════════════════════════════════════
    AUTO-IMPORT DE MATERIAIS DO ARQUIVO DO PASSO 1 (XLSX)
    Detecta colunas: Nº transporte | Material | Qtde Remessa
