@@ -272,6 +272,10 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     showErr('Falha ao conectar: ' + e.message);
     setStep(1);
   }
+  trackBrevoEvent('dashboard_opened', { source: 'DASHBOARD' }, {
+    path: window.location.pathname || '',
+    rows_loaded: tableData.length,
+  }).catch(()=>null);
   // Ticker para atualizar emojis de relógio a cada minuto
   updateStatusReminder();
   setInterval(()=>{
@@ -2555,9 +2559,99 @@ let rpPlanejadoSuzano = JSON.parse(localStorage.getItem('rp_planejado_suzano')||
 let rpLastReport = null;
 let rpSnapshotCache = {};
 let appConfig = JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
+let brevoTrackerLoaded = false;
+let brevoTrackerLoading = null;
 
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO'];
 const STATUS_FORA_REPORTE = ['NO SHOW','VEICULO RECUSADO'];
+
+function getBrevoContactEmail(){
+  return String(appConfig.brevoTrackEmail || appConfig.emailFrom || (appConfig.emailTo && appConfig.emailTo[0]) || '').trim();
+}
+
+function getBrevoEventEndpoint(){
+  return String(appConfig.brevoEventEndpoint || '').trim() || 'http://localhost:8787/brevo-event';
+}
+
+function normalizeBrevoEventName(name){
+  return String(name || '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, 255);
+}
+
+function ensureBrevoTracker(){
+  const clientKey = String(appConfig.brevoClientKey || '').trim();
+  if (!clientKey || brevoTrackerLoaded) return Promise.resolve(!!brevoTrackerLoaded);
+  if (brevoTrackerLoading) return brevoTrackerLoading;
+
+  brevoTrackerLoading = new Promise(resolve => {
+    const boot = () => {
+      if (!window.Brevo || !Array.isArray(window.Brevo)) window.Brevo = window.Brevo || [];
+      window.Brevo.push(['init', { client_key: clientKey }]);
+      brevoTrackerLoaded = true;
+      resolve(true);
+    };
+    if (window.Brevo && typeof window.Brevo.push === 'function') {
+      boot();
+      return;
+    }
+    const existing = document.querySelector('script[data-brevo-tracker="true"]');
+    if (existing) {
+      existing.addEventListener('load', boot, { once: true });
+      existing.addEventListener('error', () => resolve(false), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.brevo.com/js/sdk-loader.js';
+    script.async = true;
+    script.dataset.brevoTracker = 'true';
+    script.onload = boot;
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  }).finally(() => {
+    brevoTrackerLoading = null;
+  });
+
+  return brevoTrackerLoading;
+}
+
+async function trackBrevoEvent(eventName, properties = {}, eventData = {}){
+  const normalizedName = normalizeBrevoEventName(eventName);
+  if (!normalizedName) return false;
+  const email = getBrevoContactEmail();
+  const contactProperties = {...properties};
+  if (email && !contactProperties.email) contactProperties.email = email;
+
+  const trackerKey = String(appConfig.brevoClientKey || '').trim();
+  if (trackerKey) {
+    await ensureBrevoTracker();
+    if (window.Brevo && typeof window.Brevo.push === 'function') {
+      window.Brevo.push(['track', normalizedName, contactProperties, eventData]);
+    }
+    return true;
+  }
+
+  const endpoint = getBrevoEventEndpoint();
+  if (!endpoint || !email) return false;
+  try{
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        email,
+        eventName: normalizedName,
+        contactProperties,
+        eventProperties: eventData,
+        eventDate: new Date().toISOString(),
+      }),
+    });
+    return response.ok;
+  }catch(err){
+    return false;
+  }
+}
 
 function rpRefDate(row){
   // Usado apenas para classificação de turno e corte de horário.
@@ -2717,6 +2811,9 @@ function openConfigModal(){
   set('cfg-email-endpoint',appConfig.emailEndpoint||'');
   set('cfg-email-to',(appConfig.emailTo||[]).join('; '));
   set('cfg-email-cc',(appConfig.emailCc||[]).join('; '));
+  set('cfg-brevo-client-key',appConfig.brevoClientKey||'');
+  set('cfg-brevo-track-email',appConfig.brevoTrackEmail||'');
+  set('cfg-brevo-event-endpoint',appConfig.brevoEventEndpoint||'http://localhost:8787/brevo-event');
   set('cfg-report-inicial',appConfig.reportInicial||'00:00');
   set('cfg-report-final',appConfig.reportFinal||'23:59');
   ov.style.display='flex';
@@ -2736,6 +2833,9 @@ function saveConfigModal(){
     emailEndpoint:val('cfg-email-endpoint').trim() || (provider==='brevo'?'http://localhost:8787/send-report':''),
     emailTo:getEmailList(val('cfg-email-to')),
     emailCc:getEmailList(val('cfg-email-cc')),
+    brevoClientKey:val('cfg-brevo-client-key').trim(),
+    brevoTrackEmail:val('cfg-brevo-track-email').trim(),
+    brevoEventEndpoint:val('cfg-brevo-event-endpoint').trim() || 'http://localhost:8787/brevo-event',
     reportInicial:val('cfg-report-inicial') || '00:00',
     reportFinal:val('cfg-report-final') || '23:59',
     updatedAt:new Date().toISOString(),
@@ -2756,6 +2856,9 @@ function syncConfigFromOpenModal(){
     emailEndpoint:val('cfg-email-endpoint').trim() || (provider==='brevo'?'http://localhost:8787/send-report':''),
     emailTo:getEmailList(val('cfg-email-to')),
     emailCc:getEmailList(val('cfg-email-cc')),
+    brevoClientKey:val('cfg-brevo-client-key').trim(),
+    brevoTrackEmail:val('cfg-brevo-track-email').trim(),
+    brevoEventEndpoint:val('cfg-brevo-event-endpoint').trim() || 'http://localhost:8787/brevo-event',
     reportInicial:val('cfg-report-inicial') || '00:00',
     reportFinal:val('cfg-report-final') || '23:59',
     updatedAt:new Date().toISOString(),
@@ -2808,6 +2911,10 @@ async function rpSalvarSnapshotManual(){
   spin(true);
   try{
     await rpCreateGradeSnapshot('MANUAL','Snapshot manual do reporte');
+    trackBrevoEvent('snapshot_saved', { source: 'MANUAL' }, {
+      data_ref: rpDataRef || dKey(today()),
+      action: 'snapshot_manual',
+    }).catch(()=>null);
     showOk('Snapshot da grade salvo no banco.');
   }catch(e){showErr('Erro ao salvar snapshot: '+e.message);}
   spin(false);
@@ -2830,6 +2937,10 @@ async function rpSalvarPlanejadoSuzano(){
       detalhes:rpGetPlanejadoSuzanoDetalhado()
     }]);
     await rpCreateGradeSnapshot('SUZANO','Planejado Suzano atualizado');
+    trackBrevoEvent('planned_suzano_updated', { source: 'SUZANO' }, {
+      data_ref: dataRef,
+      planejado_suzano_kg: kg,
+    }).catch(()=>null);
     showOk('Planejado Suzano salvo e snapshot criado.');
   }catch(e){showErr('Erro ao salvar planejado Suzano: '+e.message);}
   spin(false);
@@ -3036,6 +3147,12 @@ async function rpEnviarEmailAgora(){
         body:JSON.stringify(payload)
       });
       if(!r.ok) throw new Error(await r.text());
+      trackBrevoEvent('report_sent', { source: 'DASHBOARD' }, {
+        subject: payload.subject,
+        recipients: (appConfig.emailTo||[]).length,
+        cc: (appConfig.emailCc||[]).length,
+        provider: appConfig.emailProvider || '',
+      }).catch(()=>null);
       showOk('Solicitação de envio enviada para a automação.');
       closeConfigModal();
     }catch(e){showErr('Erro ao chamar automação de e-mail: '+e.message);}

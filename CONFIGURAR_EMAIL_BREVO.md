@@ -10,11 +10,14 @@ Campos principais:
 
 ```env
 BREVO_API_KEY=sua_chave_brevo
+BREVO_EVENT_FALLBACK_EMAIL=contato@empresa.com
 REPORT_FROM_EMAIL=email_verificado_na_brevo@suaempresa.com
 REPORT_FROM_NAME=Reporte Operacional
 REPORT_DEFAULT_TO=destinatario@suaempresa.com
 REPORT_DEFAULT_CC=
 REPORT_SERVER_PORT=8787
+REPORT_PUBLIC_BASE_URL=https://seu-dashboard.vercel.app
+REPORT_IMAGE_TITLE=Dashboard de Carga
 ```
 
 O `REPORT_FROM_EMAIL` precisa ser um remetente validado na Brevo.
@@ -45,6 +48,42 @@ Em Configurações do reporte:
 - Destinatários/CC: conforme necessário
 
 Se o serviço for `Brevo` e a URL ficar vazia, o dashboard usa automaticamente `http://localhost:8787/send-report`.
+
+## 4. Eventos customizados
+
+O dashboard agora consegue registrar eventos no Brevo de dois jeitos:
+
+- tracker no navegador, usando o `client_key` do Brevo
+- endpoint do servidor em `POST /brevo-event`, usando a `BREVO_API_KEY`
+
+No painel de configurações do dashboard, preencha:
+
+- `BREVO CLIENT KEY` se você quiser usar o tracker do navegador
+- `E-MAIL DO CONTATO BREVO` para associar o evento a um contato
+- `URL DO EVENTO BREVO` para apontar para seu servidor local ou produção
+
+Eventos enviados pelo app:
+
+- `dashboard_opened`
+- `snapshot_saved`
+- `planned_suzano_updated`
+- `report_sent`
+
+## 5. Imagem do relatório
+
+O servidor agora expõe uma rota pública para imagem:
+
+```txt
+http://localhost:8787/api/relatorio?ts=TIMESTAMP
+```
+
+Em produção, use:
+
+```txt
+https://seu-dashboard.vercel.app/api/relatorio?ts=TIMESTAMP
+```
+
+O parâmetro `ts` ajuda a quebrar cache em Gmail, Brevo e outros clientes.
 
 ## Segurança
 
