@@ -1,92 +1,88 @@
-# Configurar envio de reporte pela Brevo
+# Configurar envio Brevo na Vercel
 
-Este projeto agora tem um servidor local para enviar o e-mail sem expor a chave Brevo no HTML.
+Este projeto envia reporte direto pela Vercel, sem `.bat` e sem expor a chave da Brevo no navegador.
 
-## 1. Criar o arquivo local de ambiente
+## 1. Variaveis de ambiente da Vercel
 
-Crie um arquivo chamado `.env.local` nesta pasta, usando `.env.local.example` como modelo.
-
-Campos principais:
+No projeto `dash-de-carga` na Vercel, configure em `Settings > Environment Variables`:
 
 ```env
 BREVO_API_KEY=sua_chave_brevo
-BREVO_EVENT_FALLBACK_EMAIL=contato@empresa.com
-REPORT_FROM_EMAIL=email_verificado_na_brevo@suaempresa.com
-REPORT_FROM_NAME=Reporte Operacional
-REPORT_DEFAULT_TO=destinatario@suaempresa.com
-REPORT_DEFAULT_CC=
-REPORT_SERVER_PORT=8787
-REPORT_PUBLIC_BASE_URL=https://seu-dashboard.vercel.app
-REPORT_IMAGE_TITLE=Dashboard de Carga
+REPORT_FROM_EMAIL=jonn3224@gmail.com
+REPORT_FROM_NAME=dash de carga
+REPORT_DASHBOARD_URL=https://dash-de-carga.vercel.app/cco.html
+SUPABASE_URL=https://pwjatxqtkvvcmzmjjvbi.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
+CRON_SECRET=uma_senha_grande_aleatoria
+REPORT_TIME_ZONE=America/Sao_Paulo
 ```
 
-O `REPORT_FROM_EMAIL` precisa ser um remetente validado na Brevo.
+O `REPORT_FROM_EMAIL` precisa estar validado como remetente dentro da Brevo.
 
-## 2. Iniciar o servidor
+## 2. Banco Supabase
 
-Abra `iniciar-servidor-email.bat`.
-
-Ele sobe:
+Rode a migration:
 
 ```txt
-http://localhost:8787
+supabase/migrations/20260603_report_delivery_config.sql
 ```
 
-Endpoint usado pelo dashboard:
+Ela cria:
 
-```txt
-http://localhost:8787/send-report
-```
+- `report_delivery_config`: guarda destinatarios, horario e automatico
+- `report_delivery_runs`: evita disparo duplicado
 
-## 3. Configurar no dashboard
+## 3. Como o dashboard funciona
 
-Em Configurações do reporte:
+No dashboard, abra `Configurações`:
 
 - Serviço de e-mail: `Brevo`
-- Remetente: o mesmo e-mail validado na Brevo
-- URL da automação: `http://localhost:8787/send-report`
-- Destinatários/CC: conforme necessário
+- Remetente: `jonn3224@gmail.com`
+- URL da automação: pode deixar vazio na Vercel
+- Destinatários/CC: escolha quem recebe
+- E-mail automático: `Ligado`
+- Intervalo: `60`
+- Reporte inicial: `00:00`
+- Reporte final: `11:59`
 
-Se o serviço for `Brevo` e a URL ficar vazia, o dashboard usa automaticamente `http://localhost:8787/send-report`.
+Ao salvar, o dashboard grava essa configuração em `/api/report-config`.
 
-## 4. Eventos customizados
+## 4. Rotas criadas
 
-O dashboard agora consegue registrar eventos no Brevo de dois jeitos:
+- `POST /api/send-report`: envio manual pelo botão
+- `GET /api/report-config`: carrega configuração salva
+- `POST /api/report-config`: salva destinatarios/horarios
+- `GET /api/cron-report`: envio automatico de hora em hora
+- `GET /api/cron-report-final`: disparo especial das 11:59
 
-- tracker no navegador, usando o `client_key` do Brevo
-- endpoint do servidor em `POST /brevo-event`, usando a `BREVO_API_KEY`
+## 5. Agendamento na Vercel
 
-No painel de configurações do dashboard, preencha:
+O arquivo `vercel.json` configura:
 
-- `BREVO CLIENT KEY` se você quiser usar o tracker do navegador
-- `E-MAIL DO CONTATO BREVO` para associar o evento a um contato
-- `URL DO EVENTO BREVO` para apontar para seu servidor local ou produção
-
-Eventos enviados pelo app:
-
-- `dashboard_opened`
-- `snapshot_saved`
-- `planned_suzano_updated`
-- `report_sent`
-
-## 5. Imagem do relatório
-
-O servidor agora expõe uma rota pública para imagem:
-
-```txt
-http://localhost:8787/api/relatorio?ts=TIMESTAMP
+```json
+{
+  "crons": [
+    { "path": "/api/cron-report", "schedule": "0 * * * *" },
+    { "path": "/api/cron-report-final", "schedule": "59 14 * * *" }
+  ]
+}
 ```
 
-Em produção, use:
+A Vercel usa cron em UTC. `59 14 * * *` equivale a `11:59` em `America/Sao_Paulo`.
 
-```txt
-https://seu-dashboard.vercel.app/api/relatorio?ts=TIMESTAMP
-```
+No disparo de `11:59`, a API envia:
 
-O parâmetro `ts` ajuda a quebrar cache em Gmail, Brevo e outros clientes.
+- reporte do dia atual
+- reporte do dia seguinte
+
+## 6. WhatsApp
+
+WhatsApp ficou fora desta versão.
+
+Automação por WhatsApp Web precisa de um servidor sempre ligado mantendo sessão de navegador. A Vercel não é ideal para isso, porque Functions são temporarias e não mantêm sessão aberta.
 
 ## Segurança
 
-Não coloque a chave Brevo dentro do `cco.html` nem no `cco_script_fim_agenda.js`.
+Não coloque `BREVO_API_KEY` nem `SUPABASE_SERVICE_ROLE_KEY` no HTML/JS do dashboard.
 
-Como a chave foi compartilhada em texto puro durante a configuração, o ideal é gerar uma nova chave na Brevo e desativar a antiga.
+Como a chave Brevo e a service role foram compartilhadas em texto puro durante a configuração, o ideal é gerar novas chaves depois de validar que tudo está funcionando.

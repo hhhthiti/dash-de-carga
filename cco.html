@@ -729,11 +729,15 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div><label class="sl">URL DO EVENTO BREVO (OPCIONAL)</label><input id="cfg-brevo-event-endpoint" class="mat-input" placeholder="http://localhost:8787/brevo-event"/></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="sg-form-grid">
         <div><label class="sl">REPORTE INICIAL</label><input id="cfg-report-inicial" type="time" class="mat-input" value="00:00"/></div>
-        <div><label class="sl">REPORTE FINAL</label><input id="cfg-report-final" type="time" class="mat-input" value="23:59"/></div>
+        <div><label class="sl">REPORTE FINAL</label><input id="cfg-report-final" type="time" class="mat-input" value="11:59"/></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="sg-form-grid">
+        <div><label class="sl">E-MAIL AUTOMATICO</label><select id="cfg-auto-email-enabled" class="mat-input"><option value="">Desligado</option><option value="1">Ligado</option></select></div>
+        <div><label class="sl">INTERVALO (MINUTOS)</label><input id="cfg-auto-email-interval" type="number" min="5" step="5" class="mat-input" value="60"/></div>
       </div>
       <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;color:#94a3b8;font-size:12px;line-height:1.7;">
         <b style="color:#e2e8f0;">Como funciona:</b><br>
-        Serviço de e-mail é quem dispara o envio, remetente é o endereço que aparece como origem, destinatários são quem recebe, CC recebe em cópia e os horários definem o automático. Para Brevo, deixe o servidor local de e-mail aberto e use http://localhost:8787/send-report. Para eventos customizados, informe um e-mail de contato e, se quiser o tracker do navegador, preencha o client key.
+        Serviço de e-mail é quem dispara o envio, remetente é o endereço que aparece como origem, destinatários são quem recebe, CC recebe em cópia e os horários definem o automático. Na Vercel, a chave da Brevo fica escondida nas variáveis de ambiente e o dashboard chama /api/send-report.
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="bexp" onclick="rpEnviarEmailAgora()" style="background:#0e7490;border-color:#06b6d4;">Enviar e-mail agora</button>

@@ -17,6 +17,10 @@ const REPORT_DEFAULT_CC = parseEmailList(process.env.REPORT_DEFAULT_CC || '');
 const REPORT_SERVER_TOKEN = process.env.REPORT_SERVER_TOKEN || '';
 const REPORT_IMAGE_TITLE = process.env.REPORT_IMAGE_TITLE || 'Dashboard de Carga';
 const REPORT_PUBLIC_BASE_URL = process.env.REPORT_PUBLIC_BASE_URL || '';
+const REPORT_WHATSAPP_SENDER_NUMBER = normalizePhoneNumber(process.env.REPORT_WHATSAPP_SENDER_NUMBER || '');
+const REPORT_WHATSAPP_TEMPLATE_ID = process.env.REPORT_WHATSAPP_TEMPLATE_ID || '';
+const REPORT_DEFAULT_WHATSAPP_TO = parsePhoneList(process.env.REPORT_DEFAULT_WHATSAPP_TO || '');
+const REPORT_DEFAULT_WHATSAPP_TEXT = process.env.REPORT_DEFAULT_WHATSAPP_TEXT || 'Reporte de status atualizado. Confira o dashboard.';
 
 let lastReportSnapshot = null;
 
@@ -110,6 +114,8 @@ async function handleSendReport(req, res) {
     return sendJson(res, response.status, { error: 'Brevo recusou o envio.', details: safeBrevoBody(body) });
   }
 
+  const whatsappResult = await maybeSendWhatsapp(payload).catch(err => ({ ok: false, error: err.message || String(err) }));
+
   const eventEmail = pickEventEmail(payload, to);
   if (eventEmail) {
     await postBrevoEvent({
@@ -128,7 +134,7 @@ async function handleSendReport(req, res) {
     }).catch(() => null);
   }
 
-  sendJson(res, 200, { ok: true, brevo: safeBrevoBody(body) });
+  sendJson(res, 200, { ok: true, brevo: safeBrevoBody(body), whatsapp: whatsappResult });
 }
 
 async function handleBrevoEvent(req, res) {
@@ -192,6 +198,15 @@ function parseEmailList(value) {
   return raw.split(/[;,]/).map(v => v.trim()).filter(v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v));
 }
 
+function normalizePhoneNumber(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function parsePhoneList(value) {
+  const raw = Array.isArray(value) ? value.join(';') : String(value || '');
+  return raw.split(/[;,]/).map(normalizePhoneNumber).filter(Boolean);
+}
+
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
@@ -249,6 +264,46 @@ function resolveReportImageUrl(payload) {
   if (!REPORT_PUBLIC_BASE_URL) return '';
   const stamp = Date.now();
   return `${REPORT_PUBLIC_BASE_URL.replace(/\/$/, '')}/api/relatorio?ts=${stamp}`;
+}
+
+async function maybeSendWhatsapp(payload) {
+  const config = payload.config || {};
+  if (!config.whatsappEnabled) return { skipped: true, reason: 'whatsapp_disabled' };
+
+  const contactNumbers = parsePhoneList(config.whatsappTo).length
+    ? parsePhoneList(config.whatsappTo)
+    : REPORT_DEFAULT_WHATSAPP_TO;
+  if (!contactNumbers.length) return { skipped: true, reason: 'no_whatsapp_recipients' };
+
+  const senderNumber = normalizePhoneNumber(config.whatsappSenderNumber || REPORT_WHATSAPP_SENDER_NUMBER);
+  if (!senderNumber) return { skipped: true, reason: 'no_whatsapp_sender_number' };
+
+  const templateIdRaw = String(config.whatsappTemplateId || REPORT_WHATSAPP_TEMPLATE_ID || '').trim();
+  const text = String(config.whatsappText || REPORT_DEFAULT_WHATSAPP_TEXT || buildPlainText(payload)).slice(0, 1000);
+  const whatsappPayload = { senderNumber, contactNumbers };
+  if (templateIdRaw) {
+    const templateId = Number(templateIdRaw);
+    if (!Number.isFinite(templateId)) throw new Error('WHATSAPP_TEMPLATE_ID invalido.');
+    whatsappPayload.templateId = templateId;
+  } else {
+    whatsappPayload.text = text;
+  }
+
+  const response = await fetch('https://api.brevo.com/v3/whatsapp/sendMessage', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'api-key': BREVO_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(whatsappPayload),
+  });
+
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`Brevo WhatsApp recusou o envio: ${response.status} ${String(body || '').slice(0, 400)}`);
+  }
+  return { ok: true, brevo: safeBrevoBody(body) };
 }
 
 function getReportSnapshotForImage(query = {}) {
