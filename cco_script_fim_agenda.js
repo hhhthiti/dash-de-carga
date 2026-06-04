@@ -2573,7 +2573,17 @@ function getBrevoContactEmail(){
 }
 
 function getBrevoEventEndpoint(){
-  return String(appConfig.brevoEventEndpoint || '').trim() || 'http://localhost:8787/brevo-event';
+  const explicit=String(appConfig.brevoEventEndpoint || '').trim();
+  if(explicit) return explicit;
+  const host=window.location.hostname;
+  if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/brevo-event';
+  return '';
+}
+
+function getDefaultBrevoEventEndpoint(){
+  const host=window.location.hostname;
+  if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/brevo-event';
+  return '';
 }
 
 function normalizeBrevoEventName(name){
@@ -2880,7 +2890,7 @@ async function openConfigModal(){
   set('cfg-email-cc',(appConfig.emailCc||[]).join('; '));
   set('cfg-brevo-client-key',appConfig.brevoClientKey||'');
   set('cfg-brevo-track-email',appConfig.brevoTrackEmail||'');
-  set('cfg-brevo-event-endpoint',appConfig.brevoEventEndpoint||'http://localhost:8787/brevo-event');
+  set('cfg-brevo-event-endpoint',appConfig.brevoEventEndpoint||getDefaultBrevoEventEndpoint());
   set('cfg-report-inicial',appConfig.reportInicial||'00:00');
   set('cfg-report-final',appConfig.reportFinal||'11:59');
   set('cfg-auto-email-enabled',appConfig.autoEmailEnabled?'1':'');
@@ -2904,7 +2914,7 @@ function saveConfigModal(){
     emailCc:getEmailList(val('cfg-email-cc')),
     brevoClientKey:val('cfg-brevo-client-key').trim(),
     brevoTrackEmail:val('cfg-brevo-track-email').trim(),
-    brevoEventEndpoint:val('cfg-brevo-event-endpoint').trim() || 'http://localhost:8787/brevo-event',
+    brevoEventEndpoint:val('cfg-brevo-event-endpoint').trim() || getDefaultBrevoEventEndpoint(),
     reportInicial:val('cfg-report-inicial') || '00:00',
     reportFinal:val('cfg-report-final') || '11:59',
     autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
@@ -2932,7 +2942,7 @@ function syncConfigFromOpenModal(){
     emailCc:getEmailList(val('cfg-email-cc')),
     brevoClientKey:val('cfg-brevo-client-key').trim(),
     brevoTrackEmail:val('cfg-brevo-track-email').trim(),
-    brevoEventEndpoint:val('cfg-brevo-event-endpoint').trim() || 'http://localhost:8787/brevo-event',
+    brevoEventEndpoint:val('cfg-brevo-event-endpoint').trim() || getDefaultBrevoEventEndpoint(),
     reportInicial:val('cfg-report-inicial') || '00:00',
     reportFinal:val('cfg-report-final') || '11:59',
     autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
@@ -3284,7 +3294,7 @@ async function rpEnviarEmailAgora(options={}){
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       });
-      if(!r.ok) throw new Error(await r.text());
+      if(!r.ok) throw new Error(await readAutomationError(r));
       trackBrevoEvent('report_sent', { source: 'DASHBOARD' }, {
         subject: payload.subject,
         recipients: (appConfig.emailTo||[]).length,
@@ -3305,6 +3315,16 @@ async function rpEnviarEmailAgora(options={}){
   if(automatic) return false;
   showErr('URL da automação não configurada. Se estiver na Vercel, salve Configurações novamente. Se estiver local, rode o servidor de e-mail ou preencha a URL.');
   return false;
+}
+
+async function readAutomationError(response){
+  const text=await response.text();
+  try{
+    const data=JSON.parse(text);
+    return data.error || data.message || text || `HTTP ${response.status}`;
+  }catch(e){
+    return text || `HTTP ${response.status}`;
+  }
 }
 
 
