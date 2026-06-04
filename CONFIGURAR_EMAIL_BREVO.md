@@ -52,28 +52,26 @@ Ao salvar, o dashboard grava essa configuração em `/api/report-config`.
 - `POST /api/send-report`: envio manual pelo botão
 - `GET /api/report-config`: carrega configuração salva
 - `POST /api/report-config`: salva destinatarios/horarios
-- `GET /api/cron-report`: envio automatico de hora em hora
-- `GET /api/cron-report-final`: disparo especial das 11:59
+- `GET /api/cron-report-final`: disparo diario das 11:59
 
 ## 5. Agendamento
 
-No plano Hobby, a Vercel nao aceita cron de hora em hora. Por isso o agendamento desta versao fica no GitHub Actions, em:
+No plano Hobby, a Vercel aceita cron nativo somente uma vez por dia. Esta versao usa apenas o fechamento diario:
 
-```txt
-.github/workflows/send-report-cron.yml
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron-report-final",
+      "schedule": "59 14 * * *"
+    }
+  ]
+}
 ```
 
-Configure no GitHub em `Settings > Secrets and variables > Actions`:
+O horario do cron da Vercel usa UTC. `59 14 * * *` equivale a `11:59` em `America/Sao_Paulo`.
 
-- Secret `CRON_SECRET`: o mesmo valor configurado na Vercel
-- Variable `DASHBOARD_BASE_URL`: `https://dash-de-carga.vercel.app`
-
-O workflow roda:
-
-- `0 * * * *`: chama `https://dash-de-carga.vercel.app/api/cron-report`
-- `59 14 * * *`: chama `https://dash-de-carga.vercel.app/api/cron-report-final`
-
-O horario do GitHub Actions tambem usa UTC. `59 14 * * *` equivale a `11:59` em `America/Sao_Paulo`.
+Observacao: no plano Hobby, a Vercel informa precisao de agendamento em janela de ate uma hora. Entao o disparo pode ocorrer pouco depois de 11:59. Para horario exato, use Vercel Pro ou GitHub Actions.
 
 No disparo de `11:59`, a API envia:
 
