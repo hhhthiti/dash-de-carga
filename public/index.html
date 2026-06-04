@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Reporte de Carga — Acesso</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.logo{background:#3b82f6;border-radius:18px;width:64px;height:64px;display:flex;align-items:center;justify-content:center;font-size:32px;margin-bottom:18px;}
+h1{font-size:22px;font-weight:800;letter-spacing:1px;color:#f1f5f9;margin-bottom:4px;}
+.sub{font-size:11px;color:#64748b;letter-spacing:3px;margin-bottom:48px;}
+.cards{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;}
+.card{background:#1e293b;border:2px solid #334155;border-radius:16px;padding:36px 40px;text-align:center;cursor:pointer;transition:all .2s;min-width:220px;text-decoration:none;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.card:hover{transform:translateY(-4px);border-color:#3b82f6;box-shadow:0 8px 32px #3b82f622;}
+.card-icon{font-size:44px;margin-bottom:4px;}
+.card-title{font-size:15px;font-weight:800;color:#f1f5f9;letter-spacing:1px;}
+.card-desc{font-size:12px;color:#64748b;line-height:1.6;}
+.badge-cco{background:#1e3a5f;border:1px solid #3b82f655;border-radius:20px;padding:3px 12px;font-size:10px;color:#60a5fa;font-weight:700;letter-spacing:1px;margin-top:4px;}
+.footer{margin-top:48px;font-size:10px;color:#1e293b;}
+</style>
+</head>
+<body>
+<div class="logo">🚛</div>
+<h1>REPORTE DE CARGA</h1>
+<div class="sub">CONTROLE DE EXPEDIÇÃO</div>
+<div class="cards">
+  <a class="card" href="cco.html">
+    <div class="card-icon">🖥️</div>
+    <div class="card-title">CCO / OPERAÇÕES</div>
+    <div class="card-desc">Importar arquivos, atualizar<br/>status das DTs e gerenciar carga.</div>
+    <span class="badge-cco">ACESSO CCO</span>
+  </a>
+</div>
+<div class="footer">Reporte de Carga v2</div>
+</body>
+</html>
