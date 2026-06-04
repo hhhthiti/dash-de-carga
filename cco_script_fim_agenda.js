@@ -2805,6 +2805,7 @@ function getEmailList(raw){
 }
 
 function getDefaultEmailEndpoint(provider){
+  if(isVercelApiAvailable()) return '/api/send-report';
   if(provider!=='brevo') return '';
   const host=window.location.hostname;
   if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/send-report';
@@ -2842,6 +2843,17 @@ async function saveServerReportConfig(config){
   }
 }
 
+function normalizeReportDeliveryConfig(config={}){
+  const normalized={...config};
+  if(isVercelApiAvailable()){
+    normalized.emailProvider=normalized.emailProvider || 'brevo';
+    normalized.emailEndpoint='/api/send-report';
+  }else if(normalized.emailProvider==='brevo' && !normalized.emailEndpoint){
+    normalized.emailEndpoint=getDefaultEmailEndpoint('brevo');
+  }
+  return normalized;
+}
+
 function normalizePhoneNumber(raw){
   return String(raw||'').replace(/\D/g,'');
 }
@@ -2860,7 +2872,8 @@ async function openConfigModal(){
     try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
   }
   const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val||'';};
-  set('cfg-email-provider',appConfig.emailProvider||'');
+  appConfig=normalizeReportDeliveryConfig(appConfig);
+  set('cfg-email-provider',appConfig.emailProvider||'brevo');
   set('cfg-email-from',appConfig.emailFrom||'');
   set('cfg-email-endpoint',appConfig.emailEndpoint||'');
   set('cfg-email-to',(appConfig.emailTo||[]).join('; '));
@@ -2872,11 +2885,6 @@ async function openConfigModal(){
   set('cfg-report-final',appConfig.reportFinal||'11:59');
   set('cfg-auto-email-enabled',appConfig.autoEmailEnabled?'1':'');
   set('cfg-auto-email-interval',appConfig.autoEmailIntervalMinutes||60);
-  set('cfg-whatsapp-enabled',appConfig.whatsappEnabled?'1':'');
-  set('cfg-whatsapp-to',(appConfig.whatsappTo||[]).join('; '));
-  set('cfg-whatsapp-sender',appConfig.whatsappSenderNumber||'');
-  set('cfg-whatsapp-template-id',appConfig.whatsappTemplateId||'');
-  set('cfg-whatsapp-text',appConfig.whatsappText||'');
   ov.style.display='flex';
 }
 
@@ -2887,7 +2895,7 @@ function closeConfigModal(){
 
 function saveConfigModal(){
   const val=id=>document.getElementById(id)?.value || '';
-  const provider=val('cfg-email-provider');
+  const provider=val('cfg-email-provider') || 'brevo';
   appConfig={
     emailProvider:provider,
     emailFrom:val('cfg-email-from').trim(),
@@ -2901,13 +2909,9 @@ function saveConfigModal(){
     reportFinal:val('cfg-report-final') || '11:59',
     autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
     autoEmailIntervalMinutes:Math.max(5,parseInt(val('cfg-auto-email-interval'),10)||60),
-    whatsappEnabled:val('cfg-whatsapp-enabled')==='1',
-    whatsappTo:getPhoneList(val('cfg-whatsapp-to')),
-    whatsappSenderNumber:normalizePhoneNumber(val('cfg-whatsapp-sender')),
-    whatsappTemplateId:val('cfg-whatsapp-template-id').trim(),
-    whatsappText:val('cfg-whatsapp-text').trim(),
     updatedAt:new Date().toISOString(),
   };
+  appConfig=normalizeReportDeliveryConfig(appConfig);
   try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
   saveServerReportConfig(appConfig).catch(()=>null);
   startAutoReportEmailTimer();
@@ -2919,7 +2923,7 @@ function syncConfigFromOpenModal(){
   const ov=document.getElementById('config-overlay');
   if(!ov || ov.style.display==='none') return;
   const val=id=>document.getElementById(id)?.value || '';
-  const provider=val('cfg-email-provider');
+  const provider=val('cfg-email-provider') || 'brevo';
   appConfig={
     emailProvider:provider,
     emailFrom:val('cfg-email-from').trim(),
@@ -2933,13 +2937,9 @@ function syncConfigFromOpenModal(){
     reportFinal:val('cfg-report-final') || '11:59',
     autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
     autoEmailIntervalMinutes:Math.max(5,parseInt(val('cfg-auto-email-interval'),10)||60),
-    whatsappEnabled:val('cfg-whatsapp-enabled')==='1',
-    whatsappTo:getPhoneList(val('cfg-whatsapp-to')),
-    whatsappSenderNumber:normalizePhoneNumber(val('cfg-whatsapp-sender')),
-    whatsappTemplateId:val('cfg-whatsapp-template-id').trim(),
-    whatsappText:val('cfg-whatsapp-text').trim(),
     updatedAt:new Date().toISOString(),
   };
+  appConfig=normalizeReportDeliveryConfig(appConfig);
   try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
 }
 
@@ -3266,7 +3266,8 @@ async function rpCheckAutoReportEmail(){
 async function rpEnviarEmailAgora(options={}){
   const automatic=!!options.automatic;
   if(!automatic) syncConfigFromOpenModal();
-  appConfig=JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
+  appConfig=normalizeReportDeliveryConfig(JSON.parse(localStorage.getItem('reporte_app_config')||'{}'));
+  try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
   const payload=rpBuildEmailPayload();
   if(!appConfig.emailTo||!appConfig.emailTo.length){
     if(!automatic){
@@ -3302,11 +3303,8 @@ async function rpEnviarEmailAgora(options={}){
     }
   }
   if(automatic) return false;
-  const to=(appConfig.emailTo||[]).join(',');
-  const cc=(appConfig.emailCc&&appConfig.emailCc.length)?'&cc='+encodeURIComponent(appConfig.emailCc.join(',')):'';
-  window.location.href=`mailto:${to}?subject=${encodeURIComponent(payload.subject)}${cc}&body=${encodeURIComponent(payload.body)}`;
-  showOk('E-mail preparado. Para envio automático direto, configure a URL da automação.');
-  return true;
+  showErr('URL da automação não configurada. Se estiver na Vercel, salve Configurações novamente. Se estiver local, rode o servidor de e-mail ou preencha a URL.');
+  return false;
 }
 
 
