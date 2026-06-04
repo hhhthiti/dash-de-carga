@@ -1,0 +1,25 @@
+name = "dash-de-carga"
+main = "src/index.js"
+compatibility_date = "2026-06-04"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[triggers]
+crons = ["59 14 * * *"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
