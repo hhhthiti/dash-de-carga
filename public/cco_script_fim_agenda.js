@@ -272,7 +272,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     showErr('Falha ao conectar: ' + e.message);
     setStep(1);
   }
-  trackBrevoEvent('dashboard_opened', { source: 'DASHBOARD' }, {
+  trackAppEvent('dashboard_opened', { source: 'DASHBOARD' }, {
     path: window.location.pathname || '',
     rows_loaded: tableData.length,
   }).catch(()=>null);
@@ -2560,110 +2560,14 @@ let rpPlanejadoSuzano = JSON.parse(localStorage.getItem('rp_planejado_suzano')||
 let rpLastReport = null;
 let rpSnapshotCache = {};
 let appConfig = JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
-let brevoTrackerLoaded = false;
-let brevoTrackerLoading = null;
 let rpAutoEmailTimer = null;
 let rpAutoEmailSending = false;
 
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO'];
 const STATUS_FORA_REPORTE = ['NO SHOW','VEICULO RECUSADO'];
 
-function getBrevoContactEmail(){
-  return String(appConfig.brevoTrackEmail || appConfig.emailFrom || (appConfig.emailTo && appConfig.emailTo[0]) || '').trim();
-}
-
-function getBrevoEventEndpoint(){
-  const explicit=String(appConfig.brevoEventEndpoint || '').trim();
-  if(explicit) return explicit;
-  const host=window.location.hostname;
-  if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/brevo-event';
-  return '';
-}
-
-function getDefaultBrevoEventEndpoint(){
-  const host=window.location.hostname;
-  if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/brevo-event';
-  return '';
-}
-
-function normalizeBrevoEventName(name){
-  return String(name || '')
-    .trim()
-    .replace(/\s+/g, '_')
-    .replace(/[^A-Za-z0-9_-]/g, '')
-    .slice(0, 255);
-}
-
-function ensureBrevoTracker(){
-  const clientKey = String(appConfig.brevoClientKey || '').trim();
-  if (!clientKey || brevoTrackerLoaded) return Promise.resolve(!!brevoTrackerLoaded);
-  if (brevoTrackerLoading) return brevoTrackerLoading;
-
-  brevoTrackerLoading = new Promise(resolve => {
-    const boot = () => {
-      if (!window.Brevo || !Array.isArray(window.Brevo)) window.Brevo = window.Brevo || [];
-      window.Brevo.push(['init', { client_key: clientKey }]);
-      brevoTrackerLoaded = true;
-      resolve(true);
-    };
-    if (window.Brevo && typeof window.Brevo.push === 'function') {
-      boot();
-      return;
-    }
-    const existing = document.querySelector('script[data-brevo-tracker="true"]');
-    if (existing) {
-      existing.addEventListener('load', boot, { once: true });
-      existing.addEventListener('error', () => resolve(false), { once: true });
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://cdn.brevo.com/js/sdk-loader.js';
-    script.async = true;
-    script.dataset.brevoTracker = 'true';
-    script.onload = boot;
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-  }).finally(() => {
-    brevoTrackerLoading = null;
-  });
-
-  return brevoTrackerLoading;
-}
-
-async function trackBrevoEvent(eventName, properties = {}, eventData = {}){
-  const normalizedName = normalizeBrevoEventName(eventName);
-  if (!normalizedName) return false;
-  const email = getBrevoContactEmail();
-  const contactProperties = {...properties};
-  if (email && !contactProperties.email) contactProperties.email = email;
-
-  const trackerKey = String(appConfig.brevoClientKey || '').trim();
-  if (trackerKey) {
-    await ensureBrevoTracker();
-    if (window.Brevo && typeof window.Brevo.push === 'function') {
-      window.Brevo.push(['track', normalizedName, contactProperties, eventData]);
-    }
-    return true;
-  }
-
-  const endpoint = getBrevoEventEndpoint();
-  if (!endpoint || !email) return false;
-  try{
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        email,
-        eventName: normalizedName,
-        contactProperties,
-        eventProperties: eventData,
-        eventDate: new Date().toISOString(),
-      }),
-    });
-    return response.ok;
-  }catch(err){
-    return false;
-  }
+async function trackAppEvent(eventName, properties = {}, eventData = {}){
+  return false;
 }
 
 function rpRefDate(row){
@@ -2816,7 +2720,7 @@ function getEmailList(raw){
 
 function getDefaultEmailEndpoint(provider){
   if(isVercelApiAvailable()) return '/api/send-report';
-  if(provider!=='brevo') return '';
+  if(provider!=='resend') return '';
   const host=window.location.hostname;
   if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/send-report';
   return '/api/send-report';
@@ -2856,10 +2760,10 @@ async function saveServerReportConfig(config){
 function normalizeReportDeliveryConfig(config={}){
   const normalized={...config};
   if(isVercelApiAvailable()){
-    normalized.emailProvider=normalized.emailProvider || 'brevo';
+    normalized.emailProvider='resend';
     normalized.emailEndpoint='/api/send-report';
-  }else if(normalized.emailProvider==='brevo' && !normalized.emailEndpoint){
-    normalized.emailEndpoint=getDefaultEmailEndpoint('brevo');
+  }else if(normalized.emailProvider==='resend' && !normalized.emailEndpoint){
+    normalized.emailEndpoint=getDefaultEmailEndpoint('resend');
   }
   return normalized;
 }
@@ -2883,14 +2787,8 @@ async function openConfigModal(){
   }
   const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val||'';};
   appConfig=normalizeReportDeliveryConfig(appConfig);
-  set('cfg-email-provider',appConfig.emailProvider||'brevo');
-  set('cfg-email-from',appConfig.emailFrom||'');
-  set('cfg-email-endpoint',appConfig.emailEndpoint||'');
   set('cfg-email-to',(appConfig.emailTo||[]).join('; '));
   set('cfg-email-cc',(appConfig.emailCc||[]).join('; '));
-  set('cfg-brevo-client-key',appConfig.brevoClientKey||'');
-  set('cfg-brevo-track-email',appConfig.brevoTrackEmail||'');
-  set('cfg-brevo-event-endpoint',appConfig.brevoEventEndpoint||getDefaultBrevoEventEndpoint());
   set('cfg-report-inicial',appConfig.reportInicial||'00:00');
   set('cfg-report-final',appConfig.reportFinal||'11:59');
   set('cfg-auto-email-enabled',appConfig.autoEmailEnabled?'1':'');
@@ -2905,16 +2803,13 @@ function closeConfigModal(){
 
 function saveConfigModal(){
   const val=id=>document.getElementById(id)?.value || '';
-  const provider=val('cfg-email-provider') || 'brevo';
+  const provider='resend';
   appConfig={
     emailProvider:provider,
-    emailFrom:val('cfg-email-from').trim(),
-    emailEndpoint:val('cfg-email-endpoint').trim() || getDefaultEmailEndpoint(provider),
+    emailFrom:'',
+    emailEndpoint:getDefaultEmailEndpoint(provider),
     emailTo:getEmailList(val('cfg-email-to')),
     emailCc:getEmailList(val('cfg-email-cc')),
-    brevoClientKey:val('cfg-brevo-client-key').trim(),
-    brevoTrackEmail:val('cfg-brevo-track-email').trim(),
-    brevoEventEndpoint:val('cfg-brevo-event-endpoint').trim() || getDefaultBrevoEventEndpoint(),
     reportInicial:val('cfg-report-inicial') || '00:00',
     reportFinal:val('cfg-report-final') || '11:59',
     autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
@@ -2933,16 +2828,13 @@ function syncConfigFromOpenModal(){
   const ov=document.getElementById('config-overlay');
   if(!ov || ov.style.display==='none') return;
   const val=id=>document.getElementById(id)?.value || '';
-  const provider=val('cfg-email-provider') || 'brevo';
+  const provider='resend';
   appConfig={
     emailProvider:provider,
-    emailFrom:val('cfg-email-from').trim(),
-    emailEndpoint:val('cfg-email-endpoint').trim() || getDefaultEmailEndpoint(provider),
+    emailFrom:'',
+    emailEndpoint:getDefaultEmailEndpoint(provider),
     emailTo:getEmailList(val('cfg-email-to')),
     emailCc:getEmailList(val('cfg-email-cc')),
-    brevoClientKey:val('cfg-brevo-client-key').trim(),
-    brevoTrackEmail:val('cfg-brevo-track-email').trim(),
-    brevoEventEndpoint:val('cfg-brevo-event-endpoint').trim() || getDefaultBrevoEventEndpoint(),
     reportInicial:val('cfg-report-inicial') || '00:00',
     reportFinal:val('cfg-report-final') || '11:59',
     autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
@@ -2998,7 +2890,7 @@ async function rpSalvarSnapshotManual(){
   spin(true);
   try{
     await rpCreateGradeSnapshot('MANUAL','Snapshot manual do reporte');
-    trackBrevoEvent('snapshot_saved', { source: 'MANUAL' }, {
+    trackAppEvent('snapshot_saved', { source: 'MANUAL' }, {
       data_ref: rpDataRef || dKey(today()),
       action: 'snapshot_manual',
     }).catch(()=>null);
@@ -3024,7 +2916,7 @@ async function rpSalvarPlanejadoSuzano(){
       detalhes:rpGetPlanejadoSuzanoDetalhado()
     }]);
     await rpCreateGradeSnapshot('SUZANO','Planejado Suzano atualizado');
-    trackBrevoEvent('planned_suzano_updated', { source: 'SUZANO' }, {
+    trackAppEvent('planned_suzano_updated', { source: 'SUZANO' }, {
       data_ref: dataRef,
       planejado_suzano_kg: kg,
     }).catch(()=>null);
@@ -3295,7 +3187,7 @@ async function rpEnviarEmailAgora(options={}){
         body:JSON.stringify(payload)
       });
       if(!r.ok) throw new Error(await readAutomationError(r));
-      trackBrevoEvent('report_sent', { source: 'DASHBOARD' }, {
+      trackAppEvent('report_sent', { source: 'DASHBOARD' }, {
         subject: payload.subject,
         recipients: (appConfig.emailTo||[]).length,
         cc: (appConfig.emailCc||[]).length,

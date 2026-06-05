@@ -32,7 +32,7 @@ Se o Cloudflare executar apenas Deploy command, o `npx wrangler deploy` baixa o 
 Use Secret para:
 
 ```txt
-BREVO_API_KEY
+RESEND_API_KEY
 SUPABASE_SERVICE_ROLE_KEY
 CRON_SECRET
 ```
@@ -47,7 +47,9 @@ REPORT_DASHBOARD_URL=https://dash-de-carga.hhhthiti.workers.dev/cco.html
 REPORT_TIME_ZONE=America/Sao_Paulo
 ```
 
-Importante: `SUPABASE_SERVICE_ROLE_KEY` nao e o token base64 da Brevo/MCP. A service role real do Supabase costuma comecar com `eyJhbGciOiJIUzI1Ni`.
+Importante: `SUPABASE_SERVICE_ROLE_KEY` nao e token de provedor de email. A service role real do Supabase costuma comecar com `eyJhbGciOiJIUzI1Ni`.
+
+O `REPORT_FROM_EMAIL` precisa ser um remetente valido no Resend. Em producao, use um dominio verificado, por exemplo `reportes@seudominio.com`.
 
 ## Rotas
 

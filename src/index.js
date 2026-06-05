@@ -80,7 +80,7 @@ async function sb(env, path, options = {}) {
 
 function fromDbConfig(env, row = {}) {
   return {
-    emailProvider: row.email_provider || "brevo",
+    emailProvider: row.email_provider || "resend",
     emailFrom: row.email_from || env.REPORT_FROM_EMAIL || "",
     emailEndpoint: "/api/send-report",
     emailTo: Array.isArray(row.email_to) ? row.email_to : validEmails(env.REPORT_DEFAULT_TO || ""),
@@ -96,7 +96,7 @@ function fromDbConfig(env, row = {}) {
 function toDbConfig(env, config = {}) {
   return {
     id: "default",
-    email_provider: config.emailProvider || "brevo",
+    email_provider: config.emailProvider || "resend",
     email_from: String(config.emailFrom || env.REPORT_FROM_EMAIL || "").trim(),
     email_to: validEmails(config.emailTo),
     email_cc: validEmails(config.emailCc),
@@ -257,26 +257,31 @@ async function sendEmail(env, { report, config }) {
   const senderEmail = env.REPORT_FROM_EMAIL || config.emailFrom;
   if (!senderEmail) throw new Error("REPORT_FROM_EMAIL nao configurado.");
 
-  const payload = {
-    sender: { name: env.REPORT_FROM_NAME || "dash de carga", email: senderEmail },
-    to: to.map(email => ({ email })),
-    subject: `Reporte de Status - ${report.dataRef}`,
-    htmlContent: reportHtml(env, report),
-    textContent: reportText(report),
-  };
-  if (cc.length) payload.cc = cc.map(email => ({ email }));
+  const from = env.REPORT_FROM_NAME
+    ? `${env.REPORT_FROM_NAME} <${senderEmail}>`
+    : senderEmail;
+  const subject = `Reporte de Status - ${report.dataRef}`;
+  const html = reportHtml(env, report);
+  const text = reportText(report);
 
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+  const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       accept: "application/json",
-      "api-key": requiredEnv(env, "BREVO_API_KEY"),
+      authorization: `Bearer ${requiredEnv(env, "RESEND_API_KEY")}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      from,
+      to,
+      cc,
+      subject,
+      html,
+      text,
+    }),
   });
   const body = await response.text();
-  if (!response.ok) throw new Error(`Brevo ${response.status}: ${body.slice(0, 500)}`);
+  if (!response.ok) throw new Error(`Resend ${response.status}: ${body.slice(0, 500)}`);
   return body ? JSON.parse(body) : { ok: true };
 }
 
@@ -303,8 +308,8 @@ async function handleSendReport(request, env) {
   const incomingReport = normalizeIncomingReport(body.report || {});
   const dataRef = incomingReport.dataRef || body.dataRef || dateKey(env, 0);
   const report = incomingReport.dataRef ? incomingReport : await buildReport(env, dataRef);
-  const brevo = await sendEmail(env, { report, config });
-  return json({ ok: true, brevo });
+  const email = await sendEmail(env, { report, config });
+  return json({ ok: true, email });
 }
 
 async function handleReportConfig(request, env) {
