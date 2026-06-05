@@ -2720,7 +2720,7 @@ function getEmailList(raw){
 
 function getDefaultEmailEndpoint(provider){
   if(isVercelApiAvailable()) return '/api/send-report';
-  if(provider!=='resend') return '';
+  if(provider==='brevo') return '';
   const host=window.location.hostname;
   if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/send-report';
   return '/api/send-report';
@@ -2759,11 +2759,11 @@ async function saveServerReportConfig(config){
 
 function normalizeReportDeliveryConfig(config={}){
   const normalized={...config};
+  normalized.emailProvider=String(normalized.emailProvider||'auto').toLowerCase();
   if(isVercelApiAvailable()){
-    normalized.emailProvider='resend';
     normalized.emailEndpoint='/api/send-report';
-  }else if(normalized.emailProvider==='resend' && !normalized.emailEndpoint){
-    normalized.emailEndpoint=getDefaultEmailEndpoint('resend');
+  }else if(!normalized.emailEndpoint){
+    normalized.emailEndpoint=getDefaultEmailEndpoint(normalized.emailProvider);
   }
   return normalized;
 }
@@ -2787,6 +2787,7 @@ async function openConfigModal(){
   }
   const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val||'';};
   appConfig=normalizeReportDeliveryConfig(appConfig);
+  set('cfg-email-provider',appConfig.emailProvider||'auto');
   set('cfg-email-to',(appConfig.emailTo||[]).join('; '));
   set('cfg-email-cc',(appConfig.emailCc||[]).join('; '));
   set('cfg-report-inicial',appConfig.reportInicial||'00:00');
@@ -2803,7 +2804,7 @@ function closeConfigModal(){
 
 function saveConfigModal(){
   const val=id=>document.getElementById(id)?.value || '';
-  const provider='resend';
+  const provider=val('cfg-email-provider') || 'auto';
   appConfig={
     emailProvider:provider,
     emailFrom:'',
@@ -2828,7 +2829,7 @@ function syncConfigFromOpenModal(){
   const ov=document.getElementById('config-overlay');
   if(!ov || ov.style.display==='none') return;
   const val=id=>document.getElementById(id)?.value || '';
-  const provider='resend';
+  const provider=val('cfg-email-provider') || 'auto';
   appConfig={
     emailProvider:provider,
     emailFrom:'',
@@ -2869,7 +2870,7 @@ function rpBuildSnapshotPayload(source='DASHBOARD',evento='Snapshot manual'){
     detalhes:{
       corte:report.corteLabel||'',
       turno:rpTurnoFiltro,
-      email_configurado:!!(appConfig.emailProvider&&appConfig.emailFrom&&appConfig.emailTo&&appConfig.emailTo.length),
+      email_configurado:!!(appConfig.emailProvider&&appConfig.emailTo&&appConfig.emailTo.length),
       planejado_suzano_detalhado:rpGetPlanejadoSuzanoDetalhado(),
       tipos:report.tipos||[],
       paletizacao:report.paletizacao||{},
@@ -3082,8 +3083,14 @@ function rpBuildEmailPayload(){
   renderReporte();
   const report=rpLastReport||{};
   const det=rpGetPlanejadoSuzanoDetalhado();
+  const dataRef=report.dataRef||rpDataRef||dKey(today());
+  const reportRows=dedupeCargaRowsByDTRef((tableData||[])
+    .filter(r=>rpDateKey(r)===dataRef)
+    .filter(isRowInActiveReportWindow)
+    .filter(rpRowContaNoReporte)
+  ).sort(compareAgendaRows);
   const linhas=[
-    `Reporte Operacional - ${report.dataRef||rpDataRef||dKey(today())}`,
+    `Reporte Operacional - ${dataRef}`,
     '',
     `Planejado Suzano: ${fmtCargaCompact(report.planejadoSuzano||0)}`,
     `- Venda Aruja: ${fmtCargaCompact(det['VENDA ARUJA']||0)}`,
@@ -3100,9 +3107,9 @@ function rpBuildEmailPayload(){
     `Recusas: ${(report.statusCounts&&report.statusCounts['VEICULO RECUSADO'])||0}`,
   ];
   return {
-    subject:`Reporte Operacional - ${report.dataRef||rpDataRef||dKey(today())}`,
+    subject:`Reporte Operacional - ${dataRef}`,
     body:linhas.join('\n'),
-    report,
+    report:{...report,rows:reportRows},
     planejadoSuzanoDetalhado:det,
     config:appConfig
   };

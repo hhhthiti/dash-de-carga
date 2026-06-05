@@ -7,7 +7,7 @@ directory = "./public"
 binding = "ASSETS"
 
 [triggers]
-crons = ["59 14 * * *"]
+crons = ["0 17 * * *", "0 1 * * *", "0 9 * * *"]
 
 [observability]
 enabled = true

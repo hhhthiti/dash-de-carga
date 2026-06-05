@@ -33,6 +33,7 @@ Use Secret para:
 
 ```txt
 RESEND_API_KEY
+BREVO_API_KEY              opcional, para fallback ou envio pelo Brevo
 SUPABASE_SERVICE_ROLE_KEY
 CRON_SECRET
 ```
@@ -41,15 +42,15 @@ Use Variable normal para:
 
 ```txt
 SUPABASE_URL=https://pwjatxqtkvvcmzmjjvbi.supabase.co
-REPORT_FROM_EMAIL=jonn3224@gmail.com
+REPORT_FROM_EMAIL=onboarding@resend.dev
 REPORT_FROM_NAME=dash de carga
-REPORT_DASHBOARD_URL=https://dash-de-carga.hhhthiti.workers.dev/cco.html
+REPORT_DASHBOARD_URL=https://dash-de-carga-cloud.hhhthiti.workers.dev/cco.html
 REPORT_TIME_ZONE=America/Sao_Paulo
 ```
 
 Importante: `SUPABASE_SERVICE_ROLE_KEY` nao e token de provedor de email. A service role real do Supabase costuma comecar com `eyJhbGciOiJIUzI1Ni`.
 
-O `REPORT_FROM_EMAIL` precisa ser um remetente valido no Resend. Em producao, use um dominio verificado, por exemplo `reportes@seudominio.com`.
+O `REPORT_FROM_EMAIL` precisa ser um remetente valido no provedor escolhido. No Resend, `onboarding@resend.dev` so manda para o e-mail dono da conta. Para mandar para outras pessoas, verifique um dominio no Resend e troque para algo como `reportes@seudominio.com`.
 
 ## Rotas
 
@@ -64,7 +65,9 @@ O `REPORT_FROM_EMAIL` precisa ser um remetente valido no Resend. Em producao, us
 O `wrangler.toml` agenda:
 
 ```txt
-59 14 * * *
+0 17 * * *  -> 14h em America/Sao_Paulo, fechamento T1
+0 1 * * *   -> 22h em America/Sao_Paulo, fechamento T2
+0 9 * * *   -> 06h em America/Sao_Paulo, fechamento T3
 ```
 
-Isso equivale a `11:59` em `America/Sao_Paulo`.
+Cada envio leva o resumo visual no corpo do e-mail e um CSV anexo com as cargas do reporte sem materiais.
