@@ -554,14 +554,15 @@ function normalizeIncomingReport(report) {
 async function handleSendReport(request, env) {
   if (request.method !== "POST") return json({ error: "Metodo nao permitido." }, 405);
   const body = await request.json();
-  const savedConfig = await getConfig(env);
+  let savedConfig = {};
+  if (!body.config || !validEmails(body.config.emailTo).length) {
+    savedConfig = await getConfig(env);
+  }
   const config = { ...savedConfig, ...(body.config || {}) };
   const incomingReport = normalizeIncomingReport(body.report || {});
   const dataRef = incomingReport.dataRef || body.dataRef || dateKey(env, 0);
   const shift = normalizeShift(body.shift || incomingReport.shift || config.reportShift);
-  const report = incomingReport.dataRef
-    ? { ...incomingReport, rows: incomingReport.rows.length ? incomingReport.rows : await loadCargaRows(env, dataRef) }
-    : await buildReport(env, dataRef, { shift });
+  const report = incomingReport.dataRef ? incomingReport : await buildReport(env, dataRef, { shift });
   const email = await sendEmail(env, { report, config });
   return json({ ok: true, email });
 }
