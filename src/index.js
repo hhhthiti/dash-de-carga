@@ -1,5 +1,9 @@
 const DEFAULT_SUPABASE_URL = "https://pwjatxqtkvvcmzmjjvbi.supabase.co";
+import { connect } from "cloudflare:sockets";
+
 const DEFAULT_TIME_ZONE = "America/Sao_Paulo";
+const DEFAULT_ZOHO_SMTP_HOST = "smtp.zoho.com";
+const DEFAULT_ZOHO_SMTP_PORT = 465;
 
 export default {
   async fetch(request, env, ctx) {
@@ -80,7 +84,7 @@ async function sb(env, path, options = {}) {
 
 function fromDbConfig(env, row = {}) {
   return {
-    emailProvider: row.email_provider || "auto",
+    emailProvider: row.email_provider || "zoho",
     emailFrom: row.email_from || env.REPORT_FROM_EMAIL || "",
     emailEndpoint: "/api/send-report",
     emailTo: Array.isArray(row.email_to) ? row.email_to : validEmails(env.REPORT_DEFAULT_TO || ""),
@@ -96,7 +100,7 @@ function fromDbConfig(env, row = {}) {
 function toDbConfig(env, config = {}) {
   return {
     id: "default",
-    email_provider: config.emailProvider || "auto",
+    email_provider: config.emailProvider || "zoho",
     email_from: String(config.emailFrom || env.REPORT_FROM_EMAIL || "").trim(),
     email_to: validEmails(config.emailTo),
     email_cc: validEmails(config.emailCc),
@@ -386,6 +390,186 @@ function reportHtml(env, report) {
   </body></html>`;
 }
 
+function wrapBase64(value) {
+  return String(value || "").match(/.{1,76}/g)?.join("\r\n") || "";
+}
+
+function buildAttachmentPart(artifacts) {
+  if (!artifacts?.csvBase64) return "";
+  return [
+    `--${artifacts.boundary}`,
+    `Content-Type: text/csv; name="${artifacts.csvFilename}"`,
+    "Content-Transfer-Encoding: base64",
+    `Content-Disposition: attachment; filename="${artifacts.csvFilename}"`,
+    "",
+    wrapBase64(artifacts.csvBase64),
+    "",
+  ].join("\r\n");
+}
+
+function buildMimeMessage({ from, to, cc, subject, html, text, artifacts }) {
+  const outer = `mix_${crypto.randomUUID().replace(/-/g, "")}`;
+  const inner = `alt_${crypto.randomUUID().replace(/-/g, "")}`;
+  return [
+    `From: ${from}`,
+    `To: ${to.join(", ")}`,
+    ...(cc.length ? [`Cc: ${cc.join(", ")}`] : []),
+    `Subject: ${subject}`,
+    `Date: ${new Date().toUTCString()}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${outer}"`,
+    "",
+    `--${outer}`,
+    `Content-Type: multipart/alternative; boundary="${inner}"`,
+    "",
+    `--${inner}`,
+    'Content-Type: text/plain; charset="utf-8"',
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    text,
+    "",
+    `--${inner}`,
+    'Content-Type: text/html; charset="utf-8"',
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    html,
+    "",
+    `--${inner}--`,
+    "",
+    buildAttachmentPart({ ...artifacts, boundary: outer }),
+    `--${outer}--`,
+    "",
+  ].join("\r\n");
+}
+
+function decodeSmtpChunk(chunk) {
+  return new TextDecoder().decode(chunk);
+}
+
+function encodeSmtpLine(line) {
+  return new TextEncoder().encode(`${line}\r\n`);
+}
+
+async function readSmtpLine(reader, state) {
+  while (true) {
+    const idx = state.buffer.indexOf("\r\n");
+    if (idx >= 0) {
+      const line = state.buffer.slice(0, idx);
+      state.buffer = state.buffer.slice(idx + 2);
+      return line;
+    }
+    const { value, done } = await reader.read();
+    if (done) {
+      const leftover = state.buffer;
+      state.buffer = "";
+      if (leftover) return leftover;
+      throw new Error("Conexao SMTP encerrada.");
+    }
+    state.buffer += decodeSmtpChunk(value);
+  }
+}
+
+async function readSmtpResponse(reader, state) {
+  const lines = [];
+  while (true) {
+    const line = await readSmtpLine(reader, state);
+    lines.push(line);
+    if (/^\d{3}\s/.test(line)) {
+      return { code: Number(line.slice(0, 3)), lines };
+    }
+  }
+}
+
+async function writeSmtpLine(writer, line) {
+  await writer.write(encodeSmtpLine(line));
+}
+
+async function smtpStep(reader, state, writer, line, expectedCodes, label) {
+  if (line) await writeSmtpLine(writer, line);
+  const response = await readSmtpResponse(reader, state);
+  if (!expectedCodes.includes(response.code)) {
+    throw new Error(`SMTP ${label} falhou: ${response.lines.join(" | ")}`);
+  }
+  return response;
+}
+
+function smtpEnvelopeAddress(value) {
+  return `<${String(value || "").trim()}>`;
+}
+
+async function sendZohoEmail(env, { fromName, senderEmail, to, cc, subject, html, text, artifacts }) {
+  const host = String(env.ZOHO_SMTP_HOST || DEFAULT_ZOHO_SMTP_HOST).trim();
+  const port = Number(env.ZOHO_SMTP_PORT || DEFAULT_ZOHO_SMTP_PORT);
+  const username = String(env.ZOHO_SMTP_USER || senderEmail || env.REPORT_FROM_EMAIL || "").trim();
+  const password = String(env.ZOHO_SMTP_PASS || "").trim();
+  const secureTransport = "on";
+
+  if (!host) throw new Error("ZOHO_SMTP_HOST nao configurado.");
+  if (port !== 465) throw new Error("ZOHO_SMTP_PORT deve ser 465 para SSL direto no Zoho.");
+  if (!username) throw new Error("ZOHO_SMTP_USER nao configurado.");
+  if (!password) throw new Error("ZOHO_SMTP_PASS nao configurado.");
+  if (senderEmail && username.toLowerCase() !== senderEmail.toLowerCase()) {
+    throw new Error("ZOHO_SMTP_USER e REPORT_FROM_EMAIL precisam ser o mesmo endereco para evitar relaying disallowed.");
+  }
+
+  const socket = connect({ hostname: host, port }, { secureTransport });
+  const reader = socket.readable.getReader();
+  const writer = socket.writable.getWriter();
+  const state = { buffer: "" };
+
+  try {
+    const greeting = await readSmtpResponse(reader, state);
+    if (greeting.code !== 220) {
+      throw new Error(`SMTP greeting invalido: ${greeting.lines.join(" | ")}`);
+    }
+    await smtpStep(reader, state, writer, `EHLO localhost`, [250], "EHLO");
+    return await sendZohoMailTransaction({
+      reader,
+      writer,
+      state,
+      username,
+      password,
+      senderEmail,
+      fromName,
+      to,
+      cc,
+      subject,
+      html,
+      text,
+      artifacts,
+    });
+  } finally {
+    try { await socket.close(); } catch {}
+  }
+}
+
+async function sendZohoMailTransaction({ reader, writer, state, username, password, senderEmail, fromName, to, cc, subject, html, text, artifacts }) {
+  const fromHeader = fromName ? `${fromName} <${senderEmail}>` : senderEmail;
+  const mime = buildMimeMessage({ from: fromHeader, to, cc, subject, html, text, artifacts });
+  const authUser = btoa(username);
+  const authPass = btoa(password);
+
+  await smtpStep(reader, state, writer, "AUTH LOGIN", [334], "AUTH LOGIN");
+  await smtpStep(reader, state, writer, authUser, [334], "AUTH USER");
+  await smtpStep(reader, state, writer, authPass, [235], "AUTH PASS");
+  await smtpStep(reader, state, writer, `MAIL FROM:${smtpEnvelopeAddress(senderEmail)}`, [250], "MAIL FROM");
+  for (const email of to) {
+    await smtpStep(reader, state, writer, `RCPT TO:${smtpEnvelopeAddress(email)}`, [250, 251], `RCPT TO ${email}`);
+  }
+  for (const email of cc) {
+    await smtpStep(reader, state, writer, `RCPT TO:${smtpEnvelopeAddress(email)}`, [250, 251], `RCPT TO ${email}`);
+  }
+  await smtpStep(reader, state, writer, "DATA", [354], "DATA");
+  await writeSmtpLine(writer, mime.replace(/\r?\n/g, "\r\n"));
+  await writeSmtpLine(writer, ".");
+  const sent = await readSmtpResponse(reader, state);
+  if (![250, 251].includes(sent.code)) {
+    throw new Error(`SMTP envio falhou: ${sent.lines.join(" | ")}`);
+  }
+  await writeSmtpLine(writer, "QUIT");
+  return { provider: "zoho", result: { ok: true, response: sent.lines } };
+}
+
 function csvEscape(value) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
@@ -458,76 +642,7 @@ async function sendEmail(env, { report, config }) {
   const html = reportHtml(env, report);
   const text = reportText(report);
   const artifacts = emailArtifacts(report);
-  const provider = String(config.emailProvider || "auto").toLowerCase();
-  const order = provider === "brevo" ? ["brevo"] : provider === "resend" ? ["resend"] : ["resend", "brevo"];
-  const errors = [];
-
-  for (const item of order) {
-    try {
-      if (item === "resend") {
-        return { provider: "resend", result: await sendResendEmail(env, { from, to, cc, subject, html, text, artifacts }) };
-      }
-      if (item === "brevo") {
-        return { provider: "brevo", result: await sendBrevoEmail(env, { fromName: env.REPORT_FROM_NAME || "", senderEmail, to, cc, subject, html, text, artifacts }) };
-      }
-    } catch (err) {
-      errors.push(`${item}: ${err.message}`);
-    }
-  }
-  throw new Error(errors.join(" | ") || "Nenhum provedor de e-mail configurado.");
-}
-
-async function sendResendEmail(env, { from, to, cc, subject, html, text, artifacts }) {
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      authorization: `Bearer ${requiredEnv(env, "RESEND_API_KEY")}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      cc,
-      subject,
-      html,
-      text,
-      attachments: [{
-        filename: artifacts.csvFilename,
-        content: artifacts.csvBase64,
-      }],
-    }),
-  });
-  const body = await response.text();
-  if (!response.ok) throw new Error(`Resend ${response.status}: ${body.slice(0, 500)}`);
-  return body ? JSON.parse(body) : { ok: true };
-}
-
-async function sendBrevoEmail(env, { fromName, senderEmail, to, cc, subject, html, text, artifacts }) {
-  const apiKey = requiredEnv(env, "BREVO_API_KEY");
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "api-key": apiKey,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      sender: { email: senderEmail, name: fromName || senderEmail },
-      to: to.map(email => ({ email })),
-      cc: cc.map(email => ({ email })),
-      subject,
-      htmlContent: html,
-      textContent: text,
-      attachment: [{
-        name: artifacts.csvFilename,
-        content: artifacts.csvBase64,
-      }],
-    }),
-  });
-  const body = await response.text();
-  if (!response.ok) throw new Error(`Brevo ${response.status}: ${body.slice(0, 500)}`);
-  return body ? JSON.parse(body) : { ok: true };
+  return sendZohoEmail(env, { fromName: env.REPORT_FROM_NAME || "", senderEmail, to, cc, subject, html, text, artifacts });
 }
 
 function normalizeIncomingReport(report) {

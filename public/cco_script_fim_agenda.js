@@ -2720,7 +2720,6 @@ function getEmailList(raw){
 
 function getDefaultEmailEndpoint(provider){
   if(isVercelApiAvailable()) return '/api/send-report';
-  if(provider==='brevo') return '';
   const host=window.location.hostname;
   if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/send-report';
   return '/api/send-report';
@@ -2759,7 +2758,10 @@ async function saveServerReportConfig(config){
 
 function normalizeReportDeliveryConfig(config={}){
   const normalized={...config};
-  normalized.emailProvider=String(normalized.emailProvider||'auto').toLowerCase();
+  normalized.emailProvider=String(normalized.emailProvider||'zoho').toLowerCase();
+  if(!['auto','zoho'].includes(normalized.emailProvider)){
+    normalized.emailProvider='zoho';
+  }
   if(isVercelApiAvailable()){
     normalized.emailEndpoint='/api/send-report';
   }else if(!normalized.emailEndpoint){
@@ -2804,7 +2806,7 @@ function closeConfigModal(){
 
 function saveConfigModal(){
   const val=id=>document.getElementById(id)?.value || '';
-  const provider=val('cfg-email-provider') || 'auto';
+  const provider=val('cfg-email-provider') || 'zoho';
   appConfig={
     emailProvider:provider,
     emailFrom:'',
@@ -2829,7 +2831,7 @@ function syncConfigFromOpenModal(){
   const ov=document.getElementById('config-overlay');
   if(!ov || ov.style.display==='none') return;
   const val=id=>document.getElementById(id)?.value || '';
-  const provider=val('cfg-email-provider') || 'auto';
+  const provider=val('cfg-email-provider') || 'zoho';
   appConfig={
     emailProvider:provider,
     emailFrom:'',

@@ -32,25 +32,27 @@ Se o Cloudflare executar apenas Deploy command, o `npx wrangler deploy` baixa o 
 Use Secret para:
 
 ```txt
-RESEND_API_KEY
-BREVO_API_KEY              opcional, para fallback ou envio pelo Brevo
 SUPABASE_SERVICE_ROLE_KEY
 CRON_SECRET
+ZOHO_SMTP_USER
+ZOHO_SMTP_PASS
 ```
 
 Use Variable normal para:
 
 ```txt
-SUPABASE_URL=https://pwjatxqtkvvcmzmjjvbi.supabase.co
-REPORT_FROM_EMAIL=onboarding@resend.dev
+SUPABASE_URL=https://pwjatxqtkvwcmzmjjvbi.supabase.co
+REPORT_FROM_EMAIL=relatorio@zohomail.com
 REPORT_FROM_NAME=dash de carga
 REPORT_DASHBOARD_URL=https://dash-de-carga-cloud.hhhthiti.workers.dev/cco.html
 REPORT_TIME_ZONE=America/Sao_Paulo
+ZOHO_SMTP_HOST=smtp.zoho.com
+ZOHO_SMTP_PORT=465
 ```
 
 Importante: `SUPABASE_SERVICE_ROLE_KEY` nao e token de provedor de email. A service role real do Supabase costuma comecar com `eyJhbGciOiJIUzI1Ni`.
 
-O `REPORT_FROM_EMAIL` precisa ser um remetente valido no provedor escolhido. No Resend, `onboarding@resend.dev` so manda para o e-mail dono da conta. Para mandar para outras pessoas, verifique um dominio no Resend e troque para algo como `reportes@seudominio.com`.
+No Zoho, gere e use uma senha de aplicativo em `Security > App Passwords`. Mantenha `REPORT_FROM_EMAIL` igual ao usuario autenticado no SMTP para evitar `relaying disallowed`.
 
 ## Rotas
 
