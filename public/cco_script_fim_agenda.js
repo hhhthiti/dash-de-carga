@@ -2765,9 +2765,8 @@ function readStoredReportConfig(){
 
 async function hydrateReportConfig(){
   const localConfig=readStoredReportConfig();
-  let merged={...localConfig};
   const serverConfig=await loadServerReportConfig();
-  if(serverConfig) merged={...merged,...serverConfig};
+  let merged={...(serverConfig||{}),...localConfig};
   appConfig=normalizeReportDeliveryConfig(merged);
   try{ localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig)); }catch(e){}
   return appConfig;
@@ -2800,6 +2799,15 @@ function clientConfigForServer(config){
   const copy={...(config||{})};
   delete copy.adminSecret;
   return copy;
+}
+
+async function persistReportConfig(config, syncServer=true){
+  appConfig=normalizeReportDeliveryConfig(config||appConfig||{});
+  try{ localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig)); }catch(e){}
+  if(syncServer){
+    saveServerReportConfig(appConfig).catch(()=>null);
+  }
+  return appConfig;
 }
 
 function isVercelApiAvailable(){
@@ -2892,9 +2900,7 @@ function saveConfigModal(){
     autoEmailIntervalMinutes:Math.max(5,parseInt(val('cfg-auto-email-interval'),10)||60),
     updatedAt:new Date().toISOString(),
   };
-  appConfig=normalizeReportDeliveryConfig(appConfig);
-  try{localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig));}catch(e){}
-  saveServerReportConfig(appConfig).catch(()=>null);
+  persistReportConfig(appConfig,true);
   startAutoReportEmailTimer();
   closeConfigModal();
   showOk('Configurações do reporte salvas.');
@@ -2918,8 +2924,7 @@ function syncConfigFromOpenModal(){
     autoEmailIntervalMinutes:Math.max(5,parseInt(val('cfg-auto-email-interval'),10)||60),
     updatedAt:new Date().toISOString(),
   };
-  appConfig=normalizeReportDeliveryConfig(appConfig);
-  try{localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig));}catch(e){}
+  persistReportConfig(appConfig,true);
 }
 
 function rpBuildSnapshotPayload(source='DASHBOARD',evento='Snapshot manual'){
@@ -3191,6 +3196,30 @@ function rpBuildEmailPayload(){
   };
 }
 
+function renderLeaderReportTable(rows){
+  const tbody=document.getElementById('rp-leaders-table-body');
+  if(!tbody) return;
+  const list=(rows||[]).slice().sort(compareAgendaRows);
+  tbody.innerHTML=list.map(r=>{
+    const statusOp=[r.status||'—', r.tipo_operacao||''].filter(Boolean).join(' / ') || '—';
+    return `<tr style="border-bottom:1px solid #1f2937;">
+      <td style="padding:8px 10px;color:#cbd5e1;">${escHtml(r.dia_ref||'')}</td>
+      <td style="padding:8px 10px;color:#f8fafc;font-weight:800;">${escHtml(r.dt||'')}</td>
+      <td style="padding:8px 10px;color:#cbd5e1;">${escHtml(r.transportadora||'')}</td>
+      <td style="padding:8px 10px;color:#93c5fd;">${escHtml(r.paletizacao||'')}</td>
+      <td style="padding:8px 10px;color:#cbd5e1;">${escHtml(r.grade_carregamento||'')}</td>
+      <td style="padding:8px 10px;color:#cbd5e1;">${escHtml(r.fim_carregamento||'')}</td>
+      <td style="padding:8px 10px;color:#cbd5e1;">${escHtml(r.nome_cliente_fornecedor||'')}</td>
+      <td style="padding:8px 10px;color:#f8fafc;">${escHtml(statusOp)}</td>
+      <td style="padding:8px 10px;color:#cbd5e1;">${escHtml(r.descricao_documento||'')}</td>
+      <td style="padding:8px 10px;color:#e2e8f0;text-align:right;font-variant-numeric:tabular-nums;">${escHtml(fmtTonMaybe(r.peso_liquido))}</td>
+    </tr>`;
+  }).join('');
+  if(!list.length){
+    tbody.innerHTML='<tr><td colspan="10" style="padding:16px;color:#64748b;text-align:center;">Sem linhas para o reporte de líderes no filtro atual.</td></tr>';
+  }
+}
+
 function rpTimeToMinutes(value,fallback){
   const m=String(value||'').match(/^(\d{1,2}):(\d{2})$/);
   if(!m) return fallback;
@@ -3251,7 +3280,7 @@ async function rpCheckAutoReportEmail(){
 async function rpEnviarEmailAgora(options={}){
   const automatic=!!options.automatic;
   if(!automatic) syncConfigFromOpenModal();
-  await hydrateReportConfig();
+  if(automatic) await hydrateReportConfig();
   try{localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig));}catch(e){}
   const payload=rpBuildEmailPayload();
   if(!appConfig.emailTo||!appConfig.emailTo.length){
@@ -3459,6 +3488,7 @@ function renderReporte(){
     :dayRows.filter(r=>rpGetTurno(r)===rpTurnoFiltro)).sort(compareFimAgendaRows);
   const reportRows=rows.filter(rpRowContaNoReporte);
   const excludedRows=rows.length-reportRows.length;
+  renderLeaderReportTable(reportRows);
 
   const infoEl=document.getElementById('rp-turno-info');
 

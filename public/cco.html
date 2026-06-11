@@ -413,6 +413,32 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📍 STATUS ATUAL DAS DTs</div>
         <div id="rp-status-counts" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;"></div>
       </div>
+      <!-- Tabela para líderes -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;">
+          <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">REPORTE PARA LÍDERES</div>
+          <div style="font-size:11px;color:#64748b;">Tabela operacional sem precisar reimportar a agenda</div>
+        </div>
+        <div style="overflow:auto;border:1px solid #334155;border-radius:8px;">
+          <table style="width:100%;border-collapse:collapse;min-width:1180px;font-size:11px;">
+            <thead>
+              <tr style="background:#0f172a;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">DIA</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">DT</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">TRANSPORTADORA</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">PALETIZAÇÃO</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">GRADE</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">FIM</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">Nome Cliente/Fornecedor</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">STATUS / OPERAÇÃO</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">DESC. DOCUMENTO</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:right;">PESO LÍQUIDO</th>
+              </tr>
+            </thead>
+            <tbody id="rp-leaders-table-body"></tbody>
+          </table>
+        </div>
+      </div>
       <!-- Separações por turno -->
       <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
         <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">🔢 SEPARAÇÕES POR TURNO</div>
