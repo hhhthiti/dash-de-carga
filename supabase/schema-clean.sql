@@ -236,4 +236,181 @@ insert into public.report_delivery_config (id)
 values ('default')
 on conflict (id) do nothing;
 
+-- =========================================================
+-- RLS POLICIES
+-- =========================================================
+alter table public.reporte_carga enable row level security;
+alter table public.reporte_carga_status_hist enable row level security;
+alter table public.reporte_materiais enable row level security;
+alter table public.reporte_logs enable row level security;
+alter table public.dt_logs enable row level security;
+alter table public.grade_snapshots enable row level security;
+alter table public.planejamento_suzano_snapshots enable row level security;
+alter table public.reportes_diarios enable row level security;
+alter table public.report_delivery_config enable row level security;
+
+drop policy if exists "public_select_reporte_carga" on public.reporte_carga;
+create policy "public_select_reporte_carga"
+  on public.reporte_carga
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_reporte_carga" on public.reporte_carga;
+create policy "public_insert_reporte_carga"
+  on public.reporte_carga
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_update_reporte_carga" on public.reporte_carga;
+create policy "public_update_reporte_carga"
+  on public.reporte_carga
+  for update
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "public_delete_reporte_carga" on public.reporte_carga;
+create policy "public_delete_reporte_carga"
+  on public.reporte_carga
+  for delete
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_select_reporte_carga_status_hist" on public.reporte_carga_status_hist;
+create policy "public_select_reporte_carga_status_hist"
+  on public.reporte_carga_status_hist
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_reporte_carga_status_hist" on public.reporte_carga_status_hist;
+create policy "public_insert_reporte_carga_status_hist"
+  on public.reporte_carga_status_hist
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_select_reporte_materiais" on public.reporte_materiais;
+create policy "public_select_reporte_materiais"
+  on public.reporte_materiais
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_reporte_materiais" on public.reporte_materiais;
+create policy "public_insert_reporte_materiais"
+  on public.reporte_materiais
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_update_reporte_materiais" on public.reporte_materiais;
+create policy "public_update_reporte_materiais"
+  on public.reporte_materiais
+  for update
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "public_delete_reporte_materiais" on public.reporte_materiais;
+create policy "public_delete_reporte_materiais"
+  on public.reporte_materiais
+  for delete
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_select_reporte_logs" on public.reporte_logs;
+create policy "public_select_reporte_logs"
+  on public.reporte_logs
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_reporte_logs" on public.reporte_logs;
+create policy "public_insert_reporte_logs"
+  on public.reporte_logs
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_select_dt_logs" on public.dt_logs;
+create policy "public_select_dt_logs"
+  on public.dt_logs
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_dt_logs" on public.dt_logs;
+create policy "public_insert_dt_logs"
+  on public.dt_logs
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_select_grade_snapshots" on public.grade_snapshots;
+create policy "public_select_grade_snapshots"
+  on public.grade_snapshots
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_grade_snapshots" on public.grade_snapshots;
+create policy "public_insert_grade_snapshots"
+  on public.grade_snapshots
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_select_planejamento_suzano_snapshots" on public.planejamento_suzano_snapshots;
+create policy "public_select_planejamento_suzano_snapshots"
+  on public.planejamento_suzano_snapshots
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_planejamento_suzano_snapshots" on public.planejamento_suzano_snapshots;
+create policy "public_insert_planejamento_suzano_snapshots"
+  on public.planejamento_suzano_snapshots
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_select_reportes_diarios" on public.reportes_diarios;
+create policy "public_select_reportes_diarios"
+  on public.reportes_diarios
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_reportes_diarios" on public.reportes_diarios;
+create policy "public_insert_reportes_diarios"
+  on public.reportes_diarios
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_select_report_delivery_config" on public.report_delivery_config;
+create policy "public_select_report_delivery_config"
+  on public.report_delivery_config
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "public_insert_report_delivery_config" on public.report_delivery_config;
+create policy "public_insert_report_delivery_config"
+  on public.report_delivery_config
+  for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "public_update_report_delivery_config" on public.report_delivery_config;
+create policy "public_update_report_delivery_config"
+  on public.report_delivery_config
+  for update
+  to anon, authenticated
+  using (true)
+  with check (true);
+
 commit;
