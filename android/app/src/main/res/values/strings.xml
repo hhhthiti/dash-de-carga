@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Dash de Carga</string>
+    <string name="title_activity_main">Dash de Carga</string>
+    <string name="package_name">com.hhhthiti.dashdecarga</string>
+    <string name="custom_url_scheme">com.hhhthiti.dashdecarga</string>
+</resources>

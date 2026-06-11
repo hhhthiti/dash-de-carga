@@ -86,3 +86,26 @@ Cada envio leva um resumo visual no corpo do e-mail, um preview SVG anexo e um C
 4. Verificar se o Zoho tem senha de aplicativo ativa.
 5. Testar o botao `Reenviar e-mail` no dashboard.
 6. Validar um envio automatico na janela correta do cron.
+
+## APK Android
+
+O projeto tambem foi preparado com Capacitor para gerar APK.
+
+Comandos:
+
+```txt
+npm run mobile:sync
+npm run mobile:build:debug
+```
+
+O APK debug sai em:
+
+```txt
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Observacao: o app Android abre o dashboard publicado em:
+
+```txt
+https://dash-de-carga-66qdxy50p-hhhthitis-projects.vercel.app
+```

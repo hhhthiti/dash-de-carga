@@ -1533,7 +1533,7 @@ async function persistRelatorioFieldsForCurrentTable(){
   const refsByDT=getCurrentTableRefsByDT();
   for(const [dtRaw,refs] of refsByDT.entries()){
     const dt=normalizeDT(dtRaw);
-    const patch={updated_at:new Date().toISOString()};
+    const patch={updated_at:new Date().toISOString(), peso_liquido:'', toneladas:''};
     if(descDocMap[dt]) patch.descricao_documento=String(descDocMap[dt]);
     if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
     if(centroMap[dt]) patch.centro=String(centroMap[dt]);
@@ -1542,7 +1542,6 @@ async function persistRelatorioFieldsForCurrentTable(){
     if(pesoLiquidoMap[dt]){
       const peso=String(Math.floor(pesoLiquidoMap[dt]));
       patch.peso_liquido=peso;
-      patch.toneladas='';
     }
     if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
     if(sapNumMap[dt]) patch.n_portaria=String(sapNumMap[dt]);
@@ -1694,7 +1693,7 @@ async function buildTable(){
         centro:String(centroMap[dt.DT]||ex.centro||''),
         nome_cliente_fornecedor:String(clienteFornecedorMap[dt.DT]||ex.nome_cliente_fornecedor||''),
         toneladas:'',
-        peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] || 0)),
+        peso_liquido: pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '',
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
         dia_ref:diaRef,
@@ -1731,7 +1730,7 @@ async function buildTable(){
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
       hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',nome_cliente_fornecedor:clienteFornecedorMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:'',
-      peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] || 0)),
+      peso_liquido: pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '',
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(agendaRefDate(dt)||T,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(agendaRefDate(dt)||T),
@@ -2020,7 +2019,7 @@ function renderRows(){
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
       `</select>${opTag?opTag:''}</div></td>`+
       `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
-      `<td class="td-sm">${fmtTon(row.peso_liquido||0)}</td>`;
+      `<td class="td-sm">${fmtTonMaybe(row.peso_liquido)}</td>`;
     tbody.appendChild(tr);
   });
 
@@ -2551,7 +2550,7 @@ function exportCSV(){
   exportRows.forEach(r=>{
     const dtKey=String(r.dt||'').trim();
     const mats=exportMap[dtKey]||[];
-    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.nome_cliente_fornecedor||'',fmtTon(r.peso_liquido||0),r.tipo_operacao||''];
+    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.nome_cliente_fornecedor||'',fmtTonMaybe(r.peso_liquido),r.tipo_operacao||''];
     if(!mats.length){
       rows.push([...base,'','','','']);
     } else {
@@ -3353,6 +3352,11 @@ function fmtTon(raw){
   return toTonInt(raw).toLocaleString('pt-BR');
 }
 
+function fmtTonMaybe(raw){
+  if(raw===null||raw===undefined||raw==='') return '';
+  return fmtTon(raw);
+}
+
 function fmtCargaCompact(raw){
   const n=Number(raw)||0;
   const abs=Math.abs(n);
@@ -3729,7 +3733,7 @@ function exportReporteXLSX(){
   exportRows.forEach(r=>{
     const dtKey=String(r.dt||'').trim();
     const mats=exportMap[dtKey]||[];
-    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.nome_cliente_fornecedor||'',fmtTon(r.peso_liquido||0),r.tipo_operacao||''];
+    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.nome_cliente_fornecedor||'',fmtTonMaybe(r.peso_liquido),r.tipo_operacao||''];
     if(!mats.length){
       wsData.push([...base,'','','','']);
     } else {
@@ -3967,7 +3971,7 @@ function exportGradeTodasDTsJPG(){
     text(status,cols[6][1],y,12,statusColors[status]||'#94a3b8','800');
     text(ellipsis(op||'—',18),cols[7][1],y,12,'#c4b5fd','800');
     text(ellipsis(r.descricao_documento||'—',24),cols[8][1],y,12,'#94a3b8','700');
-    text(fmtTon(r.peso_liquido||0),cols[9][1]+86,y,13,'#e2e8f0','800','right');
+    text(fmtTonMaybe(r.peso_liquido),cols[9][1]+86,y,13,'#e2e8f0','800','right');
   });
 
   const footerY=H-28;
