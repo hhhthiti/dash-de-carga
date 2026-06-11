@@ -2562,6 +2562,7 @@ let rpSnapshotCache = {};
 let appConfig = JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
 let rpAutoEmailTimer = null;
 let rpAutoEmailSending = false;
+const RP_ADMIN_SECRET_KEY = 'reporte_admin_secret';
 
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO'];
 const STATUS_FORA_REPORTE = ['NO SHOW','VEICULO RECUSADO'];
@@ -2721,8 +2722,37 @@ function getEmailList(raw){
 function getDefaultEmailEndpoint(provider){
   if(isVercelApiAvailable()) return '/api/send-report';
   const host=window.location.hostname;
-  if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/send-report';
+  if(host==='localhost'||host==='127.0.0.1') return 'http://localhost:8787/api/send-report';
   return '/api/send-report';
+}
+
+function getAdminSecret(){
+  return String(appConfig.adminSecret || localStorage.getItem(RP_ADMIN_SECRET_KEY) || '').trim();
+}
+
+function setAdminSecret(secret){
+  const value=String(secret||'').trim();
+  appConfig.adminSecret=value;
+  try{
+    if(value) localStorage.setItem(RP_ADMIN_SECRET_KEY,value);
+    else localStorage.removeItem(RP_ADMIN_SECRET_KEY);
+  }catch(e){}
+}
+
+function authHeaders(extra={}){
+  const headers={...extra};
+  const secret=getAdminSecret();
+  if(secret){
+    headers['x-admin-secret']=secret;
+    headers['Authorization']='Bearer '+secret;
+  }
+  return headers;
+}
+
+function clientConfigForServer(config){
+  const copy={...(config||{})};
+  delete copy.adminSecret;
+  return copy;
 }
 
 function isVercelApiAvailable(){
@@ -2733,7 +2763,7 @@ function isVercelApiAvailable(){
 async function loadServerReportConfig(){
   if(!isVercelApiAvailable()) return null;
   try{
-    const r=await fetch('/api/report-config',{headers:{accept:'application/json'}});
+    const r=await fetch('/api/report-config',{headers:authHeaders({accept:'application/json'})});
     if(!r.ok) return null;
     const data=await r.json();
     return data && data.config ? data.config : null;
@@ -2747,8 +2777,8 @@ async function saveServerReportConfig(config){
   try{
     const r=await fetch('/api/report-config',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(config),
+      headers:authHeaders({'Content-Type':'application/json'}),
+      body:JSON.stringify(clientConfigForServer(config)),
     });
     return r.ok;
   }catch(e){
@@ -2792,6 +2822,7 @@ async function openConfigModal(){
   set('cfg-email-provider',appConfig.emailProvider||'auto');
   set('cfg-email-to',(appConfig.emailTo||[]).join('; '));
   set('cfg-email-cc',(appConfig.emailCc||[]).join('; '));
+  set('cfg-admin-secret',getAdminSecret());
   set('cfg-report-inicial',appConfig.reportInicial||'00:00');
   set('cfg-report-final',appConfig.reportFinal||'11:59');
   set('cfg-auto-email-enabled',appConfig.autoEmailEnabled?'1':'');
@@ -2807,6 +2838,7 @@ function closeConfigModal(){
 function saveConfigModal(){
   const val=id=>document.getElementById(id)?.value || '';
   const provider=val('cfg-email-provider') || 'zoho';
+  setAdminSecret(val('cfg-admin-secret'));
   appConfig={
     emailProvider:provider,
     emailFrom:'',
@@ -2832,6 +2864,7 @@ function syncConfigFromOpenModal(){
   if(!ov || ov.style.display==='none') return;
   const val=id=>document.getElementById(id)?.value || '';
   const provider=val('cfg-email-provider') || 'zoho';
+  setAdminSecret(val('cfg-admin-secret'));
   appConfig={
     emailProvider:provider,
     emailFrom:'',
@@ -3192,7 +3225,7 @@ async function rpEnviarEmailAgora(options={}){
     try{
       const r=await fetch(appConfig.emailEndpoint,{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:authHeaders({'Content-Type':'application/json'}),
         body:JSON.stringify(payload)
       });
       if(!r.ok) throw new Error(await readAutomationError(r));

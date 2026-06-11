@@ -424,7 +424,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
         <select id="pl-data-ref" onchange="rpSetDataRef(this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"></select>
         <button class="bg" onclick="rpSalvarPlanejadoSuzano()" style="font-size:10px;padding:4px 10px;">Salvar Suzano</button>
         <button class="bg" onclick="rpSalvarSnapshotManual()" style="font-size:10px;padding:4px 10px;">Snapshot</button>
-        <button class="bexp" onclick="rpEnviarEmailAgora()" style="font-size:10px;padding:4px 10px;background:#0e7490;border-color:#06b6d4;">Enviar e-mail agora</button>
+        <button class="bexp" onclick="rpEnviarEmailAgora()" style="font-size:10px;padding:4px 10px;background:#0e7490;border-color:#06b6d4;">Reenviar e-mail</button>
         <span id="pl-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
       </div>
       <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
@@ -718,6 +718,7 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div><label class="sl">DESTINATÁRIOS</label><textarea id="cfg-email-to" class="obs-area" placeholder="gestor@empresa.com; operacao@empresa.com"></textarea></div>
       <div><label class="sl">CÓPIA (CC)</label><input id="cfg-email-cc" class="mat-input" placeholder="opcional"/></div>
       <div><label class="sl">MÉTODO DE ENVIO</label><select id="cfg-email-provider" class="mat-input"><option value="auto">Auto: Zoho SMTP</option><option value="zoho">Zoho SMTP</option></select></div>
+      <div><label class="sl">TOKEN ADMIN DO WORKER</label><input id="cfg-admin-secret" type="password" class="mat-input" placeholder="opcional, para proteger /api/send-report"/></div>
       <div style="display:none;grid-template-columns:1fr 1fr;gap:12px;" class="sg-form-grid">
         <div><label class="sl">REPORTE INICIAL</label><input id="cfg-report-inicial" type="time" class="mat-input" value="00:00"/></div>
         <div><label class="sl">REPORTE FINAL</label><input id="cfg-report-final" type="time" class="mat-input" value="11:59"/></div>
@@ -729,9 +730,10 @@ tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
       <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;color:#94a3b8;font-size:12px;line-height:1.7;">
         <b style="color:#e2e8f0;">Como funciona:</b><br>
         Destinatários recebem o reporte, CC recebe em cópia e os fechamentos automáticos rodam às 14h, 22h e 06h. As chaves de envio ficam protegidas no servidor online.
+        Se o Worker estiver protegido, preencha também o token admin para liberar os botões e a automação.
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
-        <button class="bexp" onclick="rpEnviarEmailAgora()" style="background:#0e7490;border-color:#06b6d4;">Enviar e-mail agora</button>
+        <button class="bexp" onclick="rpEnviarEmailAgora()" style="background:#0e7490;border-color:#06b6d4;">Reenviar e-mail</button>
         <button class="bg" onclick="closeConfigModal()">Cancelar</button>
         <button class="bp" onclick="saveConfigModal()">Salvar configurações</button>
       </div>

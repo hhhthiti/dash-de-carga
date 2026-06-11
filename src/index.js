@@ -9,8 +9,14 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/api/send-report") return await handleSendReport(request, env);
-      if (url.pathname === "/api/report-config") return await handleReportConfig(request, env);
+      if (url.pathname === "/api/send-report") {
+        assertAdminSecret(request, env);
+        return await handleSendReport(request, env);
+      }
+      if (url.pathname === "/api/report-config") {
+        assertAdminSecret(request, env);
+        return await handleReportConfig(request, env);
+      }
       if (url.pathname === "/api/cron-report-final") return await handleCronReportFinal(request, env);
       if (url.pathname === "/") return env.ASSETS.fetch(new Request(new URL("/index.html", url), request));
       return env.ASSETS.fetch(request);
@@ -35,6 +41,30 @@ function requiredEnv(env, name) {
   const value = env[name];
   if (!value) throw new Error(`${name} nao configurado nas variaveis de ambiente.`);
   return value;
+}
+
+function adminSecret(env) {
+  return String(env.ADMIN_SECRET || "").trim();
+}
+
+function requestAdminSecret(request) {
+  return String(
+    request.headers.get("x-admin-secret")
+    || request.headers.get("x-report-admin-secret")
+    || ""
+  ).trim();
+}
+
+function assertAdminSecret(request, env) {
+  const secret = adminSecret(env);
+  if (!secret) return;
+  const headerSecret = requestAdminSecret(request);
+  const auth = String(request.headers.get("authorization") || "").trim();
+  if (headerSecret === secret) return;
+  if (auth === `Bearer ${secret}`) return;
+  const err = new Error("Unauthorized");
+  err.status = 401;
+  throw err;
 }
 
 function supabaseUrl(env) {
@@ -351,21 +381,91 @@ function reportText(report) {
   ].join("\n");
 }
 
+function reportFileStem(report) {
+  const date = String(report.dataRef || "reporte").replace(/\//g, "-");
+  const shift = report.shift ? `_${report.shift}` : "";
+  return `${date}${shift}`;
+}
+
+function reportPreviewSvg(report) {
+  const title = "Reporte de Status";
+  const subtitle = `Dia ${report.dataRef}${report.shift ? ` • ${report.shiftLabel || report.shift}` : ""}`;
+  const metrics = [
+    ["Planejado Suzano", fmtCarga(report.planejadoSuzano), "#38bdf8"],
+    ["Nossa grade", fmtCarga(report.nossaGrade), "#60a5fa"],
+    ["Realizado", fmtCarga(report.realizadoGrade), "#22c55e"],
+    ["Pendente", fmtCarga(report.pendente), "#f59e0b"],
+  ];
+  const rows = (Array.isArray(report.tipos) ? report.tipos : []).slice(0, 5);
+  const rowSvg = rows.length ? rows.map((row, idx) => {
+    const y = 330 + idx * 40;
+    return `
+      <rect x="60" y="${y}" width="1080" height="30" rx="10" fill="#111827" stroke="#243044"/>
+      <text x="80" y="${y + 20}" font-family="Arial" font-size="13" fill="#e2e8f0">${escapeHtml(row.tipo)}</text>
+      <text x="620" y="${y + 20}" font-family="Arial" font-size="13" fill="#60a5fa" text-anchor="end">${escapeHtml(fmtCarga(row.planejado))}</text>
+      <text x="810" y="${y + 20}" font-family="Arial" font-size="13" fill="#22c55e" text-anchor="end">${escapeHtml(fmtCarga(row.realizado))}</text>
+      <text x="1040" y="${y + 20}" font-family="Arial" font-size="13" fill="#f59e0b" text-anchor="end">${escapeHtml(fmtCarga(row.pendente))}</text>
+    `;
+  }).join("") : `
+      <rect x="60" y="330" width="1080" height="30" rx="10" fill="#111827" stroke="#243044"/>
+      <text x="80" y="350" font-family="Arial" font-size="13" fill="#94a3b8">Sem detalhes por tipo nesta entrega</text>
+    `;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+  <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#091120"/>
+        <stop offset="100%" stop-color="#0f172a"/>
+      </linearGradient>
+      <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="#38bdf8"/>
+        <stop offset="50%" stop-color="#22c55e"/>
+        <stop offset="100%" stop-color="#f59e0b"/>
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="630" fill="url(#bg)"/>
+    <rect x="48" y="44" width="1104" height="542" rx="28" fill="#0b1220" stroke="#263244"/>
+    <rect x="48" y="44" width="1104" height="10" rx="5" fill="url(#accent)"/>
+    <text x="80" y="108" font-family="Arial" font-size="42" font-weight="700" fill="#f8fafc">${escapeHtml(title)}</text>
+    <text x="80" y="146" font-family="Arial" font-size="18" fill="#94a3b8">${escapeHtml(subtitle)}</text>
+    ${metrics.map((item, idx) => `
+      <rect x="${80 + idx * 260}" y="180" width="230" height="110" rx="20" fill="#111c2e" stroke="${item[2]}55"/>
+      <text x="${100 + idx * 260}" y="216" font-family="Arial" font-size="12" font-weight="700" letter-spacing="1" fill="${item[2]}">${escapeHtml(item[0])}</text>
+      <text x="${100 + idx * 260}" y="260" font-family="Arial" font-size="28" font-weight="800" fill="${item[2]}">${escapeHtml(item[1])}</text>
+    `).join("")}
+    <text x="80" y="316" font-family="Arial" font-size="14" font-weight="700" fill="#cbd5e1">Resumo operacional</text>
+    <line x1="80" y1="328" x2="1120" y2="328" stroke="#263244"/>
+    ${rowSvg}
+    <text x="80" y="548" font-family="Arial" font-size="12" fill="#94a3b8">Gerado automaticamente pelo dashboard de carga</text>
+  </svg>`;
+}
+
+function reportPreviewDataUri(report) {
+  return `data:image/svg+xml;base64,${base64Utf8(reportPreviewSvg(report))}`;
+}
+
 function reportHtml(env, report) {
   const text = reportText(report);
   const dashboardUrl = env.REPORT_DASHBOARD_URL || "";
   const card = (title, value, color, sub = "") => `<td style="padding:8px;width:25%;">
-    <div style="border:1px solid ${color}55;background:#111c2e;border-radius:8px;padding:14px;min-height:92px;">
+    <div style="border:1px solid ${color}55;background:#111c2e;border-radius:14px;padding:16px;min-height:102px;">
       <div style="font-size:11px;letter-spacing:1px;color:${color};font-weight:800;">${escapeHtml(title)}</div>
-      <div style="font-size:24px;line-height:1.35;color:${color};font-weight:900;">${escapeHtml(value)}</div>
-      <div style="font-size:11px;color:#94a3b8;">${escapeHtml(sub)}</div>
+      <div style="font-size:26px;line-height:1.25;color:${color};font-weight:900;margin-top:8px;">${escapeHtml(value)}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:6px;">${escapeHtml(sub)}</div>
     </div>
   </td>`;
   const tipos = Array.isArray(report.tipos) ? report.tipos : [];
   return `<!doctype html><html><body style="margin:0;font-family:Arial,sans-serif;background:#0b1220;color:#e2e8f0;padding:24px;">
     <div style="max-width:980px;margin:0 auto;">
-      <h2 style="margin:0 0 4px;font-size:24px;">Reporte de Status</h2>
-      <div style="color:#94a3b8;margin-bottom:16px;">Dia ${escapeHtml(report.dataRef)}${report.shift ? ` | ${escapeHtml(report.shiftLabel || report.shift)}` : ""}</div>
+      <div style="border:1px solid #263244;background:linear-gradient(180deg,#0f172a 0%,#111c2e 100%);border-radius:18px;padding:20px;margin-bottom:18px;">
+        <div style="font-size:12px;letter-spacing:2px;color:#38bdf8;font-weight:800;">DASH DE CARGA</div>
+        <h2 style="margin:8px 0 6px;font-size:26px;">Reporte de Status</h2>
+        <div style="color:#94a3b8;font-size:14px;">Dia ${escapeHtml(report.dataRef)}${report.shift ? ` | ${escapeHtml(report.shiftLabel || report.shift)}` : ""}</div>
+      </div>
+      <div style="background:#111c2e;border:1px solid #263244;border-radius:18px;padding:14px;margin-bottom:16px;">
+        <img src="${reportPreviewDataUri(report)}" alt="Resumo visual do reporte" style="display:block;width:100%;max-width:100%;border-radius:14px;border:1px solid #243044;background:#0b1220;"/>
+      </div>
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-bottom:14px;"><tr>
         ${card("PLANEJADO SUZANO", fmtCarga(report.planejadoSuzano), "#38bdf8", "Pedido informado")}
         ${card("NOSSA GRADE", fmtCarga(report.nossaGrade), "#60a5fa", `vs Suzano: ${fmtCarga(report.variacaoSuzanoGrade || 0)}`)}
@@ -384,8 +484,8 @@ function reportHtml(env, report) {
           </tr>`).join("")}
         </table>
       </div>` : ""}
-      <pre style="white-space:pre-wrap;background:#111c2e;border:1px solid #334155;border-radius:8px;padding:16px;color:#cbd5e1;">${escapeHtml(text)}</pre>
-      ${dashboardUrl ? `<p><a href="${escapeHtml(dashboardUrl)}" target="_blank" rel="noopener noreferrer" style="color:#38bdf8;">Abrir dashboard de carga</a></p>` : ""}
+      <pre style="white-space:pre-wrap;background:#111c2e;border:1px solid #334155;border-radius:14px;padding:16px;color:#cbd5e1;line-height:1.6;">${escapeHtml(text)}</pre>
+      ${dashboardUrl ? `<p style="margin:16px 0 0;"><a href="${escapeHtml(dashboardUrl)}" target="_blank" rel="noopener noreferrer" style="color:#38bdf8;font-weight:700;text-decoration:none;">Abrir dashboard de carga</a></p>` : ""}
     </div>
   </body></html>`;
 }
@@ -395,14 +495,15 @@ function wrapBase64(value) {
 }
 
 function buildAttachmentPart(artifacts) {
-  if (!artifacts?.csvBase64) return "";
+  const attachment = artifacts?.attachment;
+  if (!attachment?.contentBase64) return "";
   return [
     `--${artifacts.boundary}`,
-    `Content-Type: text/csv; name="${artifacts.csvFilename}"`,
+    `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
     "Content-Transfer-Encoding: base64",
-    `Content-Disposition: attachment; filename="${artifacts.csvFilename}"`,
+    `Content-Disposition: attachment; filename="${attachment.filename}"`,
     "",
-    wrapBase64(artifacts.csvBase64),
+    wrapBase64(attachment.contentBase64),
     "",
   ].join("\r\n");
 }
@@ -410,6 +511,9 @@ function buildAttachmentPart(artifacts) {
 function buildMimeMessage({ from, to, cc, subject, html, text, artifacts }) {
   const outer = `mix_${crypto.randomUUID().replace(/-/g, "")}`;
   const inner = `alt_${crypto.randomUUID().replace(/-/g, "")}`;
+  const attachmentParts = Array.isArray(artifacts?.attachments)
+    ? artifacts.attachments.map(attachment => buildAttachmentPart({ boundary: outer, attachment }))
+    : [];
   return [
     `From: ${from}`,
     `To: ${to.join(", ")}`,
@@ -436,7 +540,7 @@ function buildMimeMessage({ from, to, cc, subject, html, text, artifacts }) {
     "",
     `--${inner}--`,
     "",
-    buildAttachmentPart({ ...artifacts, boundary: outer }),
+    ...attachmentParts,
     `--${outer}--`,
     "",
   ].join("\r\n");
@@ -560,7 +664,11 @@ async function sendZohoMailTransaction({ reader, writer, state, username, passwo
     await smtpStep(reader, state, writer, `RCPT TO:${smtpEnvelopeAddress(email)}`, [250, 251], `RCPT TO ${email}`);
   }
   await smtpStep(reader, state, writer, "DATA", [354], "DATA");
-  await writeSmtpLine(writer, mime.replace(/\r?\n/g, "\r\n"));
+  const mimeLines = mime.split(/\r\n|\n|\r/);
+  for (const line of mimeLines) {
+    const safeLine = line.startsWith(".") ? `.${line}` : line;
+    await writeSmtpLine(writer, safeLine);
+  }
   await writeSmtpLine(writer, ".");
   const sent = await readSmtpResponse(reader, state);
   if (![250, 251].includes(sent.code)) {
@@ -614,17 +722,31 @@ function base64Utf8(value) {
 }
 
 function attachmentFilename(report) {
-  const date = String(report.dataRef || "reporte").replace(/\//g, "-");
-  const shift = report.shift ? `_${report.shift}` : "";
-  return `cargas_${date}${shift}.csv`;
+  return `cargas_${reportFileStem(report)}.csv`;
 }
 
 function emailArtifacts(report) {
   const csv = reportCsv(report);
+  const previewSvg = reportPreviewSvg(report);
   return {
     csv,
     csvBase64: base64Utf8(csv),
     csvFilename: attachmentFilename(report),
+    previewSvg,
+    previewSvgBase64: base64Utf8(previewSvg),
+    previewSvgFilename: `preview_${reportFileStem(report)}.svg`,
+    attachments: [
+      {
+        filename: attachmentFilename(report),
+        contentType: "text/csv; charset=utf-8",
+        contentBase64: base64Utf8(csv),
+      },
+      {
+        filename: `preview_${reportFileStem(report)}.svg`,
+        contentType: "image/svg+xml; charset=utf-8",
+        contentBase64: base64Utf8(previewSvg),
+      },
+    ],
   };
 }
 
@@ -638,7 +760,7 @@ async function sendEmail(env, { report, config }) {
   const from = env.REPORT_FROM_NAME
     ? `${env.REPORT_FROM_NAME} <${senderEmail}>`
     : senderEmail;
-  const subject = `Reporte de Status - ${report.dataRef}${report.shift ? ` - ${report.shift}` : ""}`;
+  const subject = `Reporte de Status - ${report.dataRef}${report.shift ? ` - ${report.shiftLabel || report.shift}` : ""}`;
   const html = reportHtml(env, report);
   const text = reportText(report);
   const artifacts = emailArtifacts(report);
