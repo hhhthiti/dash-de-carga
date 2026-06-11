@@ -319,15 +319,15 @@ async function buildReport(env, dataRef, options = {}) {
   const statusCounts = countsByStatus(cargaRows);
   const validRows = cargaRows.filter(row => !["NO SHOW", "VEICULO RECUSADO"].includes(String(row.status || "").trim().toUpperCase()));
   const realizadoRows = cargaRows.filter(row => ["EXPEDIDO", "EM FATURAMENTO"].includes(String(row.status || "").trim().toUpperCase()));
-  const nossaGrade = validRows.reduce((sum, row) => sum + parseWeight(row.peso_liquido ?? row.toneladas ?? row.peso), 0);
-  const realizadoGrade = realizadoRows.reduce((sum, row) => sum + parseWeight(row.peso_liquido ?? row.toneladas ?? row.peso), 0);
+  const nossaGrade = validRows.reduce((sum, row) => sum + parseWeight(row.peso_liquido ?? 0), 0);
+  const realizadoGrade = realizadoRows.reduce((sum, row) => sum + parseWeight(row.peso_liquido ?? 0), 0);
   const planning = await latestPlanning(env, dataRef);
   const planejadoSuzano = Number(planning?.planejado_suzano_kg || 0);
   const tipos = {};
   const planejadoSuzanoDetalhado = planning?.detalhes && typeof planning.detalhes === "object" ? planning.detalhes : {};
   validRows.forEach(row => {
     const tipo = modality(row);
-    const weight = parseWeight(row.peso_liquido ?? row.toneladas ?? row.peso);
+    const weight = parseWeight(row.peso_liquido ?? 0);
     const realizado = ["EXPEDIDO", "EM FATURAMENTO"].includes(String(row.status || "").trim().toUpperCase());
     if (!tipos[tipo]) tipos[tipo] = { tipo, planejado: 0, realizado: 0, pendente: 0 };
     tipos[tipo].planejado += weight;
@@ -708,7 +708,7 @@ function reportCsv(report) {
     row.n_portaria || "",
     row.status || "",
     row.descricao_documento || "",
-    row.peso_liquido ?? row.toneladas ?? row.peso ?? "",
+    row.peso_liquido ?? "",
     row.tipo_operacao || "",
   ]);
   return "\uFEFF" + [cols, ...rows].map(row => row.map(csvEscape).join(";")).join("\n");

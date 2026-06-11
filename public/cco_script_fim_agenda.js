@@ -176,7 +176,7 @@ function buildPaletizacaoBadge(raw){
 }
 
 let agendRows=[], agendaDiagRows=[], dtsMescladas=[], exportMap={}, tipoOpMap={}, descDocMap={}, centroMap={}, infoAgendaMap={}, tableData=[];
-let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={}, paletizacaoMap={};
+let remessaMap={}, pesoLiquidoMap={}, horaChegadaCSVMap={}, sapNumMap={}, paletizacaoMap={}, clienteFornecedorMap={};
 let preFatMode=false; // Ctrl+Ç ativa checkboxes de Pré-Fat nas DTs
 let panelDT=null;
 let currentTableTab='todas';
@@ -262,6 +262,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   if(syncDot){ syncDot.style.background='#f59e0b'; }
   try {
     await tryLoadExisting();
+    await hydrateReportConfig();
     syncTxt.textContent = 'ONLINE';
     if(syncDot){ syncDot.style.background='#22c55e'; }
     // Se não carregou nada do banco, mostra o passo 1 para upload da agenda
@@ -329,14 +330,28 @@ function closeAgendaSearchModal(){
   if(ov) ov.style.display='none';
 }
 
+function parseAgendaSearchTerms(term){
+  const raw=String(term||'').trim();
+  if(!raw) return {dtTerms:[], text:''};
+  const dtTerms=[...new Set(raw.split(/[\s,;|]+/).map(t=>normalizeDT(t)).filter(t=>/^\d{5,}$/.test(t)))];
+  return {dtTerms, text:raw.toLowerCase()};
+}
+
 function agendaDiagnosticRowsForTerm(term){
-  const q=normalizeDT(term).toLowerCase();
-  if(!q) return [];
-  return (agendaDiagRows||[]).filter(r=>
-    String(r.DT||'').toLowerCase().includes(q) ||
-    String(r.TRANSPORTADORA||'').toLowerCase().includes(q) ||
-    String(r.DOCA||'').toLowerCase().includes(q)
-  );
+  const {dtTerms, text}=parseAgendaSearchTerms(term);
+  if(!dtTerms.length && !text) return [];
+  return (agendaDiagRows||[]).filter(r=>{
+    const dt=String(r.DT||'');
+    const searchable=[
+      dt,
+      String(r.TRANSPORTADORA||''),
+      String(r.DOCA||''),
+      String(r.LOCAL||''),
+    ].join(' ').toLowerCase();
+    if(dtTerms.includes(dt)) return true;
+    if(text && searchable.includes(text)) return true;
+    return false;
+  });
 }
 
 function renderAgendaSearch(){
@@ -354,10 +369,19 @@ function renderAgendaSearch(){
     body.innerHTML='<div style="color:#64748b;padding:18px;text-align:center;">Digite a DT, transportadora ou doca para investigar.</div>';
     return;
   }
+  const {dtTerms, text}=parseAgendaSearchTerms(term);
   const diagRows=agendaDiagnosticRowsForTerm(term);
-  const dtTerm=normalizeDT(term);
-  const dashRows=tableData.filter(r=>String(r.dt||'')===dtTerm || String(r.dt||'').includes(dtTerm));
-  const foundDTs=new Set([...diagRows.map(r=>String(r.DT)),...dashRows.map(r=>String(r.dt))].filter(Boolean));
+  const dashRows=tableData.filter(r=>{
+    const dt=String(r.dt||'');
+    if(dtTerms.includes(dt)) return true;
+    if(text && `${dt} ${String(r.transportadora||'')} ${String(r.descricao_documento||'')}`.toLowerCase().includes(text)) return true;
+    return false;
+  });
+  const foundDTs=new Set([
+    ...dtTerms,
+    ...diagRows.map(r=>String(r.DT)),
+    ...dashRows.map(r=>String(r.dt))
+  ].filter(Boolean));
 
   if(!foundDTs.size){
     body.innerHTML='<div style="color:#fca5a5;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:12px;">Nao achei essa DT na ultima agenda lida nem na tabela atual. Se a agenda foi carregada antes de abrir esta tela, importe o arquivo de agenda novamente e pesquise de novo.</div>';
@@ -1176,17 +1200,18 @@ function processAgend(file){
       agendRows=dedupeAgendaRowsByDTRef(agendRows);
       if(!agendRows.length)throw new Error(agendaInvalidSummary(records.length));
       hideInf();
+      const T=today(),AM=tomorrow();
+      const dtsH=agendaRowsForDia(T);
+      const dtsA=agendaRowsForDia(AM);
+      dtsMescladas=dedupeAgendaRowsByDTRef([...dtsH,...dtsA]);
       if(isInlineUpload){
         // Upload feito de dentro da tabela: pula passo 2/3 e vai direto para o banco
-        const T=today(),AM=tomorrow();
-        const dtsH=agendaRowsForDia(T);
-        const dtsA=agendaRowsForDia(AM);
-        dtsMescladas=dedupeAgendaRowsByDTRef([...dtsH,...dtsA]);
         showOk('Agenda atualizada ('+agendRows.length+' linhas). Sincronizando banco…');
         await buildTable();
         releaseAutoSyncAfterSave();
       } else {
-        renderStep2();
+        showOk('Agenda atualizada ('+agendRows.length+' linhas). Sincronizando banco…');
+        await buildTable();
       }
     }catch(e){hideInf();showErr(e.message);releaseAutoSyncAfterSave(60000);}
   }).catch(e=>{hideInf();showErr('Erro ao abrir o arquivo: '+e.message);releaseAutoSyncAfterSave(60000);});
@@ -1308,10 +1333,9 @@ function processRelatorioCSV(file) {
   const reader = new FileReader();
   reader.onload = async function(e) {
     try {
-      const text = e.target.result;
-      const rows = parseCSVRelatorio(text, ';');
+      const rows = parseImportFileRows(file, e.target.result);
       if (rows.length < 2) throw new Error('Arquivo vazio ou sem dados.');
-      const headers = rows[0].map(h => h.trim().replace(/^"|"$/g,''));
+      const headers = rows[0].map(h => String(h||'').trim().replace(/^"|"$/g,''));
       const ci = n => headers.findIndex(h => h.toUpperCase().includes(n.toUpperCase()));
       const iTransp   = ci('Nº transporte') !== -1 ? ci('Nº transporte') : ci('TRANSPORTE');
       const iDesc     = ci('Descrição de Documento') !== -1 ? ci('Descrição de Documento') : ci('DESCRI');
@@ -1322,12 +1346,13 @@ function processRelatorioCSV(file) {
       const iHora     = ci('Hora') !== -1 ? ci('Hora') : ci('HORA');
       const iSap      = ci('SAP') !== -1 ? ci('SAP') : ci('Número SAP') !== -1 ? ci('Número SAP') : ci('NR SAP') !== -1 ? ci('NR SAP') : ci('Nº SAP') !== -1 ? ci('Nº SAP') : -1;
       const iCentro   = ci('Centro') !== -1 ? ci('Centro') : ci('CENTRO') !== -1 ? ci('CENTRO') : ci('Ctr') !== -1 ? ci('Ctr') : -1;
-      const iInfoAgenda = ci('Inf. Agenda Entrega') !== -1 ? ci('Inf. Agenda Entrega') : ci('AGENDA ENTREGA');
+  const iInfoAgenda = ci('Inf. Agenda Entrega') !== -1 ? ci('Inf. Agenda Entrega') : ci('AGENDA ENTREGA');
+  const iClienteFornecedor = ci('Nome Cliente/Fornecedor') !== -1 ? ci('Nome Cliente/Fornecedor') : ci('CLIENTE/FORNECEDOR') !== -1 ? ci('CLIENTE/FORNECEDOR') : ci('NOME CLIENTE') !== -1 ? ci('NOME CLIENTE') : -1;
 
       if (iTransp === -1) throw new Error('Coluna Nº transporte não encontrada.\nColunas: ' + headers.join(' | '));
 
       exportMap = {}; tipoOpMap = {}; descDocMap = {}; centroMap = {}; infoAgendaMap = {};
-      remessaMap = {}; pesoLiquidoMap = {}; horaChegadaCSVMap = {}; sapNumMap = {}; paletizacaoMap = {};
+      remessaMap = {}; pesoLiquidoMap = {}; horaChegadaCSVMap = {}; sapNumMap = {}; paletizacaoMap = {}; clienteFornecedorMap = {};
       let linhasOk = 0;
 
       const records = rows.slice(1).filter(r => r.some(c => c.trim() !== ''));
@@ -1345,12 +1370,14 @@ function processRelatorioCSV(file) {
         const horaCsv = iHora !== -1 ? normalizeHora(strip(cols[iHora])) : '';
         const sapCsv  = iSap !== -1 ? normalizeSap(strip(cols[iSap])) : '';
         const centroRaw = iCentro !== -1 ? String(cols[iCentro]||'').trim().replace(/\.0+$/,'') : '';
-        const infoAgenda = iInfoAgenda !== -1 ? String(cols[iInfoAgenda]||'') : '';
-        if (infoAgenda && !infoAgendaMap[dt]) infoAgendaMap[dt] = infoAgenda;
-        paletizacaoMap[dt] = mergePaletizacaoLabel(
-          paletizacaoMap[dt],
-          infoAgenda
-        );
+      const infoAgenda = iInfoAgenda !== -1 ? String(cols[iInfoAgenda]||'') : '';
+      const clienteFornecedor = iClienteFornecedor !== -1 ? String(cols[iClienteFornecedor]||'').trim() : '';
+      if (infoAgenda && !infoAgendaMap[dt]) infoAgendaMap[dt] = infoAgenda;
+      paletizacaoMap[dt] = mergePaletizacaoLabel(
+        paletizacaoMap[dt],
+        infoAgenda
+      );
+      if (clienteFornecedor && !clienteFornecedorMap[dt]) clienteFornecedorMap[dt] = clienteFornecedor;
 
         if (horaCsv) horaChegadaCSVMap[dt] = horaCsv;
         if (sapCsv) sapNumMap[dt] = sapCsv;
@@ -1430,7 +1457,7 @@ function processRelatorioCSV(file) {
     }
   };
   reader.onerror = () => { hideInf(); showErr('Erro ao abrir o arquivo.'); releaseAutoSyncAfterSave(60000); };
-  reader.readAsText(file, 'ISO-8859-1');
+  reader.readAsArrayBuffer(file);
 }
 
 
@@ -1510,11 +1537,12 @@ async function persistRelatorioFieldsForCurrentTable(){
     if(descDocMap[dt]) patch.descricao_documento=String(descDocMap[dt]);
     if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
     if(centroMap[dt]) patch.centro=String(centroMap[dt]);
-    if(paletizacaoMap[dt]) patch.paletizacao=String(paletizacaoMap[dt]);
+      if(paletizacaoMap[dt]) patch.paletizacao=String(paletizacaoMap[dt]);
+      if(clienteFornecedorMap[dt]) patch.nome_cliente_fornecedor=String(clienteFornecedorMap[dt]);
     if(pesoLiquidoMap[dt]){
       const peso=String(Math.floor(pesoLiquidoMap[dt]));
       patch.peso_liquido=peso;
-      patch.toneladas=peso;
+      patch.toneladas='';
     }
     if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
     if(sapNumMap[dt]) patch.n_portaria=String(sapNumMap[dt]);
@@ -1601,7 +1629,7 @@ async function buildTable(){
     // Busca o que já existe para PRESERVAR status e hora_chegada nas datas do upload
     const refsUpload=[...new Set(dtsMescladas.map(r=>dKey(agendaRefDate(r)||T)))];
     const existing=await sbGet('reporte_carga',
-      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,centro,reagendada`
+      `data_ref=${sbIn(refsUpload)}&select=dt,data_ref,status,hora_chegada,n_portaria,tipo_operacao,descricao_documento,nome_cliente_fornecedor,centro,reagendada`
     );
     const exMap={};
     (existing||[]).forEach(r=>{exMap[r.dt+'_'+r.data_ref]=r;});
@@ -1664,8 +1692,9 @@ async function buildTable(){
         status:statusAtual,
         descricao_documento:String(descDocMap[dt.DT]||ex.descricao_documento||''),
         centro:String(centroMap[dt.DT]||ex.centro||''),
-        toneladas:String(toTonInt(dt.PESO)),
-        peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] ?? dt.PESO)),
+        nome_cliente_fornecedor:String(clienteFornecedorMap[dt.DT]||ex.nome_cliente_fornecedor||''),
+        toneladas:'',
+        peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] || 0)),
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
         dia_ref:diaRef,
@@ -1701,8 +1730,8 @@ async function buildTable(){
       dt:dt.DT,transportadora:dt.TRANSPORTADORA,
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
-      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:String(toTonInt(dt.PESO)),
-      peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] ?? dt.PESO)),
+      hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',nome_cliente_fornecedor:clienteFornecedorMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:'',
+      peso_liquido: String(toTonInt(pesoLiquidoMap[dt.DT] || 0)),
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(agendaRefDate(dt)||T,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(agendaRefDate(dt)||T),
@@ -1991,7 +2020,7 @@ function renderRows(){
         STATUS_OPTIONS.map(s=>`<option value="${s}"${s===row.status?' selected':''}>${s}</option>`).join('')+
       `</select>${opTag?opTag:''}</div></td>`+
       `<td class="td-sm">${row.descricao_documento||'—'}</td>`+
-      `<td class="td-sm">${fmtTon(row.peso_liquido||row.toneladas||0)}</td>`;
+      `<td class="td-sm">${fmtTon(row.peso_liquido||0)}</td>`;
     tbody.appendChild(tr);
   });
 
@@ -2513,7 +2542,7 @@ function csvGradeValue(v){
 }
 
 function exportCSV(){
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO','MATERIAL','PALETES','SOBRA (FARDOS)','QTD TOTAL (FARDOS)'];
+  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','NOME CLIENTE/FORNECEDOR','PESO LÍQUIDO','TIPO OPERAÇÃO','MATERIAL','PALETES','SOBRA (FARDOS)','QTD TOTAL (FARDOS)'];
   const rows=[];
   const exportRows=dedupeCargaRowsByDTRef((tableData||[])
     .filter(isRowInActiveReportWindow)
@@ -2522,7 +2551,7 @@ function exportCSV(){
   exportRows.forEach(r=>{
     const dtKey=String(r.dt||'').trim();
     const mats=exportMap[dtKey]||[];
-    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',fmtTon(r.peso_liquido||r.toneladas||0),r.tipo_operacao||''];
+    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.nome_cliente_fornecedor||'',fmtTon(r.peso_liquido||0),r.tipo_operacao||''];
     if(!mats.length){
       rows.push([...base,'','','','']);
     } else {
@@ -2532,7 +2561,7 @@ function exportCSV(){
         if(i===0){
           rows.push([...base,m.material,pal.paletes,pal.sobra,Math.round(qtdFardos)]);
         } else {
-          rows.push(['','','','','','','','','','','',m.material,pal.paletes,pal.sobra,Math.round(qtdFardos)]);
+          rows.push(['','','','','','','','','','','','',m.material,pal.paletes,pal.sobra,Math.round(qtdFardos)]);
         }
       });
     }
@@ -2563,6 +2592,7 @@ let appConfig = JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
 let rpAutoEmailTimer = null;
 let rpAutoEmailSending = false;
 const RP_ADMIN_SECRET_KEY = 'reporte_admin_secret';
+const RP_APP_CONFIG_KEY = 'reporte_app_config';
 
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO'];
 const STATUS_FORA_REPORTE = ['NO SHOW','VEICULO RECUSADO'];
@@ -2726,6 +2756,24 @@ function getDefaultEmailEndpoint(provider){
   return '/api/send-report';
 }
 
+function readStoredReportConfig(){
+  try{
+    return JSON.parse(localStorage.getItem(RP_APP_CONFIG_KEY)||'{}')||{};
+  }catch(e){
+    return {};
+  }
+}
+
+async function hydrateReportConfig(){
+  const localConfig=readStoredReportConfig();
+  let merged={...localConfig};
+  const serverConfig=await loadServerReportConfig();
+  if(serverConfig) merged={...merged,...serverConfig};
+  appConfig=normalizeReportDeliveryConfig(merged);
+  try{ localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig)); }catch(e){}
+  return appConfig;
+}
+
 function getAdminSecret(){
   return String(appConfig.adminSecret || localStorage.getItem(RP_ADMIN_SECRET_KEY) || '').trim();
 }
@@ -2811,14 +2859,8 @@ function getPhoneList(raw){
 async function openConfigModal(){
   const ov=document.getElementById('config-overlay');
   if(!ov) return;
-  appConfig=JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
-  const serverConfig=await loadServerReportConfig();
-  if(serverConfig){
-    appConfig={...appConfig,...serverConfig};
-    try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
-  }
+  await hydrateReportConfig();
   const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val||'';};
-  appConfig=normalizeReportDeliveryConfig(appConfig);
   set('cfg-email-provider',appConfig.emailProvider||'auto');
   set('cfg-email-to',(appConfig.emailTo||[]).join('; '));
   set('cfg-email-cc',(appConfig.emailCc||[]).join('; '));
@@ -2852,7 +2894,7 @@ function saveConfigModal(){
     updatedAt:new Date().toISOString(),
   };
   appConfig=normalizeReportDeliveryConfig(appConfig);
-  try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
+  try{localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig));}catch(e){}
   saveServerReportConfig(appConfig).catch(()=>null);
   startAutoReportEmailTimer();
   closeConfigModal();
@@ -2878,7 +2920,7 @@ function syncConfigFromOpenModal(){
     updatedAt:new Date().toISOString(),
   };
   appConfig=normalizeReportDeliveryConfig(appConfig);
-  try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
+  try{localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig));}catch(e){}
 }
 
 function rpBuildSnapshotPayload(source='DASHBOARD',evento='Snapshot manual'){
@@ -3179,7 +3221,7 @@ function rpAutoEmailSlot(now=new Date()){
 
 function startAutoReportEmailTimer(){
   if(rpAutoEmailTimer) clearInterval(rpAutoEmailTimer);
-  appConfig=JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
+  appConfig=normalizeReportDeliveryConfig(readStoredReportConfig());
   if(isVercelApiAvailable()){
     rpAutoEmailTimer=null;
     return;
@@ -3189,7 +3231,7 @@ function startAutoReportEmailTimer(){
 
 async function rpCheckAutoReportEmail(){
   if(rpAutoEmailSending) return;
-  appConfig=JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
+  appConfig=normalizeReportDeliveryConfig(readStoredReportConfig());
   if(!appConfig.autoEmailEnabled || !appConfig.emailEndpoint || !tableData.length) return;
   const now=new Date();
   if(!rpNowInsideReportWindow(now)) return;
@@ -3210,8 +3252,8 @@ async function rpCheckAutoReportEmail(){
 async function rpEnviarEmailAgora(options={}){
   const automatic=!!options.automatic;
   if(!automatic) syncConfigFromOpenModal();
-  appConfig=normalizeReportDeliveryConfig(JSON.parse(localStorage.getItem('reporte_app_config')||'{}'));
-  try{localStorage.setItem('reporte_app_config',JSON.stringify(appConfig));}catch(e){}
+  await hydrateReportConfig();
+  try{localStorage.setItem(RP_APP_CONFIG_KEY,JSON.stringify(appConfig));}catch(e){}
   const payload=rpBuildEmailPayload();
   if(!appConfig.emailTo||!appConfig.emailTo.length){
     if(!automatic){
@@ -3263,7 +3305,7 @@ async function readAutomationError(response){
 
 
 function rpParseToneladas(row){
-  const raw = row.peso_liquido ?? row.toneladas ?? row.peso ?? '';
+  const raw = row.peso_liquido ?? '';
   let s=String(raw).trim();
   if(!s) return 0;
   s=s.replace(/\s/g,'');
@@ -3678,7 +3720,7 @@ function exportReporteCSV(){
 
 function exportReporteXLSX(){
   if(typeof XLSX==='undefined'){showErr('Biblioteca XLSX não carregada. Recarregue a página.');return;}
-  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','PESO LÍQUIDO','TIPO OPERAÇÃO','MATERIAL','PALETES','SOBRA (FARDOS)','QTD TOTAL (FARDOS)'];
+  const cols=['DIA','DT','TRANSPORTADORA','GRADE','FIM','HORA CHEGADA','N° PORTARIA','STATUS','DESC. DOCUMENTO','NOME CLIENTE/FORNECEDOR','PESO LÍQUIDO','TIPO OPERAÇÃO','MATERIAL','PALETES','SOBRA (FARDOS)','QTD TOTAL (FARDOS)'];
   const wsData=[cols];
   const exportRows=dedupeCargaRowsByDTRef((tableData||[])
     .filter(isRowInActiveReportWindow)
@@ -3687,7 +3729,7 @@ function exportReporteXLSX(){
   exportRows.forEach(r=>{
     const dtKey=String(r.dt||'').trim();
     const mats=exportMap[dtKey]||[];
-    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',fmtTon(r.peso_liquido||r.toneladas||0),r.tipo_operacao||''];
+    const base=[r.dia_ref,r.dt,r.transportadora,csvGradeValue(r.grade_carregamento),csvGradeValue(r.fim_carregamento),r.hora_chegada,r.n_portaria||'',r.status,r.descricao_documento||'',r.nome_cliente_fornecedor||'',fmtTon(r.peso_liquido||0),r.tipo_operacao||''];
     if(!mats.length){
       wsData.push([...base,'','','','']);
     } else {
@@ -3697,7 +3739,7 @@ function exportReporteXLSX(){
         if(i===0){
           wsData.push([...base,m.material,pal.paletes,pal.sobra,Math.round(qtdFardos)]);
         } else {
-          wsData.push(['','','','','','','','','','','',m.material,pal.paletes,pal.sobra,Math.round(qtdFardos)]);
+          wsData.push(['','','','','','','','','','','','',m.material,pal.paletes,pal.sobra,Math.round(qtdFardos)]);
         }
       });
     }
@@ -3925,7 +3967,7 @@ function exportGradeTodasDTsJPG(){
     text(status,cols[6][1],y,12,statusColors[status]||'#94a3b8','800');
     text(ellipsis(op||'—',18),cols[7][1],y,12,'#c4b5fd','800');
     text(ellipsis(r.descricao_documento||'—',24),cols[8][1],y,12,'#94a3b8','700');
-    text(fmtTon(r.peso_liquido||r.toneladas||0),cols[9][1]+86,y,13,'#e2e8f0','800','right');
+    text(fmtTon(r.peso_liquido||0),cols[9][1]+86,y,13,'#e2e8f0','800','right');
   });
 
   const footerY=H-28;
