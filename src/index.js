@@ -317,7 +317,7 @@ async function buildReport(env, dataRef, options = {}) {
   const cargaRowsAll = await loadCargaRows(env, dataRef);
   const cargaRows = shift ? cargaRowsAll.filter(row => rowMatchesShift(row, dataRef, shift)) : cargaRowsAll;
   const statusCounts = countsByStatus(cargaRows);
-  const validRows = cargaRows.filter(row => !["NO SHOW", "VEICULO RECUSADO"].includes(String(row.status || "").trim().toUpperCase()));
+  const validRows = cargaRows.filter(row => !["NO SHOW", "VEICULO RECUSADO", "DT EXCLUIDA"].includes(String(row.status || "").trim().toUpperCase()));
   const realizadoRows = cargaRows.filter(row => ["EXPEDIDO", "EM FATURAMENTO"].includes(String(row.status || "").trim().toUpperCase()));
   const nossaGrade = validRows.reduce((sum, row) => sum + parseWeight(row.peso_liquido ?? 0), 0);
   const realizadoGrade = realizadoRows.reduce((sum, row) => sum + parseWeight(row.peso_liquido ?? 0), 0);

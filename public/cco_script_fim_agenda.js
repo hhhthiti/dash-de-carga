@@ -278,6 +278,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     rows_loaded: tableData.length,
   }).catch(()=>null);
   syncNativeOnlySections();
+  await applyAutoNoShowRules();
   if(!isNativeApp() && currentTableTab==='leaders'){
     switchTableTab('todas');
   }
@@ -287,6 +288,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   setInterval(()=>{
     updateStatusReminder();
     if(!tableData.length) return;
+    applyAutoNoShowRules().catch(()=>null);
     if(currentTableTab==='reporte') renderReporte();
     else if(currentTableTab==='leaders') renderLeadersView();
     else if(currentTableTab==='todas'||currentTableTab==='finalizadas') renderRows();
@@ -1614,12 +1616,14 @@ async function markMissingRowsAsExcluded(uploadedRefs, incomingRows, existingRow
   // Apenas registrar em log que a DT saiu da nova agenda.
   // O usuário deve excluir manualmente quando necessário.
   const incomingKeys=new Set((incomingRows||[]).map(r=>`${normalizeDT(r.dt)}__${String(r.data_ref||'')}`));
+  const incomingDtSet=new Set((incomingRows||[]).map(r=>normalizeDT(r.dt)).filter(Boolean));
   const refs=new Set((uploadedRefs||[]).map(String));
   const now=new Date().toISOString();
   for(const row of existingRows||[]){
     const dataRef=String(row.data_ref||'');
     const dt=normalizeDT(row.dt);
     if(!dt || !refs.has(dataRef)) continue;
+    if(incomingDtSet.has(dt)) continue;
     if(incomingKeys.has(`${dt}__${dataRef}`)) continue;
     const st=String(row.status||'').trim();
     if(STATUS_FINAIS.includes(st) || st==='DT EXCLUIDA') continue;
@@ -1713,6 +1717,47 @@ async function buildTable(){
         doca_null: !!dt.DOCA_NULL,
       };
     }));
+
+    const incomingDtSet=new Set(rows.map(r=>normalizeDT(r.dt)).filter(Boolean));
+    const existingByDt=new Map();
+    (existing||[]).forEach(r=>{
+      const dtEx=normalizeDT(r.dt);
+      if(!dtEx || !incomingDtSet.has(dtEx)) return;
+      if(!existingByDt.has(dtEx)) existingByDt.set(dtEx, []);
+      existingByDt.get(dtEx).push(r);
+    });
+    for(const row of rows){
+      const dtNorm=normalizeDT(row.dt);
+      const sameDtRows=existingByDt.get(dtNorm) || [];
+      for(const ex of sameDtRows){
+        const exRef=String(ex.data_ref||'');
+        const rowRef=String(row.data_ref||'');
+        if(!exRef || exRef===rowRef) continue;
+        try{
+          await sbDelete('reporte_carga',{dt:String(ex.dt||dtNorm),data_ref:exRef});
+        }catch(_e){}
+        try{
+          await sbDelete('reporte_materiais',{dt:String(ex.dt||dtNorm),data_ref:exRef});
+        }catch(_e){}
+        await tryInsertLog({
+          dt:dtNorm,
+          data_ref:rowRef,
+          event_type:'REAGENDADA',
+          status_after:'REAGENDADA',
+          transportadora:row.transportadora||ex.transportadora||'',
+          created_at:new Date().toISOString(),
+          source:'UPLOAD_DIFF',
+          payload:{
+            data_ref_before:exRef,
+            data_ref_after:rowRef,
+            grade_carregamento_before:ex.grade_carregamento||'',
+            grade_carregamento_after:row.grade_carregamento||'',
+            fim_carregamento_before:ex.fim_carregamento||'',
+            fim_carregamento_after:row.fim_carregamento||'',
+          }
+        });
+      }
+    }
 
     // REGRA 9: detectar DTs novas (não existiam no banco antes desse upload)
     novoDTs = new Set(); // reset a cada upload
@@ -4445,6 +4490,7 @@ const CSV_STATUS_MAP = {
   'EXPEDIDO':      'EXPEDIDO',
   'PATIO':         'PATIO',
   'EM PATIO':      'PATIO',
+  'AGUARDANDO CHEGADA':'AG CHEGADA',
   'NO SHOW':       'NO SHOW',
   'SEPARANDO':     'SEPARANDO',
   'EM FATURAMENTO':'EM FATURAMENTO',
@@ -4483,6 +4529,39 @@ function normalizeStatus(raw){
 function normalizeFaturamentoStatus(raw){
   const s=normalizeImportText(raw);
   return CSV_FATURAMENTO_MAP[s] || null;
+}
+
+function statusIsWaitingArrival(status){
+  const st=String(status||'').trim().toUpperCase();
+  return st==='AG CHEGADA' || st==='AGUARDANDO CHEGADA';
+}
+
+async function applyAutoNoShowRules(){
+  const now=new Date();
+  let changed=0;
+  for(const row of tableData){
+    if(!row || !row.dt || !row.data_ref) continue;
+    if(!statusIsWaitingArrival(row.status)) continue;
+    if(row.n_portaria || row.hora_chegada) continue;
+    const start=parseBR(row.grade_carregamento||row.agenda||'');
+    if(!start || start>now) continue;
+    try{
+      await sbPatch('reporte_carga',{status:'NO SHOW',updated_at:new Date().toISOString()},{dt:row.dt,data_ref:row.data_ref});
+      await tryInsertLog({
+        dt:String(row.dt),
+        data_ref:String(row.data_ref),
+        event_type:'AUTO_NO_SHOW',
+        status_after:'NO SHOW',
+        transportadora:row.transportadora||'',
+        created_at:new Date().toISOString(),
+        source:'AUTO_RULE',
+        payload:{grade_carregamento:row.grade_carregamento||'',fim_carregamento:row.fim_carregamento||'',motivo:'Horario iniciado sem chegada'}
+      });
+      row.status='NO SHOW';
+      changed++;
+    }catch(_err){}
+  }
+  return changed;
 }
 
 function detectImportSeparator(text){
