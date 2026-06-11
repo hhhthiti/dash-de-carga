@@ -277,6 +277,10 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     path: window.location.pathname || '',
     rows_loaded: tableData.length,
   }).catch(()=>null);
+  syncNativeOnlySections();
+  if(!isNativeApp() && currentTableTab==='leaders'){
+    switchTableTab('todas');
+  }
   startAutoReportEmailTimer();
   // Ticker para atualizar emojis de relógio a cada minuto
   updateStatusReminder();
@@ -473,6 +477,7 @@ let matFiltro='todos';
 
 function switchTableTab(tab){
   if(tab==='materiais') tab='todas';
+  if(tab==='leaders' && !isNativeApp()) tab='todas';
   currentTableTab=tab;
   const allTabs=['todas','finalizadas','reporte','leaders','planejamento','mudancas','semgrade','dtfake','docanull','nf'];
   allTabs.forEach(t=>{
@@ -512,6 +517,7 @@ function switchTableTab(tab){
     document.getElementById('twrap').style.display='block';
     renderRows();
   }
+  syncNativeOnlySections();
 }
 
 function filtrarMateriais(f){
@@ -2598,7 +2604,29 @@ const RP_ADMIN_SECRET_KEY = 'reporte_admin_secret';
 const RP_APP_CONFIG_KEY = 'reporte_app_config';
 
 const STATUS_REALIZADO = ['EM FATURAMENTO','EXPEDIDO'];
-const STATUS_FORA_REPORTE = ['NO SHOW','VEICULO RECUSADO'];
+const STATUS_FORA_REPORTE = ['NO SHOW','VEICULO RECUSADO','DT EXCLUIDA'];
+
+function isNativeApp(){
+  try{
+    if(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'){
+      return !!window.Capacitor.isNativePlatform();
+    }
+  }catch(_err){}
+  return !!window.cordova;
+}
+
+function syncNativeOnlySections(){
+  const native = isNativeApp();
+  const tab = document.getElementById('tab-leaders');
+  const wrap = document.getElementById('leaders-wrap');
+  if(tab) tab.style.display = native ? '' : 'none';
+  if(!native && currentTableTab === 'leaders'){
+    currentTableTab = 'todas';
+  }
+  if(wrap){
+    wrap.style.display = native && currentTableTab === 'leaders' ? 'block' : 'none';
+  }
+}
 
 async function trackAppEvent(eventName, properties = {}, eventData = {}){
   return false;
