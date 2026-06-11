@@ -284,6 +284,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     updateStatusReminder();
     if(!tableData.length) return;
     if(currentTableTab==='reporte') renderReporte();
+    else if(currentTableTab==='leaders') renderLeadersView();
     else if(currentTableTab==='todas'||currentTableTab==='finalizadas') renderRows();
   }, 60000);
   // Auto-sync para ambiente com múltiplos usuários
@@ -473,17 +474,20 @@ let matFiltro='todos';
 function switchTableTab(tab){
   if(tab==='materiais') tab='todas';
   currentTableTab=tab;
-  const allTabs=['todas','finalizadas','reporte','planejamento','mudancas','semgrade','dtfake','docanull','nf'];
+  const allTabs=['todas','finalizadas','reporte','leaders','planejamento','mudancas','semgrade','dtfake','docanull','nf'];
   allTabs.forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el) el.classList.toggle('active',t===tab);
   });
   // Hide all content areas first
-  ['mat-board','twrap','materiais-wrap','reporte-wrap','planejamento-wrap','mudancas-wrap','semgrade-wrap','dtfake-wrap','docanull-wrap','nf-wrap'].forEach(id=>{
+  ['mat-board','twrap','materiais-wrap','leaders-wrap','reporte-wrap','planejamento-wrap','mudancas-wrap','semgrade-wrap','dtfake-wrap','docanull-wrap','nf-wrap'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.style.display='none';
   });
-  if(tab==='reporte'){
+  if(tab==='leaders'){
+    document.getElementById('leaders-wrap').style.display='block';
+    renderLeadersView();
+  } else if(tab==='reporte'){
     document.getElementById('reporte-wrap').style.display='block';
     renderReporte();
   } else if(tab==='planejamento'){
@@ -3197,7 +3201,7 @@ function rpBuildEmailPayload(){
 }
 
 function renderLeaderReportTable(rows){
-  const tbody=document.getElementById('rp-leaders-table-body');
+  const tbody=document.getElementById('leaders-table-body');
   if(!tbody) return;
   const list=(rows||[]).slice().sort(compareAgendaRows);
   tbody.innerHTML=list.map(r=>{
@@ -3218,6 +3222,31 @@ function renderLeaderReportTable(rows){
   if(!list.length){
     tbody.innerHTML='<tr><td colspan="10" style="padding:16px;color:#64748b;text-align:center;">Sem linhas para o reporte de líderes no filtro atual.</td></tr>';
   }
+}
+
+function leadersSetDataRef(v){
+  rpDataRef=String(v||'').trim();
+  try{localStorage.setItem('rp_data_ref',rpDataRef);}catch(e){}
+  renderLeadersView();
+}
+
+function renderLeadersView(){
+  const refs=[...new Set(tableData.map(r=>rpDateKey(r)).filter(Boolean))]
+    .filter(ref=>{const d=parseBR(ref);return d&&(sameDay(d,today())||sameDay(d,tomorrow()));})
+    .sort(compareDateRefs);
+  if(!rpDataRef || (refs.length && !refs.includes(rpDataRef))) rpDataRef=refs[0]||dKey(today());
+  const sel=document.getElementById('leaders-data-ref');
+  if(sel){
+    sel.innerHTML=refs.map(ref=>`<option value="${ref}">${ref}</option>`).join('');
+    sel.value=rpDataRef;
+  }
+  const rows=tableData
+    .filter(r=>rpDateKey(r)===rpDataRef)
+    .filter(isRowInActiveReportWindow)
+    .filter(rpRowContaNoReporte);
+  renderLeaderReportTable(rows);
+  const info=document.getElementById('leaders-info');
+  if(info) info.textContent=`${rows.length} DTs na visão de líderes`;
 }
 
 function rpTimeToMinutes(value,fallback){
@@ -3488,7 +3517,6 @@ function renderReporte(){
     :dayRows.filter(r=>rpGetTurno(r)===rpTurnoFiltro)).sort(compareFimAgendaRows);
   const reportRows=rows.filter(rpRowContaNoReporte);
   const excludedRows=rows.length-reportRows.length;
-  renderLeaderReportTable(reportRows);
 
   const infoEl=document.getElementById('rp-turno-info');
 
