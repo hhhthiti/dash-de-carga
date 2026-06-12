@@ -1,0 +1,9 @@
+{
+  "appId": "com.hhhthiti.dashdecarga",
+  "appName": "Dash de Carga",
+  "webDir": "public",
+  "server": {
+    "url": "https://dash-de-carga-66qdxy50p-hhhthitis-projects.vercel.app",
+    "cleartext": false
+  }
+}

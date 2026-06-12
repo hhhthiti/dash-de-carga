@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Reporte de Carga</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;}
+input,select,button,textarea{font-family:inherit;}
+#header{background:linear-gradient(135deg,#1e293b,#0f172a);border-bottom:2px solid #334155;padding:12px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;}
+#hicon{background:#3b82f6;border-radius:9px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+#htitle{font-size:16px;font-weight:800;letter-spacing:1px;color:#f1f5f9;}
+#hsub{font-size:9px;color:#64748b;letter-spacing:3px;}
+#stepper{margin-left:auto;display:flex;align-items:center;gap:5px;}
+.sdot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;border:2px solid #334155;background:#1e293b;color:#475569;}
+.sdot.active{background:#3b82f6;border-color:#3b82f6;color:#fff;}
+.sdot.done{background:#22c55e;border-color:#22c55e;color:#fff;}
+#sync-badge{background:#064e3b;border:1px solid #059669;border-radius:20px;padding:3px 10px;font-size:10px;color:#6ee7b7;display:flex;align-items:center;gap:5px;}
+#sync-dot{width:7px;height:7px;border-radius:50%;background:#22c55e;animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+#main{max-width:1400px;margin:0 auto;padding:20px;}
+.alert{border-radius:8px;padding:9px 14px;margin-bottom:12px;font-size:13px;display:none;}
+.alert-err{background:#450a0a;border:1px solid #ef4444;color:#fca5a5;}
+.alert-ok {background:#052e16;border:1px solid #22c55e;color:#86efac;}
+.alert-inf{background:#1e3a5f;border:1px solid #3b82f6;color:#93c5fd;}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;margin-bottom:20px;overflow:hidden;}
+.ch{padding:13px 20px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:9px;}
+.ct{font-weight:800;font-size:10px;letter-spacing:2px;color:#94a3b8;}
+.cb{padding:20px;}
+.dz{border:2px dashed #334155;border-radius:10px;padding:30px 20px;text-align:center;cursor:pointer;background:#0f172a;transition:all .2s;}
+.dz:hover,.dz.drag{border-color:#3b82f6;background:#1e3a5f;}
+.dz-icon{font-size:28px;margin-bottom:6px;}
+.dz-label{color:#64748b;font-size:13px;}
+.dz-ok{color:#22c55e;font-weight:700;}
+.bp{background:#3b82f6;color:#fff;border:none;border-radius:7px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;}
+.bp:hover{background:#2563eb;}
+.bg{background:transparent;color:#94a3b8;border:1px solid #334155;border-radius:7px;padding:7px 16px;font-size:12px;cursor:pointer;}
+.bg:hover{border-color:#64748b;color:#e2e8f0;}
+.bexp{background:#065f46;color:#6ee7b7;border:1px solid #059669;border-radius:7px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:700;}
+.bcopy{background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f644;border-radius:7px;padding:5px 14px;font-size:11px;cursor:pointer;font-weight:700;transition:all .2s;}
+.bcopy:hover{background:#1e40af;border-color:#3b82f6;}
+.bcopy.copied{background:#064e3b;color:#6ee7b7;border-color:#059669;}
+.blog{background:#2e1065;color:#a78bfa;border:1px solid #7c3aed44;border-radius:7px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:700;transition:all .2s;}
+.blog:hover{background:#4c1d95;border-color:#7c3aed;}
+.chip{background:#1e3a5f;border:1px solid #3b82f622;border-radius:5px;padding:3px 10px;font-size:12px;color:#93c5fd;font-weight:800;display:inline-block;margin:3px;}
+.chip.old{opacity:.55;color:#71717a;background:#27272a;}
+#tbar{padding:11px 18px;border-bottom:1px solid #334155;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+#tinfo{color:#64748b;font-size:12px;}
+#tstatus{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto;}
+#tactions{display:flex;gap:7px;}
+.sbadge{border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;display:inline-block;}
+
+/* Abas da tabela */
+.tab-bar{display:flex;border-bottom:2px solid #334155;background:#162032;}
+.tab-btn{padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:1.5px;background:transparent;border:none;cursor:pointer;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;}
+.tab-btn.active{color:#60a5fa;border-bottom-color:#3b82f6;}
+.tab-btn.alert-tab{color:#f59e0b;}
+.tab-btn.alert-tab.active{color:#f59e0b;border-bottom-color:#f59e0b;}
+.tab-btn.mat-tab{color:#34d399;}
+.tab-btn.mat-tab.active{color:#34d399;border-bottom-color:#34d399;}
+.mat-board{padding:14px 18px;}
+.mat-group{border:1px solid #334155;border-radius:10px;margin-bottom:12px;overflow:hidden;}
+.mat-group-h{background:#162032;padding:8px 12px;font-size:11px;font-weight:700;color:#93c5fd;display:flex;justify-content:space-between;}
+.mat-group-b{padding:8px 12px;}
+.mat-item{display:grid;grid-template-columns:1fr 120px;gap:8px;padding:4px 0;border-bottom:1px solid #1e293b;font-size:12px;}
+.mat-item:last-child{border-bottom:none;}
+
+#twrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{padding:9px 12px;text-align:left;color:#475569;font-size:9px;letter-spacing:1.5px;font-weight:700;border-bottom:2px solid #334155;white-space:nowrap;background:#162032;}
+td{padding:7px 12px;border-bottom:1px solid #1e293b;vertical-align:middle;}
+
+.prefat-mode body::before{content:'✏️ MODO PRÉ-FAT ATIVO — Ctrl+Ç para sair';position:fixed;top:0;left:0;right:0;background:#a78bfa;color:#1e1b4b;text-align:center;font-size:11px;font-weight:800;padding:4px;z-index:9999;letter-spacing:1px;}
+tr.row-hoje td{background:#0f172a;}
+tr.row-amanha td{background:#0d1117;}
+tr.row-reagendada td{background:#431407 !important;}
+tr:hover td{background:#1a2540!important;}
+.td-dt{background:#1e3a5f;border:1px solid #3b82f622;border-radius:4px;padding:2px 9px;font-weight:800;color:#93c5fd;font-size:11px;cursor:pointer;white-space:nowrap;display:inline-block;}
+.td-dt:hover{background:#1e40af;border-color:#3b82f6;}
+.td-transp{color:#cbd5e1;max-width:180px;font-size:11px;}
+.td-time{color:#a5b4fc;white-space:nowrap;font-size:11px;}
+.td-sm{color:#94a3b8;font-size:11px;}
+.td-ag{color:#64748b;white-space:nowrap;font-size:11px;}
+.tag-hoje  {background:#1e3a8a33;border:1px solid #3b82f655;border-radius:4px;padding:1px 7px;font-size:9px;color:#60a5fa;font-weight:700;letter-spacing:1px;}
+.tag-amanha{background:#2e1065aa;border:1px solid #7c3aed55;border-radius:4px;padding:1px 7px;font-size:9px;color:#a78bfa;font-weight:700;letter-spacing:1px;}
+.tag-venda {background:#052e1688;border:1px solid #22c55e55;border-radius:4px;padding:2px 9px;font-size:10px;color:#4ade80;font-weight:700;}
+.tag-mogi {background:#06b6d41a;border:1px solid #06b6d455;border-radius:4px;padding:2px 9px;font-size:10px;color:#22d3ee;font-weight:700;}
+.tag-transf{background:#431407aa;border:1px solid #f9731655;border-radius:4px;padding:2px 9px;font-size:10px;color:#fb923c;font-weight:700;}
+.tag-prefat{background:#1e1b4baa;border:1px solid #818cf855;border-radius:4px;padding:2px 9px;font-size:10px;color:#a5b4fc;font-weight:700;}
+.tag-grade {background:#14532daa;border:1px solid #4ade8055;border-radius:4px;padding:2px 9px;font-size:10px;color:#86efac;font-weight:700;}
+.tag-sem   {color:#334155;font-size:10px;}
+.tag-sem-grade{background:#78350f44;border:1px solid #f59e0b55;border-radius:4px;padding:1px 7px;font-size:9px;color:#f59e0b;font-weight:700;letter-spacing:1px;}
+.tag-palet{border-radius:4px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.4px;white-space:nowrap;display:inline-block;}
+.tag-paletizada{background:#064e3b99;border:1px solid #10b98166;color:#6ee7b7;}
+.tag-estivada{background:#312e8199;border:1px solid #818cf866;color:#c4b5fd;}
+.tag-tordesilhas{background:#701a7599;border:1px solid #e879f966;color:#f0abfc;}
+input[type=time]{background:#1e293b;border:1px solid #334155;border-radius:5px;color:#f1f5f9;padding:3px 7px;font-size:12px;width:90px;}
+select.ss{border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;min-width:148px;}
+.debug-box{background:#1a0a00;border:1px solid #92400e;border-radius:7px;padding:10px 14px;margin-top:10px;font-size:11px;color:#fbbf24;line-height:1.7;white-space:pre-wrap;display:none;}
+.debug-box.show{display:block;}
+#panel-overlay{position:fixed;inset:0;background:#000000aa;z-index:200;display:none;}
+#panel{position:fixed;right:0;top:0;height:100vh;width:440px;background:#1e293b;border-left:2px solid #334155;z-index:201;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s;}
+#panel.open{transform:translateX(0);}
+#ph{padding:14px 18px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:10px;}
+#ptitle{font-weight:800;font-size:13px;color:#f1f5f9;flex:1;}
+#pbody{flex:1;overflow-y:auto;padding:16px;}
+#pfoot{padding:12px 18px;border-top:1px solid #334155;display:flex;gap:8px;}
+.mat-row{display:grid;grid-template-columns:1fr 190px 32px;gap:7px;margin-bottom:7px;align-items:start;}
+.mat-input{background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:6px 10px;font-size:12px;width:100%;}
+.mat-input:focus{outline:none;border-color:#3b82f6;}
+.mat-del{background:transparent;border:1px solid #334155;border-radius:5px;color:#64748b;padding:0;cursor:pointer;font-size:13px;height:32px;width:32px;}
+.mat-del:hover{border-color:#ef4444;color:#ef4444;}
+.mat-hdr{display:grid;grid-template-columns:1fr 190px 32px;gap:7px;margin-bottom:5px;}
+.mat-hdr span{font-size:9px;letter-spacing:1.5px;color:#64748b;font-weight:700;}
+.mat-qty-cell{display:flex;flex-direction:column;gap:3px;}
+.mat-palete-preview{color:#a7f3d0;font-size:10px;font-weight:700;line-height:1.25;}
+.sec-lbl{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:8px;margin-top:14px;display:block;}
+.obs-area{width:100%;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:8px 10px;font-size:12px;resize:vertical;min-height:60px;}
+.obs-area:focus{outline:none;border-color:#3b82f6;}
+p.desc{color:#94a3b8;line-height:1.9;margin-bottom:18px;font-size:13px;}
+.sl{font-size:10px;letter-spacing:2px;color:#64748b;margin-bottom:6px;display:block;}
+.chips-wrap{display:flex;flex-wrap:wrap;margin-bottom:20px;}
+#spinner{display:none;position:fixed;bottom:20px;right:20px;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-size:12px;color:#94a3b8;z-index:500;}
+
+@media print{
+  @page{size:landscape;margin:8mm;}
+  body *{visibility:hidden !important;}
+  body.print-panel-mode #print-panel-area,
+  body.print-panel-mode #print-panel-area *{visibility:visible !important;}
+  body.print-panel-mode #print-panel-area{
+    position:fixed;inset:0;z-index:9999;
+    background:#fff;color:#111;padding:10mm;
+    display:flex;flex-direction:column;
+    font-family:'Segoe UI',Arial,sans-serif;
+  }
+  .print-mat-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .print-mat-table th{background:#1e3a5f;color:#fff;padding:6px 10px;text-align:left;border:1px solid #ccc;}
+  .print-mat-table td{padding:5px 10px;border:1px solid #e2e8f0;}
+  .print-mat-table tr:nth-child(even) td{background:#f8fafc;}
+  .print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:2px solid #334155;padding-bottom:8px;}
+  .print-header h2{font-size:15px;font-weight:800;color:#1e293b;}
+  .print-header .print-meta{font-size:11px;color:#475569;text-align:right;line-height:1.8;}
+}
+
+/* ── Reporte de Status ── */
+.rp-tipo-card{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;text-align:center;}
+.rp-tipo-title{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;}
+.rp-num-plan{font-size:17px;font-weight:800;color:#3b82f6;white-space:nowrap;}
+.rp-num-real{font-size:17px;font-weight:800;color:#22c55e;white-space:nowrap;}
+.rp-num-pend{font-size:17px;font-weight:800;color:#f59e0b;white-space:nowrap;}
+.rp-num-label{font-size:9px;color:#64748b;letter-spacing:1px;}
+.rp-bar-group{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:60px;}
+.rp-bar-wrap{display:flex;gap:3px;align-items:flex-end;height:140px;}
+.rp-bar{border-radius:4px 4px 0 0;min-width:16px;transition:height .3s;}
+.rp-bar-label{font-size:9px;color:#64748b;font-weight:700;letter-spacing:1px;margin-top:4px;}
+.active-turno{background:#1e3a5f!important;border-color:#3b82f6!important;color:#93c5fd!important;}
+.rp-turno-card{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;text-align:center;}
+.rp-turno-label{font-size:9px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:6px;}
+.rp-turno-num{font-size:26px;font-weight:800;color:#a78bfa;}
+#status-reminder{display:none;border:1px solid #f59e0b55;background:#f59e0b18;color:#fbbf24;border-radius:7px;padding:4px 9px;font-size:10px;font-weight:800;letter-spacing:.6px;}
+.rp-meta-input{background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;padding:6px 10px;font-size:13px;width:100%;font-family:inherit;text-align:center;}
+.rp-meta-input:focus{outline:none;border-color:#3b82f6;}
+/* ── DT sem grade ── */
+.sg-item{background:#162032;border:1px solid #334155;border-radius:8px;padding:10px 14px;display:grid;grid-template-columns:100px 1fr 1fr auto;gap:10px;align-items:center;font-size:12px;}
+@media(max-width:700px){.sg-form-grid,.sg-item{grid-template-columns:1fr!important;}}
+/* ── NF lista ── */
+.nf-item{background:#0f172a;border:1px solid #334155;border-radius:7px;padding:7px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;}
+
+/* MODAL DE LOGS */
+#log-overlay{position:fixed;inset:0;background:#000000cc;z-index:300;display:none;align-items:center;justify-content:center;}
+#log-overlay.open{display:flex;}
+#log-modal{background:#1e293b;border:1px solid #334155;border-radius:14px;width:92%;max-width:820px;max-height:80vh;display:flex;flex-direction:column;}
+#log-head{padding:16px 20px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;}
+#log-body{flex:1;overflow-y:auto;padding:16px;}
+.log-entry{border-bottom:1px solid #1e293b;padding:9px 0;display:grid;grid-template-columns:140px 95px 130px 150px 95px 110px 1fr;gap:10px;font-size:11px;align-items:center;}
+.log-entry:last-child{border-bottom:none;}
+.log-entry-head{color:#64748b;font-size:9px;letter-spacing:1.5px;font-weight:700;}
+
+.mud-item{display:grid;grid-template-columns:140px 95px 135px 1fr 1.2fr;gap:10px;align-items:center;padding:9px 8px;border-bottom:1px solid #1e293b;font-size:12px;}
+.mud-item:last-child{border-bottom:none;}
+.mud-badge{border:1px solid;border-radius:999px;padding:2px 8px;font-size:9px;font-weight:900;letter-spacing:.8px;}
+@media(max-width:800px){.mud-item{grid-template-columns:1fr!important;gap:4px;}.mud-item+div{margin-top:8px;}}
+
+/* Reagendar painel */
+#reagend-overlay{position:fixed;inset:0;background:#000000cc;z-index:302;display:none;align-items:center;justify-content:center;}
+#reagend-overlay.open{display:flex;}
+#reagend-modal{background:#1e293b;border:2px solid #f59e0b55;border-radius:14px;width:92%;max-width:480px;padding:24px;}
+#reagend-modal h3{color:#f59e0b;font-size:15px;margin-bottom:16px;}
+.reagend-field{margin-bottom:14px;}
+.reagend-field label{display:block;font-size:10px;letter-spacing:1.5px;color:#64748b;font-weight:700;margin-bottom:5px;}
+.reagend-input{width:100%;background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:8px 12px;font-size:13px;}
+.reagend-input:focus{outline:none;border-color:#f59e0b;}
+
+/* DT reagendada — laranja */
+tr.row-reagendada-flag td{background:rgba(245,158,11,.07)!important;}
+tr.row-reagendada-flag td:first-child{border-left:3px solid #f59e0b;}
+
+/* Relógio / alerta de horário */
+.dt-clock{margin-right:4px;animation:blink .8s step-start infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
+.dt-atrasado{color:#ef4444 !important;}
+@media(max-width:700px){
+  .sg-form-grid{grid-template-columns:1fr!important;}
+  .rp-chart{flex-wrap:wrap;}
+}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="hicon">🚛</div>
+  <div>
+    <div id="htitle">REPORTE DE CARGA</div>
+    <div id="hsub">CONTROLE DE EXPEDIÇÃO</div>
+  </div>
+  <div id="sync-badge"><div id="sync-dot"></div><span id="sync-txt">CONECTANDO…</span></div>
+  <div style="display:flex;gap:8px;align-items:center;margin-left:8px;">
+    <button class="blog" onclick="openLogs()">📋 Logs</button>
+    <button class="bg" onclick="openConfigModal()" style="font-size:11px;">Configurações</button>
+  </div>
+  <div id="stepper" style="margin-left:8px;">
+    <div class="sdot active" id="dot1">1</div>
+    <div class="sdot" id="dot2">2</div>
+    <div class="sdot" id="dot3">3</div>
+  </div>
+</div>
+
+<div id="main">
+  <div class="alert alert-err" id="aerr"></div>
+  <div class="alert alert-ok"  id="aok"></div>
+  <div class="alert alert-inf" id="ainf"></div>
+
+  <!-- PASSO 1 -->
+  <div class="card" id="passo1">
+    <div class="ch"><span>📁</span><span class="ct">PASSO 1 — ARQUIVO DE AGENDAMENTO</span></div>
+    <div class="cb">
+      <p class="desc">Suba o arquivo de agendamento exportado do sistema.<br/>
+        Filtra automaticamente somente os <b style="color:#f59e0b">LOCAL</b> terminados em <b style="color:#f59e0b">1110</b> ou <b style="color:#f59e0b">1111</b>, remove <b style="color:#f59e0b">DOCA</b> vazia/null e DOCA FAB_MOG sem sufixo IFNT,
+        para montar a tabela com <b style="color:#60a5fa">Hoje</b> e <b style="color:#a78bfa">Amanhã</b> pela coluna <b style="color:#60a5fa">AGENDA TRANSPORTADOR</b>.<br/>
+        <span style="color:#64748b;font-size:12px;">⚡ Ao subir uma nova planilha, o banco é atualizado preservando status (Expedido, No Show, Veículo Recusado) e hora chegada já registrados.</span>
+      </p>
+      <div class="dz" id="dz1" onclick="document.getElementById('f1').click()">
+        <div class="dz-icon">📂</div>
+        <div class="dz-label" id="dz1l">Arraste o arquivo aqui ou clique para selecionar</div>
+      </div>
+      <input type="file" id="f1" accept=".xls,.xlsx,.txt,.tsv,.csv" style="display:none" onchange="processAgend(this.files[0])"/>
+    </div>
+  </div>
+
+  <!-- PASSO 2 -->
+  <div class="card" id="passo2" style="display:none">
+    <div class="ch"><span>📅</span><span class="ct">PASSO 2 — DTs ENCONTRADAS</span></div>
+    <div class="cb">
+      <p class="desc" id="p2info"></p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+        <span class="sl" style="margin:0">HOJE</span>
+        <button class="bcopy" id="copy-hoje-btn" onclick="copyDTs('hoje')" style="padding:3px 10px;font-size:10px;">📋 Copiar DTs em coluna</button>
+      </div>
+      <div class="chips-wrap" id="chipsHoje"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+        <span class="sl" style="margin:0">AMANHÃ</span>
+        <button class="bcopy" id="copy-amanha-btn" onclick="copyDTs('amanha')" style="padding:3px 10px;font-size:10px;">📋 Copiar DTs em coluna</button>
+      </div>
+      <div class="chips-wrap" id="chipsAmanha"></div>
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <button class="bp" onclick="setStep(3)">Prosseguir → Carregar ZLES002</button>
+        <button class="bg" onclick="buildTable()">Pular → ir para tabela</button>
+        <button class="bg" onclick="setStep(1)">← Voltar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASSO 3 — Relatório de Expedição CSV -->
+  <div class="card" id="passo3" style="display:none">
+    <div class="ch"><span>📦</span><span class="ct">PASSO 3 — RELATÓRIO DE EXPEDIÇÃO (CSV)</span></div>
+    <div class="cb">
+      <p class="desc">
+        Carregue o CSV exportado do <b style="color:#f59e0b">Relatório de Expedição</b>.<br/>
+        O sistema lê automaticamente: <b style="color:#60a5fa">Nº transporte</b> · <b style="color:#60a5fa">Descrição de Documento</b> · <b style="color:#60a5fa">Peso líquido</b> · <b style="color:#60a5fa">Nr. Remessa/Recebimento</b> · <b style="color:#60a5fa">Material</b> · <b style="color:#60a5fa">Qtde Remessa</b>.
+        <span id="p3-mat-hint" style="display:none;color:#4ade80;font-weight:700;margin-left:6px;"></span>
+      </p>
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#64748b;">
+        <b style="color:#93c5fd;">📋 Upload de status:</b>
+        <span id="upload-status-p3">Nenhum arquivo carregado</span>
+      </div>
+      <div class="dz" id="dz2" onclick="document.getElementById('f2').click()">
+        <div class="dz-icon">📂</div>
+        <div class="dz-label" id="dz2l">Arraste o CSV do Relatório de Expedição aqui ou clique para selecionar</div>
+      </div>
+      <input type="file" id="f2" accept=".csv" style="display:none" onchange="processRelatorioCSV(this.files[0])"/>
+      <div id="dbgZles" class="debug-box"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <button class="bg" onclick="buildTable()">Pular → ir para a tabela</button>
+        <button class="bg" onclick="setStep(2)">← Voltar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASSO 4 (antigo passo 5) — Tabela -->
+  <div class="card" id="passo4" style="display:none">
+    <div id="tbar">
+      <span style="font-weight:800;font-size:10px;letter-spacing:2px;color:#94a3b8">📋 TABELA OPERACIONAL</span>
+      <span id="tinfo"></span>
+      <span id="status-reminder"></span>
+      <div id="tstatus"></div>
+      <div id="tactions">
+        <input id="dt-search" type="text" placeholder="🔎 Buscar DT" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:11px;min-width:130px;" oninput="onSearchDT(this.value)"/>
+        <select id="table-sort-mode" onchange="setTableSortMode(this.value)" title="Ordenar tabela pela grade" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:11px;">
+          <option value="inicio">Início da grade</option>
+          <option value="fim">Fim da agenda</option>
+        </select>
+        <button class="bexp" onclick="exportCSV()">⬇ CSV</button>
+        <button class="blog" onclick="openLogs()">📋 Logs</button>
+        <button class="bg"   onclick="reloadTable()">↻ Atualizar</button>
+        <button class="bg" style="color:#f59e0b;border-color:#f59e0b44;" onclick="document.getElementById('f1-inline').click()" title="Subir nova agenda (substitui a atual no banco)">↑ Agenda</button>
+        <button class="bg" style="color:#60a5fa;border-color:#60a5fa44;" onclick="document.getElementById('f2-inline').click()" title="Subir relatório de expedição (materiais)">↑ Materiais</button>
+        <input type="file" id="f1-inline" accept=".xls,.xlsx,.txt,.tsv,.csv" style="display:none" onchange="processAgend(this.files[0])"/>
+        <input type="file" id="f2-inline" accept=".csv" style="display:none" onchange="processRelatorioCSV(this.files[0])"/>
+        <span id="ctrl-s-hint" style="font-size:9px;color:#475569;letter-spacing:1px;">Ctrl+S salva grade · Ctrl+P importa portaria (PDF)</span>
+      </div>
+    </div>
+
+    <!-- ABAS -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-todas" onclick="switchTableTab('todas')">📋 TODAS AS DTs</button>
+      <button class="tab-btn alert-tab" id="tab-finalizadas" onclick="switchTableTab('finalizadas')">🏁 EXPEDIDAS / NO SHOW / RECUSADAS</button>
+      <button class="tab-btn" id="tab-reporte" onclick="switchTableTab('reporte')" style="color:#a78bfa;">📊 REPORTE DE STATUS</button>
+      <button class="tab-btn" id="tab-leaders" onclick="switchTableTab('leaders')" style="display:none;color:#93c5fd;">👥 LÍDERES</button>
+      <button class="tab-btn" id="tab-planejamento" onclick="switchTableTab('planejamento')" style="color:#38bdf8;">📈 PLANEJAMENTO</button>
+      <button class="tab-btn" id="tab-mudancas" onclick="switchTableTab('mudancas')" style="color:#fbbf24;">📝 MUDANÇAS DA GRADE</button>
+      <button class="tab-btn" id="tab-semgrade" onclick="switchTableTab('semgrade')" style="color:#f59e0b;">➕ ADICIONAR DT</button>
+      <button class="tab-btn" id="tab-dtfake" onclick="switchTableTab('dtfake')" style="color:#fb923c;">🔄 DT FAKE</button>
+      <button class="tab-btn" id="tab-docanull" onclick="switchTableTab('docanull')" style="color:#f59e0b;">⚠️ DOCA S/ INFO</button>
+      <button class="tab-btn" id="tab-nf" onclick="switchTableTab('nf')" style="color:#34d399;">📎 JUNTAR NFs</button>
+    </div>
+
+    <div id="twrap">
+      <table>
+        <thead><tr>
+          <th>DIA</th><th>DT</th><th>TRANSPORTADORA</th><th>PALETIZAÇÃO</th>
+          <th>GRADE</th><th>FIM</th><th>HORA CHEGADA</th><th>N° PORTARIA</th>
+          <th>STATUS / OPERAÇÃO</th><th>DESC. DOCUMENTO</th><th>PESO LÍQUIDO</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="mat-board" class="mat-board" style="display:none;"></div>
+    <div id="materiais-wrap" style="display:none;">
+      <div style="padding:12px 18px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">FILTRO:</span>
+        <button class="bg" id="mfilt-todos" onclick="filtrarMateriais('todos')" style="font-size:10px;padding:3px 10px;border-color:#3b82f655;color:#93c5fd;">TODOS</button>
+        <button class="bg" id="mfilt-venda" onclick="filtrarMateriais('venda')" style="font-size:10px;padding:3px 10px;border-color:#22c55e55;color:#4ade80;">🏭 VENDA ARUJA</button>
+        <button class="bg" id="mfilt-mogi" onclick="filtrarMateriais('mogi')" style="font-size:10px;padding:3px 10px;border-color:#06b6d455;color:#22d3ee;">🏙️ VENDA MOGI</button>
+        <button class="bg" id="mfilt-transf" onclick="filtrarMateriais('transf')" style="font-size:10px;padding:3px 10px;border-color:#f9731655;color:#fb923c;">🔄 TRANSFERÊNCIA</button>
+        <span id="mfilt-resumo" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <div id="materiais-board" style="padding:10px 18px 20px;"></div>
+    </div>
+    <div style="padding:8px 18px;font-size:10px;color:#334155;">
+      💡 Clique em qualquer <b style="color:#93c5fd">DT</b> para abrir o mapa de separação com os materiais. · 🕐 = Carreta deve chegar em até 1h.
+    </div>
+
+    <!-- ABA: LÍDERES -->
+    <div id="leaders-wrap" style="display:none;padding:16px 18px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <label for="leaders-data-ref" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">DIA:</label>
+        <select id="leaders-data-ref" onchange="leadersSetDataRef(this.value)"
+          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"></select>
+        <button class="bg" onclick="renderLeadersView()" style="font-size:10px;padding:4px 10px;">Atualizar</button>
+        <span id="leaders-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;">
+        <div style="overflow:auto;border:1px solid #334155;border-radius:8px;">
+          <table style="width:100%;border-collapse:collapse;min-width:1180px;font-size:11px;">
+            <thead>
+              <tr style="background:#0f172a;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">DIA</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">DT</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">TRANSPORTADORA</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">PALETIZAÇÃO</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">GRADE</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">FIM</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">Nome Cliente/Fornecedor</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">STATUS / OPERAÇÃO</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:left;">DESC. DOCUMENTO</th>
+                <th style="padding:10px;border-bottom:1px solid #334155;text-align:right;">PESO LÍQUIDO</th>
+              </tr>
+            </thead>
+            <tbody id="leaders-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: REPORTE DE STATUS ══════ -->
+    <div id="reporte-wrap" style="display:none;padding:16px 18px;">
+      <!-- Turnos -->
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <label for="rp-data-ref" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">DIA:</label>
+        <select id="rp-data-ref" onchange="rpSetDataRef(this.value)"
+          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"></select>
+        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">TURNO:</span>
+        <button class="bg rp-turno active-turno" id="rp-t0" onclick="rpSetTurno('todos')" style="font-size:10px;padding:4px 12px;">📅 TODOS</button>
+        <button class="bg rp-turno" id="rp-t1" onclick="rpSetTurno('T1')" style="font-size:10px;padding:4px 12px;">🌅 T1 · 07-14h</button>
+        <button class="bg rp-turno" id="rp-t2" onclick="rpSetTurno('T2')" style="font-size:10px;padding:4px 12px;">☀️ T2 · 15-22h</button>
+        <button class="bg rp-turno" id="rp-t3" onclick="rpSetTurno('T3')" style="font-size:10px;padding:4px 12px;">🌙 T3 · 23-06h</button>
+        <label for="rp-hora-corte" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">⏱️ CORTE ATÉ:</label>
+        <input id="rp-hora-corte" type="time" step="60" oninput="rpSetHoraCorte(this.value)" onchange="rpSetHoraCorte(this.value)"
+          style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"/>
+        <button class="bg" onclick="rpSetHoraCorte('')" style="font-size:10px;padding:4px 10px;">Agora</button>
+        <button class="bexp" onclick="rpSalvarReporteManual()" style="font-size:10px;padding:4px 10px;background:#7c3aed;border-color:#8b5cf6;">Salvar reporte</button>
+        <button class="bexp" onclick="exportReporteJPG()" style="font-size:10px;padding:4px 10px;">📸 JPG</button>
+        <button class="bexp" onclick="exportReporteCSV()" style="font-size:10px;padding:4px 10px;background:#065f46;border-color:#059669;">📥 CSV</button>
+        <button class="bexp" onclick="exportReporteXLSX()" style="font-size:10px;padding:4px 10px;background:#1e3a5f;border-color:#2563eb;">📊 XLSX</button>
+        <span id="rp-turno-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <!-- Metas configuráveis -->
+      <div style="display:none;background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📋 PLANEJADO AUTOMÁTICO DO DIA</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;" id="rp-metas-inputs"></div>
+      </div>
+      <!-- Gráfico -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:14px;">📊 PLANEJADO vs REALIZADO</div>
+        <div id="rp-chart" style="display:flex;align-items:flex-end;gap:12px;height:160px;overflow-x:auto;"></div>
+        <div id="rp-legenda" style="display:flex;gap:16px;margin-top:10px;font-size:11px;flex-wrap:wrap;">
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#3b82f6;border-radius:2px;display:inline-block;"></span>Planejado</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#22c55e;border-radius:2px;display:inline-block;"></span>Realizado</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:#f59e0b;border-radius:2px;display:inline-block;"></span>Pendente</span>
+        </div>
+      </div>
+      <!-- Números consolidados -->
+      <div id="rp-numeros" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
+      <!-- Divisao por paletizacao -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">DIVISAO POR PALETIZACAO</div>
+        <div id="rp-paletizacao-resumo" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;"></div>
+      </div>
+      <!-- Contagem por Status -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">📍 STATUS ATUAL DAS DTs</div>
+        <div id="rp-status-counts" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;"></div>
+      </div>
+      <!-- Separações por turno -->
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-top:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">🔢 SEPARAÇÕES POR TURNO</div>
+        <div id="rp-turnos-resumo" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
+      </div>
+    </div>
+
+    <!-- ABA: PLANEJAMENTO -->
+    <div id="planejamento-wrap" style="display:none;padding:16px 18px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <label for="pl-data-ref" style="font-size:10px;letter-spacing:1px;color:#64748b;font-weight:700;">DIA:</label>
+        <select id="pl-data-ref" onchange="rpSetDataRef(this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:4px 8px;font-size:11px;"></select>
+        <button class="bg" onclick="rpSalvarPlanejadoSuzano()" style="font-size:10px;padding:4px 10px;">Salvar Suzano</button>
+        <button class="bg" onclick="rpSalvarSnapshotManual()" style="font-size:10px;padding:4px 10px;">Snapshot</button>
+        <button class="bexp" onclick="rpEnviarEmailAgora()" style="font-size:10px;padding:4px 10px;background:#0e7490;border-color:#06b6d4;">Reenviar e-mail</button>
+        <span id="pl-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">PLANEJADO SUZANO POR OPERAÇÃO</div>
+        <div id="pl-suzano-inputs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:10px;">PLANEJADO SUZANO x NOSSA GRADE x REALIZADO</div>
+        <div id="rp-comparativo-suzano" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;"></div>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+          <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">EVOLUÇÃO DO PLANEJAMENTO</div>
+          <span id="rp-snapshot-info" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+        </div>
+        <div id="rp-timeline-chart" style="height:250px;overflow:hidden;border-radius:8px;background:#0f172a;border:1px solid #334155;"></div>
+      </div>
+    </div>
+
+    <!-- ABA: MUDANÇAS DA GRADE -->
+    <div id="mudancas-wrap" style="display:none;padding:16px 18px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <span style="font-size:10px;letter-spacing:2px;color:#fbbf24;font-weight:700;">DTs REAGENDADAS / EXCLUÍDAS DA GRADE</span>
+        <button class="bg" onclick="mudancasSetDia(new Date().toLocaleDateString('pt-BR'))" style="font-size:10px;padding:4px 10px;">Hoje</button>
+        <button class="bg" onclick="{const d=new Date();d.setDate(d.getDate()+1);mudancasSetDia(d.toLocaleDateString('pt-BR'))}" style="font-size:10px;padding:4px 10px;">Amanhã</button>
+        <input id="mudancas-dia" class="mat-input" value="" placeholder="dd/mm/aaaa" onchange="renderMudancasGrade()" style="width:120px;padding:5px 9px;font-size:11px;"/>
+        <button class="bg" onclick="renderMudancasGrade()" style="font-size:10px;padding:4px 10px;">↻ Atualizar</button>
+        <span id="mudancas-resumo" style="margin-left:auto;font-size:11px;color:#64748b;"></span>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:12px;">
+        <div style="display:grid;grid-template-columns:140px 95px 135px 1fr 1.2fr;gap:10px;padding:0 8px 8px;border-bottom:1px solid #334155;font-size:9px;letter-spacing:1.3px;color:#64748b;font-weight:800;">
+          <span>HORÁRIO</span><span>DT</span><span>EVENTO</span><span>OBS/TRANSPORTADORA</span><span>GRADE</span>
+        </div>
+        <div id="mudancas-list" style="display:grid;gap:0;"></div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: ADICIONAR DT ══════ -->
+    <div id="semgrade-wrap" style="display:none;padding:16px 18px;">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;">ADICIONAR DT (COM OU SEM GRADE)</span>
+      </div>
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="display:grid;grid-template-columns:120px 1fr 1fr 150px 150px auto;gap:10px;align-items:end;" class="sg-form-grid">
+          <div><label class="sl">Nº DT</label><input id="sg-dt" class="mat-input" placeholder="Ex: 23166206" style="width:100%;"/></div>
+          <div><label class="sl">TRANSPORTADORA</label><input id="sg-transp" class="mat-input" placeholder="Nome" style="width:100%;"/></div>
+          <div><label class="sl">MOTIVO</label><input id="sg-motivo" class="mat-input" placeholder="Ex: Aguardando nota, erro sistema..." style="width:100%;"/></div>
+          <div><label class="sl">GRADE INÍCIO (opcional)</label><input id="sg-grade" type="datetime-local" class="mat-input" style="width:100%;"/></div>
+          <div><label class="sl">GRADE FIM (opcional)</label><input id="sg-fim" type="datetime-local" class="mat-input" style="width:100%;"/></div>
+          <button class="bp" onclick="registrarSemGrade()" style="height:34px;white-space:nowrap;">+ Adicionar DT</button>
+        </div>
+        <div style="margin-top:10px;"><label class="sl">OBSERVAÇÕES</label><textarea id="sg-obs" class="obs-area" placeholder="Detalhes adicionais..." style="min-height:48px;width:100%;"></textarea></div>
+      </div>
+      <div id="sg-lista" style="display:grid;gap:8px;"></div>
+    </div>
+
+    <!-- ══════ ABA: DT FAKE ══════ -->
+    <div id="dtfake-wrap" style="display:none;padding:16px 18px;">
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#f59e0b;font-weight:700;margin-bottom:12px;">🔄 SUBSTITUIÇÃO DE DT FAKE</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:14px;line-height:1.7;">Informe a DT fake (criada para reservar espaço) e a DT original. O sistema irá substituir o número e os materiais, mantendo a agenda intacta.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+          <div>
+            <label class="sl">Nº DT FAKE (a substituir)</label>
+            <input id="fake-dt-from" class="mat-input" placeholder="Ex: 99999999" style="width:100%;"/>
+          </div>
+          <div>
+            <label class="sl">Nº DT ORIGINAL (substituta)</label>
+            <input id="fake-dt-to" class="mat-input" placeholder="Ex: 23166206" style="width:100%;"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="bp" onclick="substituirDTFake()" style="background:#f59e0b;color:#000;">🔄 Substituir DT</button>
+          <span id="fake-status" style="font-size:12px;color:#64748b;align-self:center;"></span>
+        </div>
+      </div>
+      <div id="fake-preview" style="display:none;background:#162032;border:1px solid #334155;border-radius:10px;padding:14px;">
+        <div style="font-size:10px;letter-spacing:1.5px;color:#64748b;font-weight:700;margin-bottom:8px;">PRÉVIA DA SUBSTITUIÇÃO</div>
+        <div id="fake-preview-body" style="font-size:12px;color:#e2e8f0;"></div>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+          <button class="bp" onclick="confirmarSubstituicao()" style="flex:1;">✅ Confirmar substituição</button>
+          <button class="bg" onclick="cancelarSubstituicao()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: DOCA SEM INFO (REGRA 10) ══════ -->
+    <div id="docanull-wrap" style="display:none;padding:16px 18px;">
+      <div style="background:#162032;border:1px solid #f59e0b55;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#f59e0b;font-weight:700;margin-bottom:6px;">⚠️ DTs COM DOCA NÃO INFORMADA</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:14px;">
+          Estas DTs foram importadas da agenda mas estão <b style="color:#f59e0b">sem DOCA definida</b>.<br/>
+          Confirme se pertencem ao CD antes de manter. Use o botão <b style="color:#ef4444">Excluir</b> para remover manualmente.
+        </p>
+        <div id="docanull-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <div id="docanull-empty" style="display:none;color:#22c55e;font-size:13px;padding:10px 0;">✅ Nenhuma DT com DOCA não informada no momento.</div>
+      </div>
+    </div>
+
+    <!-- ══════ ABA: JUNTAR NFs ══════ -->
+    <div id="nf-wrap" style="display:none;padding:16px 18px;">
+      <div style="background:#162032;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;letter-spacing:2px;color:#34d399;font-weight:700;margin-bottom:6px;">📎 JUNTAR NFs + ESPELHO</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Selecione os PDFs das NFs e o espelho da nota. O sistema junta tudo em um único PDF nomeado com o número da DT.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <div>
+            <label class="sl">Nº DA DT (para nomear o PDF)</label>
+            <input id="nf-dt-num" class="mat-input" placeholder="Ex: 23166206" style="width:160px;"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="bp" onclick="document.getElementById('nf-files').click()" style="background:#1e3a5f;border:1px solid #3b82f655;">📂 Subir NFs / Espelho</button>
+          <input id="nf-files" type="file" multiple accept="application/pdf" style="display:none" onchange="nfAddFiles(this.files)"/>
+          <button class="bp" onclick="nfGerar()" style="background:#059669;">⬇ Gerar PDF único</button>
+          <button class="bp" onclick="nfImprimir()" style="background:#1d4ed8;">🖨️ Imprimir</button>
+          <button class="bg" onclick="nfLimpar()">🗑 Limpar</button>
+        </div>
+        <div id="nf-lista" style="display:grid;gap:6px;margin-top:6px;"></div>
+        <div id="nf-msg" style="margin-top:8px;font-size:12px;display:none;"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- PAINEL de materiais -->
+<div id="panel-overlay" onclick="closePanel()"></div>
+<div id="panel">
+  <div id="ph">
+    <span id="ptitle">Mapa de Separação</span>
+    <button class="bg" onclick="closePanel()" style="padding:4px 10px;">✕</button>
+  </div>
+  <div id="pbody">
+    <div id="print-panel-area">
+      <div id="pdt-info" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#94a3b8;line-height:1.9;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <span class="sec-lbl" style="margin:0;">MATERIAIS / QUANTIDADES</span>
+        <button class="bg no-print" onclick="printPanelMapa()" style="padding:4px 10px;font-size:11px;">🖨️ Imprimir mapa</button>
+      </div>
+      <div class="mat-hdr"><span>MATERIAL</span><span>QUANTIDADE (PALETES / SOBRA)</span><span></span></div>
+      <div id="mat-list"></div>
+      <div id="mat-total" style="margin-top:8px;text-align:right;color:#a7f3d0;font-weight:800;font-size:13px;">Total: 0</div>
+    </div>
+    <button class="bg" onclick="addMatRow()" style="width:100%;margin-top:6px;font-size:12px;">+ Adicionar material</button>
+    <span class="sec-lbl" style="margin-top:18px;">OBSERVAÇÕES</span>
+    <textarea class="obs-area" id="pobs" placeholder="Anotações gerais desta DT..."></textarea>
+  </div>
+  <div id="pfoot">
+    <button class="bp" style="flex:1" onclick="saveMateriais()">💾 Salvar</button>
+    <button class="bg" onclick="closePanel()">Fechar</button>
+  </div>
+</div>
+
+<!-- MODAL DE LOGS -->
+<div id="log-overlay">
+  <div id="log-modal">
+    <div id="log-head">
+      <div>
+        <div style="font-weight:800;font-size:14px;color:#f1f5f9;">📋 Histórico de Logs</div>
+        <div style="font-size:10px;color:#64748b;margin-top:2px;">Status das DTs registrados automaticamente</div>
+      </div>
+      <button class="bg" onclick="closeLogs()" style="padding:4px 12px;">✕ Fechar</button>
+    </div>
+    <div id="log-body">
+      <div style="margin:0 0 10px 0;"><input id="log-search" type="text" placeholder="🔎 Filtrar DT nos logs" oninput="loadLogs(this.value)" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:7px;color:#e2e8f0;padding:7px 10px;font-size:11px;"></div>
+      <div class="log-entry log-entry-head">
+        <span>DATA/HORA</span><span>DT</span><span>EVENTO</span><span>STATUS</span><span>TRANSPORTADORA</span><span>GRADE</span><span>ORIGEM</span>
+      </div>
+      <div id="log-list" style="color:#94a3b8;font-size:12px;">Carregando…</div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL REAGENDAMENTO -->
+<div id="reagend-overlay">
+  <div id="reagend-modal">
+    <h3>🔄 Reagendar DT <span id="reagend-dt-num"></span></h3>
+    <div class="reagend-field">
+      <label>NOVA GRADE (INÍCIO)</label>
+      <input type="datetime-local" class="reagend-input" id="reagend-grade"/>
+    </div>
+    <div class="reagend-field">
+      <label>NOVA GRADE (FIM)</label>
+      <input type="datetime-local" class="reagend-input" id="reagend-fim"/>
+    </div>
+    <div class="reagend-field">
+      <label>MOTIVO / OBSERVAÇÃO</label>
+      <textarea class="reagend-input" id="reagend-obs" rows="2" placeholder="Ex: Atraso do fornecedor, reagendado para próximo turno…"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button class="bp" style="flex:1;background:#f59e0b;color:#000;" onclick="confirmarReagendamento()">✅ Confirmar Reagendamento</button>
+      <button class="bg" onclick="closeReagend()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL IMPORTAR PLANILHA (Ctrl+B) ═══ -->
+<div id="import-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:400;display:none;align-items:center;justify-content:center;">
+  <div id="import-modal" style="background:#1e293b;border:2px solid #3b82f655;border-radius:16px;width:94%;max-width:560px;padding:28px;box-shadow:0 20px 60px #000a;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+      <span style="font-size:22px;">📋</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;letter-spacing:.5px;">Importar Relatório de Expedição</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Atualiza status, hora de chegada e SAP/portaria com base na planilha</div>
+      </div>
+      <button onclick="closeImportModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+
+    <div id="import-dropzone" style="border:2px dashed #334155;border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;background:#0f172a;transition:all .2s;margin-bottom:16px;"
+      onclick="document.getElementById('import-file-input').click()"
+      ondragover="event.preventDefault();this.style.borderColor='#3b82f6';this.style.background='#1e3a5f';"
+      ondragleave="this.style.borderColor='#334155';this.style.background='#0f172a';"
+      ondrop="event.preventDefault();this.style.borderColor='#334155';this.style.background='#0f172a';handleImportFile(event.dataTransfer.files[0])">
+      <div style="font-size:30px;margin-bottom:6px;">📄</div>
+      <div id="import-drop-label" style="color:#64748b;font-size:13px;">Clique ou arraste a planilha aqui</div>
+      <div style="font-size:11px;color:#334155;margin-top:4px;">Formato: CSV/XLSX com colunas DT, HORA, FATURAMENTO, SAP e STATUS</div>
+    </div>
+    <input type="file" id="import-file-input" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handleImportFile(this.files[0])"/>
+
+    <div id="import-preview" style="display:none;margin-bottom:14px;">
+      <div style="font-size:10px;letter-spacing:2px;color:#64748b;font-weight:700;margin-bottom:8px;">PRÉ-VISUALIZAÇÃO</div>
+      <div id="import-preview-body" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;font-size:11px;max-height:180px;overflow-y:auto;"></div>
+    </div>
+
+    <div id="import-result" style="display:none;margin-bottom:14px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:10px 14px;font-size:12px;color:#86efac;"></div>
+    <div id="import-err" style="display:none;margin-bottom:14px;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:10px 14px;font-size:12px;color:#fca5a5;"></div>
+
+    <div style="display:flex;gap:8px;">
+      <button id="import-btn" class="bp" style="flex:1;" onclick="runImport()" disabled>⚡ Atualizar Dashboard</button>
+      <button class="bg" onclick="closeImportModal()">Cancelar</button>
+    </div>
+    <div style="margin-top:12px;padding:8px 12px;background:#1a2540;border-radius:7px;font-size:10px;color:#64748b;line-height:1.7;">
+      💡 <b style="color:#94a3b8;">Regras aplicadas:</b><br>
+      • DT presente na planilha → status, hora e SAP/portaria atualizados<br>
+      • DT no dash com horário ≤ agora e ausente da planilha → marcada como <b style="color:#22c55e">EXPEDIDO</b><br>
+      • FATURAMENTO com custo de frete/problema de DT/problema JSL → tratado como <b style="color:#06b6d4">EM FATURAMENTO</b> quando STATUS estiver vazio
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL PORTARIA PDF (Ctrl+P) ═══ -->
+<div id="portaria-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:420;display:none;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:2px solid #f9731655;border-radius:16px;width:94%;max-width:520px;padding:24px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:22px;">🚛</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;">Importar Portaria PDF</div>
+        <div style="font-size:11px;color:#64748b;">Lê DTs do PDF e muda AG CHEGADA → PATIO</div>
+      </div>
+      <button onclick="closePortariaPdfModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+    <input type="file" id="portaria-file" accept="application/pdf" style="margin-bottom:12px;color:#cbd5e1;"/>
+    <div id="portaria-result" style="display:none;margin-bottom:10px;background:#052e16;border:1px solid #22c55e55;border-radius:8px;padding:10px;font-size:12px;color:#86efac;"></div>
+    <div id="portaria-err" style="display:none;margin-bottom:10px;background:#450a0a;border:1px solid #ef444455;border-radius:8px;padding:10px;font-size:12px;color:#fca5a5;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="bp" style="flex:1;background:#ea580c;" onclick="runPortariaPdfImport(document.getElementById('portaria-file').files[0])">⚡ Processar PDF</button>
+      <button class="bg" onclick="closePortariaPdfModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- BUSCA NA AGENDA (Ctrl+Q) -->
+<div id="agenda-search-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:430;display:none;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:2px solid #38bdf855;border-radius:14px;width:94%;max-width:900px;max-height:84vh;display:flex;flex-direction:column;box-shadow:0 20px 60px #000a;">
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #334155;">
+      <span style="font-size:20px;">??</span>
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;">Buscar DT na agenda</div>
+        <div id="agenda-search-meta" style="font-size:11px;color:#64748b;">Ctrl+Q</div>
+      </div>
+      <button onclick="closeAgendaSearchModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">?</button>
+    </div>
+    <div style="padding:14px 18px;border-bottom:1px solid #334155;">
+      <input id="agenda-search-input" placeholder="Digite a DT, transportadora ou doca" oninput="renderAgendaSearch()" onkeydown="if(event.key==='Escape')closeAgendaSearchModal()" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:14px;outline:none;"/>
+    </div>
+    <div id="agenda-search-body" style="padding:14px 18px;overflow-y:auto;flex:1;"></div>
+  </div>
+</div>
+
+<!-- CONFIGURAÇÕES -->
+<div id="config-overlay" style="position:fixed;inset:0;background:#000000cc;z-index:440;display:none;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:2px solid #3b82f655;border-radius:14px;width:94%;max-width:720px;max-height:84vh;overflow:auto;box-shadow:0 20px 60px #000a;">
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #334155;">
+      <div>
+        <div style="font-weight:900;font-size:15px;color:#f1f5f9;">Configurações do reporte</div>
+        <div style="font-size:11px;color:#64748b;">E-mail, destinatários e automação ficam definidos aqui antes de qualquer envio.</div>
+      </div>
+      <button onclick="closeConfigModal()" style="margin-left:auto;background:transparent;border:1px solid #334155;border-radius:7px;color:#64748b;width:30px;height:30px;cursor:pointer;font-size:15px;">×</button>
+    </div>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div><label class="sl">DESTINATÁRIOS</label><textarea id="cfg-email-to" class="obs-area" placeholder="gestor@empresa.com; operacao@empresa.com"></textarea></div>
+      <div><label class="sl">CÓPIA (CC)</label><input id="cfg-email-cc" class="mat-input" placeholder="opcional"/></div>
+      <div><label class="sl">MÉTODO DE ENVIO</label><select id="cfg-email-provider" class="mat-input"><option value="auto">Auto: Zoho SMTP</option><option value="zoho">Zoho SMTP</option></select></div>
+      <div><label class="sl">TOKEN ADMIN DO WORKER</label><input id="cfg-admin-secret" type="password" class="mat-input" placeholder="opcional, para proteger /api/send-report"/></div>
+      <div style="display:none;grid-template-columns:1fr 1fr;gap:12px;" class="sg-form-grid">
+        <div><label class="sl">REPORTE INICIAL</label><input id="cfg-report-inicial" type="time" class="mat-input" value="00:00"/></div>
+        <div><label class="sl">REPORTE FINAL</label><input id="cfg-report-final" type="time" class="mat-input" value="11:59"/></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;" class="sg-form-grid">
+        <div><label class="sl">E-MAIL AUTOMATICO</label><select id="cfg-auto-email-enabled" class="mat-input"><option value="">Desligado</option><option value="1">Ligado</option></select></div>
+        <div style="display:none;"><label class="sl">INTERVALO (MINUTOS)</label><input id="cfg-auto-email-interval" type="number" min="5" step="5" class="mat-input" value="60"/></div>
+      </div>
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;color:#94a3b8;font-size:12px;line-height:1.7;">
+        <b style="color:#e2e8f0;">Como funciona:</b><br>
+        Destinatários recebem o reporte, CC recebe em cópia e os fechamentos automáticos rodam às 14h, 22h e 06h. As chaves de envio ficam protegidas no servidor online.
+        Se o Worker estiver protegido, preencha também o token admin para liberar os botões e a automação.
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="bexp" onclick="rpEnviarEmailAgora()" style="background:#0e7490;border-color:#06b6d4;">Reenviar e-mail</button>
+        <button class="bg" onclick="closeConfigModal()">Cancelar</button>
+        <button class="bp" onclick="saveConfigModal()">Salvar configurações</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="spinner">⏳ Salvando…</div>
+
+<script src="cco_script_fim_agenda.js"></script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>null));
+}
+</script>
+</body>
+</html>
