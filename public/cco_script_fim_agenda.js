@@ -263,6 +263,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   try {
     await tryLoadExisting();
     await hydrateReportConfig();
+    bindConfigAutosave();
     syncTxt.textContent = 'ONLINE';
     if(syncDot){ syncDot.style.background='#22c55e'; }
     // Se não carregou nada do banco, mostra o passo 1 para upload da agenda
@@ -2645,6 +2646,8 @@ let rpSnapshotCache = {};
 let appConfig = JSON.parse(localStorage.getItem('reporte_app_config')||'{}');
 let rpAutoEmailTimer = null;
 let rpAutoEmailSending = false;
+let rpConfigAutosaveTimer = null;
+let rpConfigAutosaveBound = false;
 const RP_ADMIN_SECRET_KEY = 'reporte_admin_secret';
 const RP_APP_CONFIG_KEY = 'reporte_app_config';
 
@@ -2940,10 +2943,49 @@ function getPhoneList(raw){
   return String(raw||'').split(/[;,]/).map(normalizePhoneNumber).filter(Boolean);
 }
 
+function readConfigForm(){
+  const val=id=>document.getElementById(id)?.value || '';
+  const provider=val('cfg-email-provider') || 'zoho';
+  setAdminSecret(val('cfg-admin-secret'));
+  return normalizeReportDeliveryConfig({
+    emailProvider:provider,
+    emailFrom:'',
+    emailEndpoint:getDefaultEmailEndpoint(provider),
+    emailTo:getEmailList(val('cfg-email-to')),
+    emailCc:getEmailList(val('cfg-email-cc')),
+    reportInicial:val('cfg-report-inicial') || '00:00',
+    reportFinal:val('cfg-report-final') || '11:59',
+    autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
+    autoEmailIntervalMinutes:Math.max(5,parseInt(val('cfg-auto-email-interval'),10)||60),
+    updatedAt:new Date().toISOString(),
+  });
+}
+
+function scheduleConfigAutosave(){
+  clearTimeout(rpConfigAutosaveTimer);
+  rpConfigAutosaveTimer=setTimeout(()=>{
+    const ov=document.getElementById('config-overlay');
+    if(!ov || ov.style.display==='none') return;
+    persistReportConfig(readConfigForm(), true);
+  }, 500);
+}
+
+function bindConfigAutosave(){
+  if(rpConfigAutosaveBound) return;
+  rpConfigAutosaveBound=true;
+  ['cfg-email-provider','cfg-email-to','cfg-email-cc','cfg-admin-secret','cfg-report-inicial','cfg-report-final','cfg-auto-email-enabled','cfg-auto-email-interval'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('input', scheduleConfigAutosave);
+    el.addEventListener('change', scheduleConfigAutosave);
+  });
+}
+
 async function openConfigModal(){
   const ov=document.getElementById('config-overlay');
   if(!ov) return;
   await hydrateReportConfig();
+  bindConfigAutosave();
   const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val||'';};
   set('cfg-email-provider',appConfig.emailProvider||'auto');
   set('cfg-email-to',(appConfig.emailTo||[]).join('; '));
@@ -2957,26 +2999,13 @@ async function openConfigModal(){
 }
 
 function closeConfigModal(){
+  syncConfigFromOpenModal();
   const ov=document.getElementById('config-overlay');
   if(ov) ov.style.display='none';
 }
 
 function saveConfigModal(){
-  const val=id=>document.getElementById(id)?.value || '';
-  const provider=val('cfg-email-provider') || 'zoho';
-  setAdminSecret(val('cfg-admin-secret'));
-  appConfig={
-    emailProvider:provider,
-    emailFrom:'',
-    emailEndpoint:getDefaultEmailEndpoint(provider),
-    emailTo:getEmailList(val('cfg-email-to')),
-    emailCc:getEmailList(val('cfg-email-cc')),
-    reportInicial:val('cfg-report-inicial') || '00:00',
-    reportFinal:val('cfg-report-final') || '11:59',
-    autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
-    autoEmailIntervalMinutes:Math.max(5,parseInt(val('cfg-auto-email-interval'),10)||60),
-    updatedAt:new Date().toISOString(),
-  };
+  appConfig=readConfigForm();
   persistReportConfig(appConfig,true);
   startAutoReportEmailTimer();
   closeConfigModal();
@@ -2986,21 +3015,7 @@ function saveConfigModal(){
 function syncConfigFromOpenModal(){
   const ov=document.getElementById('config-overlay');
   if(!ov || ov.style.display==='none') return;
-  const val=id=>document.getElementById(id)?.value || '';
-  const provider=val('cfg-email-provider') || 'zoho';
-  setAdminSecret(val('cfg-admin-secret'));
-  appConfig={
-    emailProvider:provider,
-    emailFrom:'',
-    emailEndpoint:getDefaultEmailEndpoint(provider),
-    emailTo:getEmailList(val('cfg-email-to')),
-    emailCc:getEmailList(val('cfg-email-cc')),
-    reportInicial:val('cfg-report-inicial') || '00:00',
-    reportFinal:val('cfg-report-final') || '11:59',
-    autoEmailEnabled:val('cfg-auto-email-enabled')==='1',
-    autoEmailIntervalMinutes:Math.max(5,parseInt(val('cfg-auto-email-interval'),10)||60),
-    updatedAt:new Date().toISOString(),
-  };
+  appConfig=readConfigForm();
   persistReportConfig(appConfig,true);
 }
 
