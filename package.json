@@ -1,0 +1,21 @@
+{
+  "name": "dash-de-carga-cloudflare-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "mobile:sync": "npx cap sync android",
+    "mobile:open:android": "npx cap open android",
+    "mobile:build:debug": "cd android && gradlew.bat assembleDebug"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.4.0"
+  }
+}

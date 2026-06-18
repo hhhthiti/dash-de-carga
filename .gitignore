@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.dev.vars
+
+__pycache__/
+*.py[cod]
+.venv/
+automacoes/oracle/.env
+automacoes/oracle/runtime/

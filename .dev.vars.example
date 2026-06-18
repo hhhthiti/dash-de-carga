@@ -1,0 +1,15 @@
+SUPABASE_URL=https://pwjatxqtkvwcmzmjjvbi.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=cole-a-service-role-key
+ORACLE_JOB_SECRET=troque-por-um-segredo-longo
+ADMIN_SECRET=troque-por-um-segredo-admin
+CRON_SECRET=troque-por-um-segredo-cron
+
+REPORT_TIME_ZONE=America/Sao_Paulo
+REPORT_FROM_EMAIL=
+REPORT_FROM_NAME=Dashboard de Carga
+REPORT_DASHBOARD_URL=http://127.0.0.1:8787/cco
+
+ZOHO_SMTP_HOST=smtp.zoho.com
+ZOHO_SMTP_PORT=465
+ZOHO_SMTP_USER=
+ZOHO_SMTP_PASS=
