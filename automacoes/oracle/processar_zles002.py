@@ -145,11 +145,15 @@ def processar_zles002(path: Path, refs_by_dt: dict[str, str]) -> dict[str, Any]:
     material_totals: dict[tuple[str, str], float] = defaultdict(float)
     material_meta: dict[tuple[str, str], dict[str, str]] = {}
     processed_lines = 0
+    source_dts: set[str] = set()
 
     for row in rows[header_index + 1:]:
         dt = normalize_dt(_value(row, mapping["dt"]))
+        if not dt:
+            continue
+        source_dts.add(dt)
         data_ref = refs_by_dt.get(dt)
-        if not dt or not data_ref:
+        if not data_ref:
             continue
 
         description = str(_value(row, mapping["descricao"]) or "").strip()
@@ -163,13 +167,14 @@ def processar_zles002(path: Path, refs_by_dt: dict[str, str]) -> dict[str, Any]:
             "tipo_operacao": _tipo_operacao(description, centro, local),
             "centro": centro,
             "nome_cliente_fornecedor": str(_value(row, mapping["cliente"]) or "").strip(),
-            "peso_liquido": 0.0,
             "hora_chegada": _normalize_hour(_value(row, mapping["hora"])),
             "n_portaria": normalize_dt(_value(row, mapping["sap"])),
             "paletizacao": _paletizacao(info_agenda),
             "status": _status(_value(row, mapping["status"]), _value(row, mapping["faturamento"])),
         })
-        current["peso_liquido"] += parse_number(_value(row, mapping["peso"]))
+        peso = _value(row, mapping["peso"])
+        if peso is not None and str(peso).strip():
+            current["peso_liquido"] = current.get("peso_liquido", 0.0) + parse_number(peso)
         for field, value in (
             ("descricao_documento", description),
             ("centro", centro),
@@ -194,7 +199,8 @@ def processar_zles002(path: Path, refs_by_dt: dict[str, str]) -> dict[str, Any]:
 
     carga_rows = []
     for row in cargas.values():
-        row["peso_liquido"] = _number_text(float(row["peso_liquido"]))
+        if "peso_liquido" in row:
+            row["peso_liquido"] = _number_text(row["peso_liquido"])
         carga_rows.append({key: value for key, value in row.items() if value not in ("", None)})
 
     materials_by_dt: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -216,11 +222,13 @@ def processar_zles002(path: Path, refs_by_dt: dict[str, str]) -> dict[str, Any]:
             material_rows.append(row)
 
     if not carga_rows:
-        raise ValueError("A ZLES002 nao possui DTs que correspondam a grade processada.")
+        raise ValueError(f"ZLES002 sem correspondencia: {len(source_dts)} DTs no arquivo e {len(refs_by_dt)} na grade.")
     return {
         "cargas": carga_rows,
         "materiais": material_rows,
         "processed_lines": processed_lines,
         "matched_dts": sorted(cargas),
+        "source_dt_count": len(source_dts),
+        "missing_grade_dts": sorted(refs_by_dt.keys() - cargas.keys()),
         "source_file": str(path),
     }
