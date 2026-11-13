@@ -229,11 +229,11 @@ function parseWeight(raw) {
     else s = s.replace(/,/g, "");
   } else if (s.includes(",")) {
     s = s.replace(",", ".");
-  } else if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) {
     s = s.replace(/\./g, "");
   }
   const n = Number.parseFloat(s.replace(/[^\d.-]/g, ""));
-  return Number.isFinite(n) ? Math.floor(n) : 0;
+  return Number.isFinite(n) ? n : 0;
 }
 
 function parseBrDateTime(raw) {

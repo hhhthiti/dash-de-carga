@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import unicodedata
@@ -59,14 +60,19 @@ def format_data_ref(value: date | datetime) -> str:
 
 
 def parse_number(value: Any) -> float:
-    raw = str(value or "").strip().replace(" ", "")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value) if math.isfinite(value) else 0.0
+    raw = re.sub(r"\s+", "", str(value or ""))
     if not raw:
         return 0.0
     if "," in raw and "." in raw:
-        raw = raw.replace(".", "").replace(",", ".")
+        if raw.rfind(",") > raw.rfind("."):
+            raw = raw.replace(".", "").replace(",", ".")
+        else:
+            raw = raw.replace(",", "")
     elif "," in raw:
         raw = raw.replace(".", "").replace(",", ".")
-    elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", raw):
+    elif re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+", raw):
         raw = raw.replace(".", "")
     raw = re.sub(r"[^\d.-]", "", raw)
     try:

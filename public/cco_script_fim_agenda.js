@@ -1591,14 +1591,14 @@ async function persistRelatorioFieldsForCurrentTable(){
   const refsByDT=getCurrentTableRefsByDT();
   for(const [dtRaw,refs] of refsByDT.entries()){
     const dt=normalizeDT(dtRaw);
-    const patch={updated_at:new Date().toISOString(), peso_liquido:'', toneladas:''};
+    const patch={updated_at:new Date().toISOString()};
     if(descDocMap[dt]) patch.descricao_documento=String(descDocMap[dt]);
     if(tipoOpMap[dt]) patch.tipo_operacao=String(tipoOpMap[dt]);
     if(centroMap[dt]) patch.centro=String(centroMap[dt]);
       if(paletizacaoMap[dt]) patch.paletizacao=String(paletizacaoMap[dt]);
       if(clienteFornecedorMap[dt]) patch.nome_cliente_fornecedor=String(clienteFornecedorMap[dt]);
-    if(pesoLiquidoMap[dt]){
-      const peso=String(Math.floor(pesoLiquidoMap[dt]));
+    if(Object.hasOwn(pesoLiquidoMap,dt)){
+      const peso=String(pesoLiquidoMap[dt].toFixed(2));
       patch.peso_liquido=peso;
     }
     if(horaChegadaCSVMap[dt]) patch.hora_chegada=String(horaChegadaCSVMap[dt]);
@@ -1753,7 +1753,7 @@ async function buildTable(){
         centro:String(centroMap[dt.DT]||ex.centro||''),
         nome_cliente_fornecedor:String(clienteFornecedorMap[dt.DT]||ex.nome_cliente_fornecedor||''),
         toneladas:'',
-        peso_liquido: pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '',
+        peso_liquido: Object.hasOwn(pesoLiquidoMap,dt.DT) ? pesoLiquidoMap[dt.DT].toFixed(2) : '',
         agenda:String(dt.AGENDA?fmtDT(dt.AGENDA,true):''),
         local_cd:String(dt.LOCAL||''),
         dia_ref:diaRef,
@@ -1831,7 +1831,7 @@ async function buildTable(){
       grade_carregamento:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       fim_carregamento:dt.FIM_AGENDA?fmtDT(dt.FIM_AGENDA,true):'',
       hora_chegada:horaChegadaCSVMap[dt.DT]||'',n_portaria:sapNumMap[dt.DT]||'',status:'AG CHEGADA',descricao_documento:descDocMap[dt.DT]||'',nome_cliente_fornecedor:clienteFornecedorMap[dt.DT]||'',centro:centroMap[dt.DT]||'',toneladas:'',
-      peso_liquido: pesoLiquidoMap[dt.DT] ? String(toTonInt(pesoLiquidoMap[dt.DT])) : '',
+      peso_liquido: Object.hasOwn(pesoLiquidoMap,dt.DT) ? pesoLiquidoMap[dt.DT].toFixed(2) : '',
       agenda:dt.AGENDA?fmtDT(dt.AGENDA,true):'',
       dia_ref:sameDay(agendaRefDate(dt)||T,T)?'HOJE':'AMANHÃ',
       data_ref:dKey(agendaRefDate(dt)||T),
@@ -3528,35 +3528,15 @@ async function readAutomationError(response){
 
 
 function rpParseToneladas(row){
-  const raw = row.peso_liquido ?? '';
-  let s=String(raw).trim();
-  if(!s) return 0;
-  s=s.replace(/\s/g,'');
-  if(s.includes(',') && s.includes('.')){
-    if(s.lastIndexOf(',')>s.lastIndexOf('.')) s=s.replace(/\./g,'').replace(',','.');
-    else s=s.replace(/,/g,'');
-  }else if(s.includes(',')) s=s.replace(',', '.');
-  const n=parseFloat(s.replace(/[^\d.-]/g,''));
-  if(!Number.isFinite(n)) return 0;
-  return Math.floor(n);
+  return parseCargaNumber(row.peso_liquido);
 }
 
 function toTonInt(raw){
-  const s=String(raw??'0').trim();
-  if(!s) return 0;
-  if(s.includes(',')){
-    const n=parseInt(s.split(',')[0].replace(/\./g,'').replace(/[^\d-]/g,''),10);
-    return Number.isFinite(n)?n:0;
-  }
-  if(/^\d+\.\d+$/.test(s)){
-    const n=Math.round(parseFloat(s));
-    return Number.isFinite(n)?n:0;
-  }
-  const n=parseInt(s.replace(/\./g,'').replace(/[^\d-]/g,''),10);
-  return Number.isFinite(n)?n:0;
+  return Math.floor(parseCargaNumber(raw));
 }
 
 function parseCargaNumber(raw){
+  if(typeof raw==='number') return Number.isFinite(raw)?raw:0;
   let s=String(raw??'').trim();
   if(!s) return 0;
   s=s.replace(/\s/g,'');
@@ -3565,7 +3545,7 @@ function parseCargaNumber(raw){
     else s=s.replace(/,/g,'');
   }else if(s.includes(',')){
     s=s.replace(',', '.');
-  }else if(/^\d{1,3}(\.\d{3})+$/.test(s)){
+  }else if(/^-?\d{1,3}(\.\d{3})+$/.test(s)){
     s=s.replace(/\./g,'');
   }
   const n=parseFloat(s.replace(/[^\d.-]/g,''));

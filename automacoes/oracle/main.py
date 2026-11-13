@@ -85,8 +85,6 @@ def executar(grade_file: Path | None = None, zles_file: Path | None = None) -> d
         zles_result = processar_zles002(zles_path, refs_by_dt)
         zles_count = len(zles_result["matched_dts"])
         material_count = len(zles_result["materiais"])
-        if not zles_count:
-            raise ValueError("ZLES002 sem correspondencia com a grade; sincronizacao cancelada.")
 
         write_json(output_dir / "zles002_normalizada.json", zles_result)
         worker.job_status(_status_payload(
@@ -101,17 +99,28 @@ def executar(grade_file: Path | None = None, zles_file: Path | None = None) -> d
         ))
         zles_sync = worker.sync_zles002(run_id, zles_result["cargas"], zles_result["materiais"])
 
+        updated_count = zles_sync["cargasUpdated"]
+        zles_count_in_file = zles_result["source_dt_count"]
+        missing_count = len(zles_result["missing_grade_dts"])
+        sync_warning = updated_count != zles_count or missing_count > 0
+        message = (
+            f"Grade: {grade_count} DTs; ZLES002: {zles_count_in_file} no arquivo, "
+            f"{zles_count} cruzadas com a grade e {updated_count} atualizadas no Worker. "
+            f"DTs da grade sem ZLES002: {missing_count}. "
+            f"Grupos de materiais gravados: {zles_sync['materialGroups']}."
+        )
+        sync_status = "warning" if sync_warning else "success"
+
         if env_bool("SYNC_DIRECT_SUPABASE"):
             SupabaseClient().upsert_cargas(grade_result["cargas"])
 
-        message = f"Concluido: {grade_count} DTs na grade, {zles_count} DTs na ZLES002, {material_count} materiais."
         image_path = gerar_imagem_reporte(
             output_dir / f"reporte_automacao_{started_at:%Y%m%d_%H%M}.png",
             started_at.strftime("%d/%m/%Y"),
             grade_count,
             zles_count,
             material_count,
-            "success",
+            sync_status,
             message,
         )
         image_warning = ""
@@ -128,7 +137,7 @@ def executar(grade_file: Path | None = None, zles_file: Path | None = None) -> d
 
         result = {
             "run_id": run_id,
-            "status": "warning" if image_warning else "success",
+            "status": "warning" if image_warning else sync_status,
             "grade": grade_sync,
             "zles002": zles_sync,
             "image": str(image_path),
